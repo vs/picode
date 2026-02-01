@@ -1,0 +1,13 @@
+[project]
+name = "picode"
+version = "0.1.0"
+description = "Encode and decode hidden messages in printed images"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
