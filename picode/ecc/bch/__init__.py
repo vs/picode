@@ -1,3 +1,5 @@
-"""BCH error correction code (stub)."""
+"""BCH error correction code."""
 
-# TODO: Implement BCH encoder/decoder
+from picode.ecc.bch.bch import BCH
+
+__all__ = ["BCH"]

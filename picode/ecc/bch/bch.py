@@ -1,0 +1,78 @@
+"""BCH error correction code implementation."""
+
+import galois
+import numpy as np
+import torch
+from torch import Tensor
+
+from picode.ecc.base import ECC
+
+
+class BCH(ECC):
+    """BCH error correction code using galois library.
+
+    BCH codes add redundancy to messages, allowing recovery from bit errors.
+    Default configuration BCH(127, 64) corrects up to 10 bit errors,
+    suitable for print-and-scan robustness.
+
+    Args:
+        n: Codeword length (must be 2^m - 1, e.g., 7, 15, 31, 63, 127, 255).
+            Default: 127.
+        k: Message length (valid values depend on n). Default: 64.
+
+    Example:
+        >>> bch = BCH(127, 64)
+        >>> message = torch.randint(0, 2, (4, 64)).float()
+        >>> codeword = bch.encode(message)
+        >>> decoded, success = bch.decode(codeword)
+        >>> assert (decoded == message).all()
+    """
+
+    def __init__(self, n: int = 127, k: int = 64) -> None:
+        """Initialize BCH code with given parameters."""
+        self._bch = galois.BCH(n, k)
+
+    def encode(self, message: Tensor) -> Tensor:
+        """Encode messages with BCH redundancy.
+
+        Args:
+            message: Binary tensor (B, k) with values in {0, 1}.
+
+        Returns:
+            Codeword tensor (B, n) with BCH parity bits appended.
+        """
+        raise NotImplementedError
+
+    def decode(self, codeword: Tensor) -> tuple[Tensor, Tensor]:
+        """Decode and correct errors in codewords.
+
+        Args:
+            codeword: Binary tensor (B, n), possibly with bit errors.
+
+        Returns:
+            Tuple of:
+                - messages: Corrected message tensor (B, k).
+                  Failed decodes contain original bits (uncorrected).
+                - success: Boolean tensor (B,) indicating successful decodes.
+        """
+        raise NotImplementedError
+
+    @property
+    def rate(self) -> float:
+        """Code rate (k/n) - ratio of data bits to total bits."""
+        return self._bch.k / self._bch.n
+
+    @property
+    def message_length(self) -> int:
+        """Number of data bits (k) in a message."""
+        return self._bch.k
+
+    @property
+    def codeword_length(self) -> int:
+        """Number of bits (n) in an encoded codeword."""
+        return self._bch.n
+
+    @property
+    def t(self) -> int:
+        """Number of bit errors that can be corrected."""
+        return self._bch.t
