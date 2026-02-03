@@ -1,8 +1,6 @@
 """BCH error correction code implementation."""
 
 import galois
-import numpy as np
-import torch
 from torch import Tensor
 
 from picode.ecc.base import ECC
@@ -60,19 +58,19 @@ class BCH(ECC):
     @property
     def rate(self) -> float:
         """Code rate (k/n) - ratio of data bits to total bits."""
-        return self._bch.k / self._bch.n
+        return float(self._bch.k) / float(self._bch.n)
 
     @property
     def message_length(self) -> int:
         """Number of data bits (k) in a message."""
-        return self._bch.k
+        return int(self._bch.k)
 
     @property
     def codeword_length(self) -> int:
         """Number of bits (n) in an encoded codeword."""
-        return self._bch.n
+        return int(self._bch.n)
 
     @property
     def t(self) -> int:
         """Number of bit errors that can be corrected."""
-        return self._bch.t
+        return int(self._bch.t)
