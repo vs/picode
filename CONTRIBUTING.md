@@ -5,11 +5,10 @@
 1. Clone the repository
 2. Create a virtual environment: `python -m venv venv`
 3. Activate: `source venv/bin/activate`
-4. Install dev dependencies for both packages:
+4. Install dev dependencies:
 
 ```bash
-cd util && pip install -e ".[dev]"
-cd ../model && pip install -e ".[dev]"
+pip install -e ".[dev]"
 ```
 
 ## Making Changes
@@ -20,27 +19,63 @@ cd ../model && pip install -e ".[dev]"
 4. Run the full test suite:
 
 ```bash
-pytest util/tests/ -v          # Distortions tests
-pytest model/tests/ -v         # Model tests
+pytest picode/tests/ -v
 ```
 
 5. Run linting and type checking:
 
 ```bash
-ruff check util/distortions/ model/stegastamp/
-mypy util/distortions/ model/stegastamp/
+ruff check picode/
+mypy picode/
 ```
 
 6. Commit with a descriptive message
 
 ## Project Structure
 
-When contributing, note that this is a monorepo with two independent packages:
+When contributing, note that this is a single unified package with swappable implementations:
 
-- **util/distortions/**: Image distortion library
-- **model/stegastamp/**: Encoder, decoder, and training utilities
+```
+picode/
+├── distortions/           # Image distortions with multiple backends
+│   ├── base.py            # Distortion ABC
+│   ├── native/            # Pure PyTorch implementations
+│   └── kornia/            # Kornia-based implementations
+├── ecc/                   # Error correction codes
+│   ├── base.py            # ECC ABC
+│   ├── bch/               # BCH implementation
+│   └── ldpc/              # LDPC implementation
+├── models/                # Encoder/decoder models
+│   ├── base.py            # Encoder/Decoder ABC
+│   └── stegastamp/        # StegaStamp implementation
+└── tests/                 # Test suite
+    ├── distortions/
+    ├── ecc/
+    └── models/
+```
 
-Each package has its own `pyproject.toml` and test suite.
+## Adding a New Implementation
+
+### New Distortion Backend
+
+1. Create a new directory: `picode/distortions/mybackend/`
+2. Implement distortions inheriting from `picode.distortions.base.Distortion`
+3. Export in `__init__.py`
+4. Add tests in `picode/tests/distortions/`
+
+### New Model Architecture
+
+1. Create a new directory: `picode/models/mymodel/`
+2. Implement encoder/decoder inheriting from `picode.models.base.Encoder/Decoder`
+3. Export in `__init__.py`
+4. Add tests in `picode/tests/models/`
+
+### New ECC Implementation
+
+1. Create a new directory: `picode/ecc/myecc/`
+2. Implement ECC inheriting from `picode.ecc.base.ECC`
+3. Export in `__init__.py`
+4. Add tests in `picode/tests/ecc/`
 
 ## Code Review
 
@@ -74,7 +109,7 @@ Supports configurable intensity and corner displacement.
 ```
 
 ```
-feat(model): add LPIPS perceptual loss option
+feat(models): add LPIPS perceptual loss option
 
 Adds optional perceptual loss using LPIPS for better
 image quality during training.
@@ -106,6 +141,8 @@ Example test:
 
 ```python
 def test_encoder_gradient_flow(sample_image, sample_message):
+    from picode.models.stegastamp import Encoder
+
     encoder = Encoder(num_bits=100)
     sample_image.requires_grad = True
 

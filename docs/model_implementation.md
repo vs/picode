@@ -133,7 +133,7 @@ class StegaStampEncoder(Layer):
 
 #### This Project's Implementation
 
-Located in `encoder.py:66-78`:
+Located in `picode/models/stegastamp/encoder.py`:
 
 ```python
 def prepare_message(self, message: Tensor) -> Tensor:
@@ -471,7 +471,7 @@ class StegaStampDecoder(Layer):
 
 ### This Project's Decoder (Without STN)
 
-Located in `decoder.py:9-53`:
+Located in `picode/models/stegastamp/decoder.py`:
 
 ```python
 class Decoder(nn.Module):

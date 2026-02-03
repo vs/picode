@@ -1,13 +1,55 @@
 [project]
 name = "picode"
 version = "0.1.0"
-description = "Encode and decode hidden messages in printed images"
+description = "PyTorch steganography framework for encoding/decoding hidden messages in images"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "click>=8.0",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+]
+lpips = [
+    "lpips>=0.1",
+]
+all = [
+    "picode[dev,lpips]",
+]
+
+[project.scripts]
+distort = "picode.distortions.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["picode*"]
 
 [tool.ruff]
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["picode/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

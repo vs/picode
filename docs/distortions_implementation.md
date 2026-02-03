@@ -118,7 +118,7 @@ encoded_image = tf.nn.conv2d(encoded_image, f, [1,1,1,1], padding='SAME')
 
 ### This Project's Implementation
 
-Located in `distortions/blur.py`:
+Located in `picode/distortions/native/blur.py`:
 
 ```python
 class RandomBlur(Distortion):
@@ -287,7 +287,7 @@ encoded_image = tf.clip_by_value(encoded_image, 0, 1)
 
 ### This Project's Implementation
 
-Located in `distortions/noise.py`:
+Located in `picode/distortions/native/noise.py`:
 
 ```python
 class GaussianNoise(Distortion):
@@ -406,7 +406,7 @@ encoded_image = tf.clip_by_value(encoded_image, 0, 1)
 
 #### This Project's Implementation
 
-Located in `distortions/color.py`:
+Located in `picode/distortions/native/color.py`:
 
 ```python
 class BrightnessHue(Distortion):
@@ -733,7 +733,7 @@ def jpeg_compress_decompress(image, downsample_c=True, rounding=diff_round, fact
 
 ### This Project's Implementation
 
-Located in `distortions/compression.py`:
+Located in `picode/distortions/native/compression.py`:
 
 ```python
 class JPEGCompression(Distortion):
@@ -990,7 +990,7 @@ input_warped += (1 - mask_warped) * image_input
 
 ### This Project's Implementation
 
-Located in `distortions/geometric.py`:
+Located in `picode/distortions/native/geometric.py`:
 
 ```python
 class PerspectiveWarp(Distortion):

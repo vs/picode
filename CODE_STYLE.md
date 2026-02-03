@@ -7,8 +7,8 @@
 - Use double quotes for strings
 
 ```bash
-ruff check util/distortions/ model/stegastamp/
-ruff format util/distortions/ model/stegastamp/
+ruff check picode/
+ruff format picode/
 ```
 
 ## Type Hints
@@ -19,7 +19,7 @@ ruff format util/distortions/ model/stegastamp/
 - Run mypy for type checking:
 
 ```bash
-mypy util/distortions/ model/stegastamp/
+mypy picode/
 ```
 
 ## Docstrings
@@ -46,18 +46,25 @@ def encode(self, image: Tensor, message: Tensor) -> Tensor:
 
 ## Module Organization
 
-### Distortions (`util/distortions/`)
+### Distortions (`picode/distortions/`)
 
-- One distortion type per file (blur.py, noise.py, etc.)
+- Base class in `base.py`
+- One distortion type per file in `native/` (blur.py, noise.py, etc.)
 - All distortions inherit from `Distortion` base class
 - Export public API in `__init__.py`
 
-### Model (`model/stegastamp/`)
+### Models (`picode/models/`)
 
+- Base classes in `base.py`
+- Each architecture in its own subdirectory (e.g., `stegastamp/`)
 - Encoder and decoder in separate files
 - Loss functions in `loss.py`
 - Training utilities in `train.py`
-- Export public API in `__init__.py`
+
+### ECC (`picode/ecc/`)
+
+- Base class in `base.py`
+- Each implementation in its own subdirectory (e.g., `bch/`, `ldpc/`)
 
 ## Testing
 
@@ -67,9 +74,10 @@ def encode(self, image: Tensor, message: Tensor) -> Tensor:
 - Standard assertions: shape preservation, range validity [0,1], gradient flow
 
 ```bash
-pytest util/tests/ -v          # Distortions tests
-pytest model/tests/ -v         # Model tests
-pytest -k "test_forward" -v    # Pattern matching
+pytest picode/tests/ -v                           # All tests
+pytest picode/tests/distortions/ -v               # Distortion tests
+pytest picode/tests/models/ -v                    # Model tests
+pytest -k "test_forward" -v                       # Pattern matching
 ```
 
 ## Naming Conventions
@@ -84,3 +92,18 @@ pytest -k "test_forward" -v    # Pattern matching
 - Format: NCHW (batch, channels, height, width)
 - Range: [0, 1] for images
 - Common test sizes: 400×400 for models, 64×64 for unit tests
+
+## Import Patterns
+
+```python
+# Distortions - import from specific backend
+from picode.distortions.native import GaussianBlur, Compose
+from picode.distortions.base import Distortion
+
+# Models - import from specific architecture
+from picode.models.stegastamp import Encoder, Decoder, train_step
+from picode.models.base import Encoder as BaseEncoder
+
+# ECC - import from specific implementation
+from picode.ecc.base import ECC
+```

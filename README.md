@@ -7,17 +7,25 @@ PyTorch steganography framework for encoding and decoding hidden messages in ima
 - **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
 - **CNN Decoder**: Extracts hidden messages even from distorted images
 - **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression for training robustness
-- **Training Utilities**: Loss functions and trainer class for end-to-end training
+- **Swappable Backends**: Support for multiple implementations (native, kornia) for benchmarking
+- **Error Correction Codes**: BCH and LDPC stubs for message robustness
 
 ## Project Structure
 
 ```
 picode/
-├── model/
-│   └── stegastamp/       # Encoder, decoder, loss, and training
-├── util/
-│   └── distortions/      # Differentiable image distortions
-└── docs/                 # Technical documentation
+├── distortions/           # Differentiable image distortions
+│   ├── base.py            # Distortion ABC
+│   ├── native/            # Pure PyTorch implementations
+│   └── kornia/            # Kornia-based implementations (stub)
+├── ecc/                   # Error correction codes
+│   ├── base.py            # ECC ABC
+│   ├── bch/               # BCH implementation (stub)
+│   └── ldpc/              # LDPC implementation (stub)
+├── models/                # Encoder/decoder models
+│   ├── base.py            # Encoder/Decoder ABC
+│   └── stegastamp/        # StegaStamp implementation
+└── tests/                 # Test suite
 ```
 
 ## Installation
@@ -27,9 +35,8 @@ picode/
 git clone <repo-url> && cd picode
 python -m venv venv && source venv/bin/activate
 
-# Install both packages
-cd util && pip install -e ".[dev]"
-cd ../model && pip install -e ".[dev]"
+# Install in development mode
+pip install -e ".[dev]"
 ```
 
 ## Quick Start
@@ -38,7 +45,7 @@ cd ../model && pip install -e ".[dev]"
 
 ```python
 import torch
-from stegastamp import Encoder, Decoder
+from picode.models.stegastamp import Encoder, Decoder
 
 # Initialize models
 encoder = Encoder(num_bits=100)
@@ -56,12 +63,15 @@ binary_message = (recovered > 0.5).float()
 ### Training with Distortions
 
 ```python
-from stegastamp import StegaStampTrainer
-from distortions import Compose, GaussianNoise, JPEGCompression, PerspectiveWarp
+from picode.models.stegastamp import StegaStampTrainer
+from picode.distortions.native import Compose, GaussianNoise, JPEGCompression, PerspectiveWarp
 
 # Create trainer
 trainer = StegaStampTrainer(num_bits=100)
-optimizer = torch.optim.Adam(trainer.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(
+    list(trainer.encoder.parameters()) + list(trainer.decoder.parameters()),
+    lr=1e-4
+)
 
 # Distortion pipeline for robustness
 distortion = Compose([
@@ -73,8 +83,10 @@ distortion = Compose([
 # Training loop
 for images in dataloader:
     messages = torch.randint(0, 2, (images.size(0), 100)).float()
-    losses = trainer.train_step(images, messages, distortion, optimizer)
-    print(f"Loss: {losses['loss']:.4f}, Message: {losses['message_loss']:.4f}")
+    encoded = trainer.encode(images, messages)
+    distorted = distortion(encoded)
+    decoded = trainer.decode(distorted)
+    # ... compute loss and optimize
 ```
 
 ### Distortions CLI
@@ -84,8 +96,8 @@ for images in dataloader:
 distort --list
 
 # Apply a distortion to an image
-distort input.png output.png gaussian-blur --intensity 0.5
-distort input.png output.png perspective --intensity 0.3
+distort gaussian-blur input.png -o output/ --intensity 0.5
+distort perspective-warp input.png -o output/ --intensity 0.3
 ```
 
 ## How It Works
@@ -114,7 +126,7 @@ distort input.png output.png perspective --intensity 0.3
 
 | Category | Distortions |
 |----------|-------------|
-| Blur | `GaussianBlur`, `MotionBlur` |
+| Blur | `GaussianBlur`, `MotionBlur`, `RandomBlur` |
 | Noise | `GaussianNoise` |
 | Color | `BrightnessHue`, `Contrast`, `Saturation` |
 | Geometric | `PerspectiveWarp`, `Rotation`, `Scale`, `Crop` |
@@ -123,11 +135,32 @@ distort input.png output.png perspective --intensity 0.3
 
 All distortions are differentiable and support an `intensity` parameter (0.0-1.0) for gradual training ramp-up.
 
+## Swapping Implementations
+
+The project supports multiple backends for benchmarking:
+
+```python
+# Native (pure PyTorch) implementation
+from picode.distortions.native import GaussianBlur
+
+# Kornia-based implementation (when available)
+from picode.distortions.kornia import GaussianBlur
+
+# Benchmark different backends
+backends = [
+    ("native", picode.distortions.native.GaussianBlur),
+    ("kornia", picode.distortions.kornia.GaussianBlur),
+]
+for name, BlurClass in backends:
+    blur = BlurClass(intensity=0.5)
+    result = benchmark(blur, test_images)
+```
+
 ## Documentation
 
-- [Distortions Library](util/README.md) - Detailed API for image distortions
-- [StegaStamp Model](model/README.md) - Encoder, decoder, and training API
-- [Implementation Comparison](docs/distortions_implementation.md) - Technical comparison with original StegaStamp
+- [Distortions Implementation](docs/distortions_implementation.md) - Technical comparison with original StegaStamp
+- [Model Implementation](docs/model_implementation.md) - Encoder, decoder, and training details
+- [Project Structure Design](docs/plans/2026-02-03-restructure-design.md) - Architecture decisions
 
 ## License
 
