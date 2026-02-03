@@ -18,12 +18,16 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "kornia>=0.7.0",
+]
+kornia = [
+    "kornia>=0.7.0",
 ]
 lpips = [
     "lpips>=0.1",
 ]
 all = [
-    "picode[dev,lpips]",
+    "picode[dev,lpips,kornia]",
 ]
 
 [project.scripts]
