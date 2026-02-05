@@ -1,6 +1,8 @@
 """BCH error correction code implementation."""
 
 import galois
+import numpy as np
+import torch
 from torch import Tensor
 
 from picode.ecc.base import ECC
@@ -39,7 +41,10 @@ class BCH(ECC):
         Returns:
             Codeword tensor (B, n) with BCH parity bits appended.
         """
-        raise NotImplementedError
+        device = message.device
+        msg_np = message.cpu().numpy().astype(int)
+        codewords = self._bch.encode(msg_np)
+        return torch.from_numpy(np.asarray(codewords)).float().to(device)
 
     def decode(self, codeword: Tensor) -> tuple[Tensor, Tensor]:
         """Decode and correct errors in codewords.
