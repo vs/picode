@@ -88,7 +88,25 @@ class LDPC(ECC):
         Returns:
             Encoded tensor (B, n) with values in {0, 1}.
         """
-        raise NotImplementedError("encode not yet implemented")
+        import torch
+
+        batch_size = message.shape[0]
+        device = message.device
+        dtype = message.dtype
+
+        # Convert to numpy for pyldpc
+        msg_np = message.detach().cpu().numpy().astype(np.int_)
+
+        # Encode each message in batch
+        encoded_list = []
+        for i in range(batch_size):
+            # G is (n, k), message is (k,), result is (n,)
+            codeword = (self._G @ msg_np[i]) % 2
+            encoded_list.append(codeword)
+
+        # Stack and convert back to tensor
+        encoded_np = np.stack(encoded_list, axis=0)
+        return torch.from_numpy(encoded_np).to(device=device, dtype=dtype)
 
     def decode(self, received: Tensor) -> Tensor:
         """Decode received soft values using belief propagation.
