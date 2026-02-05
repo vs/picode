@@ -49,3 +49,44 @@ class TestLDPCConstruction:
         assert (ldpc1.H == ldpc2.H).all()
         assert (ldpc1.G == ldpc2.G).all()
         assert ldpc1.message_length == ldpc2.message_length
+
+
+class TestLDPCEncode:
+    """Tests for LDPC encoding."""
+
+    def test_encode_shape(self) -> None:
+        """Encoded output has shape (B, n)."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        message = torch.randint(0, 2, (4, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        assert encoded.shape == (4, 198)
+
+    def test_encode_binary_output(self) -> None:
+        """Encoded output contains only 0s and 1s."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        message = torch.randint(0, 2, (4, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        assert torch.all((encoded == 0) | (encoded == 1))
+
+    def test_encode_batch_size_one(self) -> None:
+        """Encoding works with batch size 1."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        message = torch.randint(0, 2, (1, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        assert encoded.shape == (1, 198)
+
+    def test_encode_deterministic(self) -> None:
+        """Same message always produces same codeword."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        message = torch.randint(0, 2, (2, ldpc.message_length), dtype=torch.float32)
+
+        encoded1 = ldpc.encode(message)
+        encoded2 = ldpc.encode(message)
+
+        assert torch.equal(encoded1, encoded2)
