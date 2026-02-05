@@ -1,1 +1,1 @@
-"""ECC tests."""
+"""ECC test package."""
