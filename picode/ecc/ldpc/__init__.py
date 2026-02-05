@@ -1,3 +1,5 @@
-"""LDPC error correction code (stub)."""
+"""LDPC error correction code."""
 
-# TODO: Implement LDPC encoder/decoder
+from picode.ecc.ldpc.ldpc import LDPC
+
+__all__ = ["LDPC"]
