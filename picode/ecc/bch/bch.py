@@ -58,7 +58,27 @@ class BCH(ECC):
                   Failed decodes contain original bits (uncorrected).
                 - success: Boolean tensor (B,) indicating successful decodes.
         """
-        raise NotImplementedError
+        device = codeword.device
+        hard = (codeword > 0.5).cpu().numpy().astype(int)
+
+        batch_size = hard.shape[0]
+        messages = np.zeros((batch_size, self._bch.k), dtype=int)
+        success = np.ones(batch_size, dtype=bool)
+
+        for i in range(batch_size):
+            decoded, num_errors = self._bch.decode(hard[i : i + 1], errors=True)
+            num_errors_arr = np.atleast_1d(num_errors)
+            if num_errors_arr[0] == -1:
+                # Decoding failed - return original message bits
+                messages[i] = hard[i, : self._bch.k]
+                success[i] = False
+            else:
+                messages[i] = np.asarray(decoded)[0, : self._bch.k]
+
+        return (
+            torch.from_numpy(messages).float().to(device),
+            torch.from_numpy(success).to(device),
+        )
 
     @property
     def rate(self) -> float:
