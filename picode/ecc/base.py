@@ -25,14 +25,16 @@ class ECC(ABC):
         pass
 
     @abstractmethod
-    def decode(self, encoded: Tensor) -> Tensor:
+    def decode(self, encoded: Tensor) -> tuple[Tensor, Tensor]:
         """Decode and correct errors in an encoded message.
 
         Args:
             encoded: Encoded tensor (B, n) possibly with errors.
 
         Returns:
-            Corrected message tensor (B, k).
+            Tuple of:
+                - Corrected message tensor (B, k).
+                - Success boolean tensor (B,) indicating successful decodes.
         """
         pass
 
