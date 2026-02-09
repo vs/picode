@@ -122,3 +122,79 @@ class TestLDPCDecode:
         decoded = ldpc.decode(received)
 
         assert decoded.shape == (1, ldpc.message_length)
+
+
+class TestLDPCRoundtrip:
+    """Tests for encode -> decode roundtrip."""
+
+    def test_roundtrip_no_noise(self) -> None:
+        """Perfect recovery when no noise is added."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        torch.manual_seed(123)
+        message = torch.randint(0, 2, (4, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+        # Perfect channel: codeword as soft values
+        decoded = ldpc.decode(encoded)
+
+        assert torch.equal(decoded, message)
+
+    def test_roundtrip_low_noise(self) -> None:
+        """Recovery with ~5% bit flip noise."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42, snr=8.0)
+        torch.manual_seed(123)
+        message = torch.randint(0, 2, (8, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        # Add noise: flip ~5% of bits
+        noise_mask = torch.rand_like(encoded) < 0.05
+        noisy = torch.where(noise_mask, 1 - encoded, encoded)
+
+        decoded = ldpc.decode(noisy)
+
+        # Should recover at least half of messages perfectly
+        correct = (decoded == message).all(dim=1).sum()
+        assert correct >= 4, f"Only {correct}/8 messages recovered"
+
+    def test_roundtrip_moderate_noise(self) -> None:
+        """Recovery with ~7% bit flip noise - verify some messages decode perfectly."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42, snr=7.0)
+        torch.manual_seed(456)
+        message = torch.randint(0, 2, (8, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        # Add noise: flip ~7% of bits (within LDPC correction capability)
+        noise_mask = torch.rand_like(encoded) < 0.07
+        noisy = torch.where(noise_mask, 1 - encoded, encoded)
+
+        decoded = ldpc.decode(noisy)
+
+        # Should recover at least some messages perfectly
+        correct = (decoded == message).all(dim=1).sum()
+        assert correct >= 2, f"Only {correct}/8 messages recovered perfectly"
+
+    def test_soft_input_improves_recovery(self) -> None:
+        """Soft inputs (confidence values) improve recovery vs hard decisions."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        torch.manual_seed(789)
+        message = torch.randint(0, 2, (4, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+
+        # Add moderate noise
+        noise_mask = torch.rand_like(encoded) < 0.08
+        noisy_hard = torch.where(noise_mask, 1 - encoded, encoded)
+
+        # Soft version: uncertain where noise was added
+        noisy_soft = noisy_hard.clone()
+        noisy_soft[noise_mask] = 0.5  # Mark flipped bits as uncertain
+
+        decoded_hard = ldpc.decode(noisy_hard)
+        decoded_soft = ldpc.decode(noisy_soft)
+
+        # Soft should be at least as good as hard
+        errors_hard = (decoded_hard != message).sum()
+        errors_soft = (decoded_soft != message).sum()
+        assert errors_soft <= errors_hard

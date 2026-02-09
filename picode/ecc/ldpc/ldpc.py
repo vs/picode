@@ -130,10 +130,11 @@ class LDPC(ECC):
         recv_np = received.detach().cpu().numpy().astype(np.float64)
 
         # Convert [0, 1] probabilities to BPSK-like signal [-1, 1]
-        # P(bit=1) = 0 -> y = -1 (strong 0)
-        # P(bit=1) = 1 -> y = +1 (strong 1)
+        # pyldpc uses: +1 for bit 0, -1 for bit 1
+        # P(bit=1) = 0 -> y = +1 (strong 0)
+        # P(bit=1) = 1 -> y = -1 (strong 1)
         # P(bit=1) = 0.5 -> y = 0 (uncertain)
-        y = 2.0 * recv_np - 1.0
+        y = 1.0 - 2.0 * recv_np
 
         # Decode each codeword in batch
         decoded_list = []
