@@ -198,3 +198,60 @@ class TestLDPCRoundtrip:
         errors_hard = (decoded_hard != message).sum()
         errors_soft = (decoded_soft != message).sum()
         assert errors_soft <= errors_hard
+
+
+class TestLDPCParameters:
+    """Tests for various LDPC parameter configurations."""
+
+    @pytest.mark.parametrize("n,d_v,d_c", [
+        (198, 3, 6),   # Standard rate ~0.5
+        (150, 3, 6),   # Smaller codeword
+        (300, 2, 4),   # Different degrees
+        (200, 4, 8),   # Higher degrees (200 is divisible by 8)
+    ])
+    def test_various_parameters(self, n: int, d_v: int, d_c: int) -> None:
+        """LDPC works across different code configurations."""
+        ldpc = LDPC(n=n, d_v=d_v, d_c=d_c, seed=42)
+
+        torch.manual_seed(42)
+        message = torch.randint(0, 2, (2, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+        decoded = ldpc.decode(encoded)
+
+        assert torch.equal(decoded, message)
+        assert encoded.shape[1] == n
+        assert decoded.shape[1] == ldpc.message_length
+
+    @pytest.mark.parametrize("batch_size", [1, 4, 16])
+    def test_different_batch_sizes(self, batch_size: int) -> None:
+        """Works with various batch sizes."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+
+        torch.manual_seed(42)
+        message = torch.randint(0, 2, (batch_size, ldpc.message_length), dtype=torch.float32)
+
+        encoded = ldpc.encode(message)
+        decoded = ldpc.decode(encoded)
+
+        assert encoded.shape == (batch_size, 198)
+        assert decoded.shape == (batch_size, ldpc.message_length)
+        assert torch.equal(decoded, message)
+
+    def test_stegastamp_compatible(self) -> None:
+        """Configuration that gives k close to 100 for StegaStamp."""
+        # With d_v=3, d_c=6, rate ~0.5, so n=198 gives k~99
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+
+        # k should be close to 100 (exact value depends on matrix construction)
+        assert 90 <= ldpc.message_length <= 110, (
+            f"Expected k~100, got {ldpc.message_length}"
+        )
+
+        # Verify roundtrip works
+        torch.manual_seed(42)
+        message = torch.randint(0, 2, (2, ldpc.message_length), dtype=torch.float32)
+        encoded = ldpc.encode(message)
+        decoded = ldpc.decode(encoded)
+
+        assert torch.equal(decoded, message)
