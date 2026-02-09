@@ -118,4 +118,32 @@ class LDPC(ECC):
         Returns:
             Decoded binary tensor (B, k) with values in {0, 1}.
         """
-        raise NotImplementedError("decode not yet implemented")
+        import torch
+        from pyldpc import decode as ldpc_decode
+        from pyldpc import get_message
+
+        batch_size = received.shape[0]
+        device = received.device
+        dtype = received.dtype
+
+        # Convert to numpy with float64 (required by pyldpc's numba-jit decoder)
+        recv_np = received.detach().cpu().numpy().astype(np.float64)
+
+        # Convert [0, 1] probabilities to BPSK-like signal [-1, 1]
+        # P(bit=1) = 0 -> y = -1 (strong 0)
+        # P(bit=1) = 1 -> y = +1 (strong 1)
+        # P(bit=1) = 0.5 -> y = 0 (uncertain)
+        y = 2.0 * recv_np - 1.0
+
+        # Decode each codeword in batch
+        decoded_list = []
+        for i in range(batch_size):
+            # Decode using belief propagation
+            codeword = ldpc_decode(self._H, y[i], self._snr)
+            # Extract original message from systematic codeword
+            message = get_message(self._G, codeword)
+            decoded_list.append(message)
+
+        # Stack and convert back to tensor
+        decoded_np = np.stack(decoded_list, axis=0)
+        return torch.from_numpy(decoded_np).to(device=device, dtype=dtype)
