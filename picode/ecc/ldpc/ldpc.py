@@ -42,7 +42,7 @@ class LDPC(ECC):
         self._snr = snr
 
         # Generate LDPC matrices
-        self._H, self._G = make_ldpc(
+        H, G = make_ldpc(
             n,
             d_v,
             d_c,
@@ -50,9 +50,11 @@ class LDPC(ECC):
             sparse=True,
             seed=seed,
         )
+        self._H: NDArray[np.int_] = H
+        self._G: NDArray[np.int_] = G
 
         # k is derived from generator matrix shape
-        self._k = self._G.shape[1]
+        self._k: int = int(self._G.shape[1])
 
     @property
     def rate(self) -> float:
