@@ -10,6 +10,7 @@ dependencies = [
     "torchvision>=0.15",
     "click>=8.0",
     "pillow>=10.0",
+    "galois>=0.4.0",
 ]
 
 [project.optional-dependencies]
