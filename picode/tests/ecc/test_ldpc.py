@@ -90,3 +90,35 @@ class TestLDPCEncode:
         encoded2 = ldpc.encode(message)
 
         assert torch.equal(encoded1, encoded2)
+
+
+class TestLDPCDecode:
+    """Tests for LDPC decoding."""
+
+    def test_decode_shape(self) -> None:
+        """Decoded output has shape (B, k)."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        # Soft values in [0, 1]
+        received = torch.rand(4, 198)
+
+        decoded = ldpc.decode(received)
+
+        assert decoded.shape == (4, ldpc.message_length)
+
+    def test_decode_binary_output(self) -> None:
+        """Decoded output contains only 0s and 1s."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        received = torch.rand(4, 198)
+
+        decoded = ldpc.decode(received)
+
+        assert torch.all((decoded == 0) | (decoded == 1))
+
+    def test_decode_batch_size_one(self) -> None:
+        """Decoding works with batch size 1."""
+        ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
+        received = torch.rand(1, 198)
+
+        decoded = ldpc.decode(received)
+
+        assert decoded.shape == (1, ldpc.message_length)
