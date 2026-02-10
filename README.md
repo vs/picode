@@ -17,7 +17,7 @@ picode/
 ├── distortions/           # Differentiable image distortions
 │   ├── base.py            # Distortion ABC
 │   ├── native/            # Pure PyTorch implementations
-│   └── kornia/            # Kornia-based implementations (stub)
+│   └── kornia/            # Kornia-based implementations
 ├── ecc/                   # Error correction codes
 │   ├── base.py            # ECC ABC
 │   ├── bch/               # BCH implementation (stub)
@@ -135,21 +135,33 @@ distort perspective-warp input.png -o output/ --intensity 0.3
 
 All distortions are differentiable and support an `intensity` parameter (0.0-1.0) for gradual training ramp-up.
 
-## Swapping Implementations
+## Using the Kornia Backend
 
-The project supports multiple backends for benchmarking:
+For GPU-optimized performance, install and use the Kornia backend:
+
+```bash
+# Install with Kornia support
+pip install picode[kornia]
+```
 
 ```python
-# Native (pure PyTorch) implementation
-from picode.distortions.native import GaussianBlur
+# Just change the import - API is identical
+from picode.distortions.kornia import GaussianBlur, Compose, JPEGCompression
 
-# Kornia-based implementation (when available)
-from picode.distortions.kornia import GaussianBlur
+# Same usage as native backend
+blur = GaussianBlur(intensity=0.5, kernel_size=7)
+output = blur(image)
+```
 
-# Benchmark different backends
+### Benchmarking Backends
+
+```python
+from picode.distortions import native, kornia
+
+# Compare performance
 backends = [
-    ("native", picode.distortions.native.GaussianBlur),
-    ("kornia", picode.distortions.kornia.GaussianBlur),
+    ("native", native.GaussianBlur),
+    ("kornia", kornia.GaussianBlur),
 ]
 for name, BlurClass in backends:
     blur = BlurClass(intensity=0.5)

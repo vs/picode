@@ -23,12 +23,16 @@ dev = [
     "mypy",
     "types-PyYAML",
     "tensorboard>=2.0",
+    "kornia>=0.7.0",
+]
+kornia = [
+    "kornia>=0.7.0",
 ]
 lpips = [
     "lpips>=0.1",
 ]
 all = [
-    "picode[dev,lpips]",
+    "picode[dev,lpips,kornia]",
 ]
 
 [project.scripts]
