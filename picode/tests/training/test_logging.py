@@ -1,9 +1,12 @@
 """Tests for training loggers."""
 
+from pathlib import Path
+
 import torch
 
 from picode.training.logging.base import Logger
 from picode.training.logging.console import ConsoleLogger
+from picode.training.logging.tensorboard import TensorBoardLogger
 
 
 class TestConsoleLogger:
@@ -40,3 +43,25 @@ class TestConsoleLogger:
         logger.log_scalar("loss", 0.5, step=10)
         captured = capsys.readouterr()
         assert "step=10" in captured.out
+
+
+class TestTensorBoardLogger:
+    def test_creates_log_dir(self, tmp_path: Path) -> None:
+        log_dir = tmp_path / "runs"
+        logger = TensorBoardLogger(str(log_dir), "test_exp")
+        logger.close()
+        assert (log_dir / "test_exp").exists()
+
+    def test_log_scalar(self, tmp_path: Path) -> None:
+        logger = TensorBoardLogger(str(tmp_path), "test_exp")
+        logger.log_scalar("loss", 0.5, step=1)
+        logger.close()
+        # Verify event file was created
+        event_files = list((tmp_path / "test_exp").glob("events.out.*"))
+        assert len(event_files) == 1
+
+    def test_log_image(self, tmp_path: Path) -> None:
+        logger = TensorBoardLogger(str(tmp_path), "test_exp")
+        image = torch.rand(3, 64, 64)
+        logger.log_image("sample", image, step=1)
+        logger.close()

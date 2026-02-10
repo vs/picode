@@ -22,6 +22,7 @@ dev = [
     "ruff",
     "mypy",
     "types-PyYAML",
+    "tensorboard>=2.0",
 ]
 lpips = [
     "lpips>=0.1",
