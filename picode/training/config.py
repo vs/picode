@@ -1,6 +1,10 @@
 """Training configuration dataclasses."""
 
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 @dataclass
@@ -105,3 +109,75 @@ class Config:
     distortion: DistortionConfig = field(default_factory=DistortionConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge override into base."""
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _dict_to_config(data: dict[str, Any]) -> Config:
+    """Convert nested dict to Config, handling nested dataclasses."""
+    # Handle DataConfig (required)
+    data["data"] = DataConfig(**data["data"])
+
+    # Handle TrainingConfig
+    if "training" in data:
+        data["training"] = TrainingConfig(**data["training"])
+
+    # Handle LossConfig with nested LossRamps
+    if "loss" in data:
+        loss_data = data["loss"]
+        for key in ["message", "l2", "lpips"]:
+            if key in loss_data and isinstance(loss_data[key], dict):
+                loss_data[key] = LossRamp(**loss_data[key])
+        if "gan" in loss_data and loss_data["gan"] is not None:
+            loss_data["gan"] = LossRamp(**loss_data["gan"])
+        if "yuv_weights" in loss_data:
+            loss_data["yuv_weights"] = tuple(loss_data["yuv_weights"])
+        data["loss"] = LossConfig(**loss_data)
+
+    # Handle DistortionConfig with nested DistortionRamps
+    if "distortion" in data:
+        dist_data = data["distortion"]
+        for key in ["perspective", "brightness", "saturation", "hue", "noise", "jpeg_quality"]:
+            if key in dist_data and isinstance(dist_data[key], dict):
+                dist_data[key] = DistortionRamp(**dist_data[key])
+        if "contrast" in dist_data:
+            dist_data["contrast"] = tuple(dist_data["contrast"])
+        data["distortion"] = DistortionConfig(**dist_data)
+
+    # Handle CheckpointConfig
+    if "checkpoint" in data:
+        data["checkpoint"] = CheckpointConfig(**data["checkpoint"])
+
+    # Handle LoggingConfig
+    if "logging" in data:
+        data["logging"] = LoggingConfig(**data["logging"])
+
+    return Config(**data)
+
+
+def load_config(path: str | Path, overrides: dict[str, Any] | None = None) -> Config:
+    """Load config from YAML file with optional overrides.
+
+    Args:
+        path: Path to YAML config file.
+        overrides: Optional dict of overrides to apply.
+
+    Returns:
+        Parsed Config object.
+    """
+    with open(path) as f:
+        data = yaml.safe_load(f)
+
+    if overrides:
+        data = _deep_merge(data, overrides)
+
+    return _dict_to_config(data)

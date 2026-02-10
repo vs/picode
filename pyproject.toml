@@ -12,6 +12,7 @@ dependencies = [
     "pillow>=10.0",
     "pyldpc>=0.7.9",
     "galois>=0.4.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "types-PyYAML",
 ]
 lpips = [
     "lpips>=0.1",

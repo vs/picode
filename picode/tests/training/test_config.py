@@ -1,5 +1,7 @@
 """Tests for training configuration."""
 
+from pathlib import Path
+
 from picode.training.config import (
     CheckpointConfig,
     Config,
@@ -10,6 +12,7 @@ from picode.training.config import (
     LossConfig,
     LossRamp,
     TrainingConfig,
+    load_config,
 )
 
 
@@ -101,3 +104,54 @@ class TestConfig:
         assert cfg.experiment_name == "test"
         assert cfg.training.num_steps == 140000
         assert cfg.loss.l2.scale == 2.0
+
+
+class TestLoadConfig:
+    def test_load_minimal_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """
+experiment_name: test_exp
+data:
+  source: folder
+  path: /data/images
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        cfg = load_config(str(config_file))
+        assert cfg.experiment_name == "test_exp"
+        assert cfg.data.source == "folder"
+        assert cfg.data.path == "/data/images"
+        assert cfg.training.num_steps == 140000  # default
+
+    def test_load_with_overrides(self, tmp_path: Path) -> None:
+        yaml_content = """
+experiment_name: test_exp
+data:
+  source: folder
+  path: /data/images
+training:
+  lr: 0.001
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        cfg = load_config(str(config_file), overrides={"training": {"lr": 0.0003}})
+        assert cfg.training.lr == 0.0003
+
+    def test_load_nested_loss_ramp(self, tmp_path: Path) -> None:
+        yaml_content = """
+experiment_name: test_exp
+data:
+  source: folder
+  path: /data
+loss:
+  l2:
+    scale: 1.5
+    ramp_steps: 10000
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        cfg = load_config(str(config_file))
+        assert cfg.loss.l2.scale == 1.5
+        assert cfg.loss.l2.ramp_steps == 10000
