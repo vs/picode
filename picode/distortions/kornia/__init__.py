@@ -5,7 +5,7 @@ API is identical to native backend - this is a drop-in replacement.
 """
 
 try:
-    import kornia
+    import kornia  # noqa: F401 - imported for availability check
 except ImportError as e:
     raise ImportError(
         "Kornia backend requires kornia. Install with: pip install picode[kornia]"
