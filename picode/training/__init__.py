@@ -1,0 +1,1 @@
+"""Training configuration and utilities."""
