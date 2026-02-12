@@ -1,0 +1,67 @@
+# configs/stegastamp_baseline.yaml
+# Baseline configuration matching StegaStamp defaults
+
+experiment_name: stegastamp_baseline
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 4
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 500
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+  l2_edge_gain: 10.0
+  l2_edge_ramp_steps: 20000
+  l2_edge_delay_steps: 60000
+  yuv_weights: [1.0, 1.0, 1.0]
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 10000
+  brightness:
+    strength: 0.3
+    ramp_steps: 1000
+  saturation:
+    strength: 1.0
+    ramp_steps: 1000
+  hue:
+    strength: 0.1
+    ramp_steps: 1000
+  noise:
+    strength: 0.02
+    ramp_steps: 1000
+  contrast: [0.5, 1.5]
+  contrast_ramp_steps: 1000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 1000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 3
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
+  tensorboard_dir: runs
