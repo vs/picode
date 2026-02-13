@@ -147,7 +147,7 @@ class Contrast(Distortion):
 
 
 class Saturation(Distortion):
-    """Adjust image saturation.
+    """Adjust image saturation using luminance-based desaturation.
 
     Matches StegaStamp models.py:156-157:
     encoded_image_lum = sum(encoded_image * [.3, .6, .1], axis=channels)
@@ -155,6 +155,9 @@ class Saturation(Distortion):
 
     Note: StegaStamp's formula is inverted - higher rnd_sat = LESS saturation.
     rnd_sat=0 means full color, rnd_sat=1 means grayscale.
+
+    This luminance-based approach is ~10x faster than true HSV saturation
+    (used by kornia backend) because it avoids color space conversions.
 
     Args:
         intensity: Strength of effect (0.0 to 1.0).

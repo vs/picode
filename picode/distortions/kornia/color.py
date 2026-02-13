@@ -162,19 +162,14 @@ class Contrast(Distortion):
 class Saturation(Distortion):
     """Adjust image saturation using Kornia.
 
-    Matches StegaStamp models.py:156-157:
-    encoded_image_lum = sum(encoded_image * [.3, .6, .1], axis=channels)
-    encoded_image = (1 - rnd_sat) * encoded_image + rnd_sat * encoded_image_lum
+    WARNING: This implementation differs from native backend and StegaStamp.
 
-    Note: StegaStamp's formula is inverted - higher rnd_sat = LESS saturation.
-    rnd_sat=0 means full color, rnd_sat=1 means grayscale.
+    - Native/StegaStamp: Luminance-based desaturation (weighted grayscale blend)
+    - Kornia: True HSV saturation adjustment (RGB→HSV→modify S→RGB)
 
-    Kornia's saturation_factor works differently:
-    - saturation_factor=0 means grayscale
-    - saturation_factor=1 means no change
-    - saturation_factor>1 means increased saturation
-
-    We convert: saturation_factor = 1.0 - rnd_sat
+    The kornia approach is ~10x slower due to color space conversions but
+    provides true saturation control. For StegaStamp-compatible training,
+    use the native backend.
 
     Args:
         intensity: Strength of effect (0.0 to 1.0).
