@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Protocol
 
+import torch
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
@@ -67,6 +68,6 @@ def create_dataloader(config: DataConfig, image_size: int) -> DataLoader[Tensor]
         batch_size=config.batch_size,
         shuffle=True,
         num_workers=config.num_workers,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
         drop_last=True,
     )
