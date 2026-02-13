@@ -6,9 +6,9 @@ PyTorch steganography framework for encoding and decoding hidden messages in ima
 
 - **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
 - **CNN Decoder**: Extracts hidden messages even from distorted images
-- **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression for training robustness
-- **Swappable Backends**: Support for multiple implementations (native, kornia) for benchmarking
-- **Error Correction Codes**: BCH and LDPC stubs for message robustness
+- **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression with swappable backends (native PyTorch, Kornia)
+- **Error Correction Codes**: BCH and LDPC implementations for message robustness
+- **Training Infrastructure**: YAML config, curriculum learning, checkpointing, TensorBoard logging
 
 ## Project Structure
 
@@ -20,11 +20,17 @@ picode/
 │   └── kornia/            # Kornia-based implementations
 ├── ecc/                   # Error correction codes
 │   ├── base.py            # ECC ABC
-│   ├── bch/               # BCH implementation (stub)
-│   └── ldpc/              # LDPC implementation (stub)
+│   ├── bch/               # BCH implementation (galois library)
+│   └── ldpc/              # LDPC implementation (pyldpc library)
 ├── models/                # Encoder/decoder models
 │   ├── base.py            # Encoder/Decoder ABC
 │   └── stegastamp/        # StegaStamp implementation
+├── training/              # Training infrastructure
+│   ├── config.py          # YAML config loading
+│   ├── trainer.py         # Trainer with loss ramping
+│   ├── evaluation.py      # Evaluator with robustness sweeps
+│   ├── checkpointing.py   # Checkpoint management
+│   └── logging/           # Console and TensorBoard loggers
 └── tests/                 # Test suite
 ```
 
@@ -37,6 +43,9 @@ python -m venv venv && source venv/bin/activate
 
 # Install in development mode
 pip install -e ".[dev]"
+
+# Optional: Install with Kornia backend support
+pip install -e ".[kornia]"
 ```
 
 ## Quick Start
@@ -63,13 +72,14 @@ binary_message = (recovered > 0.5).float()
 ### Training with Distortions
 
 ```python
-from picode.models.stegastamp import StegaStampTrainer
+from picode.models.stegastamp import Encoder, Decoder, train_step
 from picode.distortions.native import Compose, GaussianNoise, JPEGCompression, PerspectiveWarp
 
-# Create trainer
-trainer = StegaStampTrainer(num_bits=100)
+# Initialize models
+encoder = Encoder(num_bits=100)
+decoder = Decoder(num_bits=100)
 optimizer = torch.optim.Adam(
-    list(trainer.encoder.parameters()) + list(trainer.decoder.parameters()),
+    list(encoder.parameters()) + list(decoder.parameters()),
     lr=1e-4
 )
 
@@ -82,11 +92,43 @@ distortion = Compose([
 
 # Training loop
 for images in dataloader:
-    messages = torch.randint(0, 2, (images.size(0), 100)).float()
-    encoded = trainer.encode(images, messages)
-    distorted = distortion(encoded)
-    decoded = trainer.decode(distorted)
-    # ... compute loss and optimize
+    losses = train_step(
+        encoder=encoder,
+        decoder=decoder,
+        images=images,
+        distortion=distortion,
+        optimizer=optimizer,
+    )
+    print(f"Loss: {losses['loss']:.4f}, Accuracy: {losses['accuracy']:.2%}")
+```
+
+### Using Error Correction
+
+```python
+from picode.ecc import BCH
+from picode.ecc.ldpc import LDPC
+
+# BCH: corrects up to 10 bit errors in 127-bit codewords
+bch = BCH(n=127, k=64)
+message = torch.randint(0, 2, (4, 64)).float()
+codeword = bch.encode(message)
+decoded, success = bch.decode(codeword)
+
+# LDPC: soft-decision belief propagation decoding
+ldpc = LDPC(n=200, d_v=3, d_c=6)
+message = torch.randint(0, 2, (4, ldpc.message_length)).float()
+codeword = ldpc.encode(message)
+decoded = ldpc.decode(codeword.float())
+```
+
+### Training with Config File
+
+```bash
+# Train with default config
+picode-train --config configs/stegastamp_baseline.yaml
+
+# Override specific settings
+picode-train --config configs/stegastamp_baseline.yaml --lr 0.0002 --num-steps 50000
 ```
 
 ### Distortions CLI
@@ -153,7 +195,19 @@ blur = GaussianBlur(intensity=0.5, kernel_size=7)
 output = blur(image)
 ```
 
+### Backend Differences
+
+The native and Kornia backends have identical APIs but may produce slightly different results:
+
+- **Saturation**: Native uses StegaStamp's RGB luminance weights (0.3, 0.6, 0.1); Kornia uses standard Rec.601 weights
+- **JPEG**: Kornia uses `jpeg_codec_differentiable` for more accurate compression simulation
+
 ### Benchmarking Backends
+
+```bash
+# Run backend benchmarks
+pytest picode/tests/benchmarks/ -v
+```
 
 ```python
 from picode.distortions import native, kornia
@@ -167,6 +221,51 @@ for name, BlurClass in backends:
     blur = BlurClass(intensity=0.5)
     result = benchmark(blur, test_images)
 ```
+
+## Training Configuration
+
+Training is configured via YAML files (see `configs/stegastamp_baseline.yaml`):
+
+```yaml
+experiment_name: my_experiment
+
+data:
+  path: ./data/train
+  batch_size: 4
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+
+loss:
+  message: { scale: 1.0, ramp_steps: 1 }
+  l2: { scale: 1.5, ramp_steps: 20000 }
+  lpips: { scale: 1.0, ramp_steps: 20000 }
+
+distortion:
+  strategy: curriculum  # curriculum, fixed, random, none
+  perspective: { strength: 0.1, ramp_steps: 10000 }
+  noise: { strength: 0.02, ramp_steps: 1000 }
+  jpeg_quality: { strength: 25, ramp_steps: 1000 }
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+
+logging:
+  backends: [console, tensorboard]
+  tensorboard_dir: runs
+```
+
+### Distortion Strategies
+
+- **curriculum**: Gradually increase distortion strength during training (recommended)
+- **fixed**: Apply distortions at constant strength
+- **random**: Randomly sample distortion strength each step
+- **none**: No distortions (for baseline comparison)
 
 ## Documentation
 
