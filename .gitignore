@@ -45,6 +45,10 @@ outputs/
 logs/
 wandb/
 
+# Training artifacts
+checkpoints/
+runs/
+
 # OS
 .DS_Store
 Thumbs.db
