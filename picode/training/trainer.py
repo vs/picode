@@ -120,6 +120,7 @@ class Trainer:
         # Create optimizer
         params = list(self.encoder.parameters()) + list(self.decoder.parameters())
         self.optimizer = torch.optim.Adam(params, lr=config.training.lr)
+        self.scheduler = None  # No scheduler by default
 
         # Create dataloader
         self.dataloader = create_dataloader(config.data, config.training.image_size)
