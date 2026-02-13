@@ -43,15 +43,26 @@ picode/
 │   └── kornia/            # Kornia-based implementations
 ├── ecc/                   # Error correction codes
 │   ├── base.py            # ECC ABC
-│   ├── bch/               # BCH implementation
-│   └── ldpc/              # LDPC implementation
+│   ├── bch/               # BCH implementation (galois library)
+│   └── ldpc/              # LDPC implementation (pyldpc library)
 ├── models/                # Encoder/decoder models
 │   ├── base.py            # Encoder/Decoder ABC
 │   └── stegastamp/        # StegaStamp implementation
+├── training/              # Training infrastructure
+│   ├── config.py          # YAML config loading
+│   ├── trainer.py         # Trainer with loss ramping
+│   ├── evaluation.py      # Evaluator with robustness sweeps
+│   ├── checkpointing.py   # Checkpoint management
+│   ├── distortion_strategy.py  # Curriculum, fixed, random strategies
+│   ├── data.py            # Dataset and dataloader utilities
+│   ├── cli.py             # Training CLI
+│   └── logging/           # Logger implementations
 └── tests/                 # Test suite
     ├── distortions/
     ├── ecc/
-    └── models/
+    ├── models/
+    ├── training/
+    └── benchmarks/
 ```
 
 ## Adding a New Implementation
@@ -76,6 +87,18 @@ picode/
 2. Implement ECC inheriting from `picode.ecc.base.ECC`
 3. Export in `__init__.py`
 4. Add tests in `picode/tests/ecc/`
+
+### New Training Component
+
+1. Add module in `picode/training/`
+2. Follow existing patterns (dataclasses for config, protocols for interfaces)
+3. Export in `picode/training/__init__.py`
+4. Add tests in `picode/tests/training/`
+
+Key training components:
+- **Distortion strategies**: Inherit from base strategy, implement `get_distortion(step)` method
+- **Loggers**: Implement the `Logger` protocol from `picode.training.logging.base`
+- **Config sections**: Use dataclasses with `from_dict` class methods
 
 ## Code Review
 
@@ -116,6 +139,13 @@ image quality during training.
 ```
 
 ```
+feat(training): add curriculum distortion strategy
+
+Implements gradual distortion strength ramping during training,
+matching StegaStamp's curriculum learning approach.
+```
+
+```
 fix: clamp output values to [0, 1] range
 
 Some distortions could produce values outside valid range,
@@ -130,7 +160,7 @@ Keep messages concise. First line under 72 characters.
 
 ## Testing Guidelines
 
-- Test files mirror source files (e.g., `blur.py` → `test_blur.py`)
+- Test files mirror source files (e.g., `blur.py` -> `test_blur.py`)
 - Use fixtures from `conftest.py` for common test data
 - Always test:
   - Output shape preservation
@@ -151,4 +181,43 @@ def test_encoder_gradient_flow(sample_image, sample_message):
 
     assert sample_image.grad is not None
     assert not torch.isnan(sample_image.grad).any()
+```
+
+### Dual-Backend Distortion Tests
+
+Distortion tests should be parametrized to test both backends:
+
+```python
+import pytest
+
+@pytest.mark.parametrize("backend", ["native", "kornia"])
+def test_gaussian_blur_shape(sample_image, backend):
+    if backend == "native":
+        from picode.distortions.native import GaussianBlur
+    else:
+        from picode.distortions.kornia import GaussianBlur
+
+    blur = GaussianBlur(intensity=0.5)
+    output = blur(sample_image)
+    assert output.shape == sample_image.shape
+```
+
+### Training Tests
+
+Training tests should use small models and few steps:
+
+```python
+def test_trainer_step(tmp_path):
+    from picode.training import Trainer, Config
+
+    config = Config(
+        training=TrainingConfig(num_steps=10, num_bits=10),
+        # ... minimal config
+    )
+    trainer = Trainer(config)
+
+    # Run a few steps
+    for _ in range(3):
+        metrics = trainer.step()
+        assert "loss" in metrics
 ```
