@@ -3,6 +3,8 @@
 Uses kornia.geometry.transform for geometric operations. API matches native geometric.py exactly.
 """
 
+from typing import Any
+
 import kornia.geometry.transform
 import torch
 from torch import Tensor
@@ -58,7 +60,7 @@ class Rotation(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample rotation parameters."""
         effective_max = self.max_angle * self.intensity
         angle = (torch.rand(1).item() * 2 - 1) * effective_max
@@ -152,7 +154,7 @@ class Scale(Distortion):
         output = torch.cat(outputs, dim=0)
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample scale parameters."""
         effective_min = 1.0 + (self.min_scale - 1.0) * self.intensity
         effective_max = 1.0 + (self.max_scale - 1.0) * self.intensity
@@ -175,7 +177,7 @@ class Crop(Distortion):
     def __init__(self, intensity: float = 0.5, min_ratio: float = 0.7):
         super().__init__(intensity)
         self.min_ratio = min_ratio
-        self._current_crop: dict | None = None
+        self._current_crop: dict[str, float] | None = None
 
     def forward(self, x: Tensor) -> Tensor:
         """Apply crop and resize using kornia.geometry.transform.crop_and_resize.
@@ -238,7 +240,7 @@ class Crop(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample crop parameters."""
         effective_min = 1.0 - (1.0 - self.min_ratio) * self.intensity
         ratio = torch.rand(1).item() * (1.0 - effective_min) + effective_min
@@ -315,6 +317,6 @@ class PerspectiveWarp(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample perspective warp parameters."""
         return {"scale": self.scale}

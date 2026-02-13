@@ -4,6 +4,7 @@ Uses kornia.filters for blur operations. API matches native blur.py exactly.
 """
 
 import math
+from typing import Any
 
 import kornia.filters
 import torch
@@ -50,7 +51,7 @@ class GaussianBlur(Distortion):
             sigma=(effective_sigma, effective_sigma),
         )
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample sigma in StegaStamp range [1.0, 3.0]."""
         return {"sigma": 1.0 + torch.rand(1).item() * 2.0}
 
@@ -108,7 +109,7 @@ class MotionBlur(Distortion):
             direction=direction,
         )
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample angle and sigma in StegaStamp ranges."""
         return {
             "angle": torch.rand(1).item() * 2.0 * math.pi,
@@ -187,7 +188,7 @@ class RandomBlur(Distortion):
             # Identity (no blur)
             return x
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample which blur type will be used."""
         t = torch.rand(1).item()
         if t < self.prob_gauss:

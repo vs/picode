@@ -110,7 +110,7 @@ class LDPC(ECC):
         encoded_np = np.stack(encoded_list, axis=0)
         return torch.from_numpy(encoded_np).to(device=device, dtype=dtype)
 
-    def decode(self, received: Tensor) -> Tensor:
+    def decode(self, received: Tensor) -> tuple[Tensor, Tensor]:
         """Decode received soft values using belief propagation.
 
         Args:
@@ -118,7 +118,9 @@ class LDPC(ECC):
                 representing P(bit=1).
 
         Returns:
-            Decoded binary tensor (B, k) with values in {0, 1}.
+            Tuple of:
+                - Decoded binary tensor (B, k) with values in {0, 1}.
+                - Success boolean tensor (B,) indicating if parity check passed.
         """
         import torch
         from pyldpc import decode as ldpc_decode
@@ -140,13 +142,20 @@ class LDPC(ECC):
 
         # Decode each codeword in batch
         decoded_list = []
+        success_list = []
         for i in range(batch_size):
             # Decode using belief propagation
             codeword = ldpc_decode(self._H, y[i], self._snr)
             # Extract original message from systematic codeword
             message = get_message(self._G, codeword)
             decoded_list.append(message)
+            # Check parity: H @ codeword = 0 (mod 2) means valid codeword
+            syndrome = (self._H @ codeword.astype(np.int_)) % 2
+            success_list.append(np.all(syndrome == 0))
 
         # Stack and convert back to tensor
         decoded_np = np.stack(decoded_list, axis=0)
-        return torch.from_numpy(decoded_np).to(device=device, dtype=dtype)
+        success_np = np.array(success_list, dtype=np.bool_)
+        decoded = torch.from_numpy(decoded_np).to(device=device, dtype=dtype)
+        success = torch.from_numpy(success_np).to(device=device)
+        return decoded, success

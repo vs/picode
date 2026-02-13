@@ -6,6 +6,8 @@ Matches StegaStamp implementation:
 - Saturation (models.py:156-157): Lerp between color and luminance
 """
 
+from typing import Any
+
 import torch
 from torch import Tensor
 
@@ -75,7 +77,7 @@ class BrightnessHue(Distortion):
 
         return torch.clamp(adjusted, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random parameters."""
         return {
             "rnd_bri": torch.rand(1).item() * self.rnd_bri,
@@ -138,7 +140,7 @@ class Contrast(Distortion):
 
         return x * contrast_scale
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random contrast scale."""
         return {
             "contrast_scale": self.contrast_low
@@ -204,6 +206,6 @@ class Saturation(Distortion):
 
         return adjusted
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random saturation factor."""
         return {"rnd_sat": torch.rand(1).item() * self.rnd_sat}

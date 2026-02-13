@@ -1,6 +1,7 @@
 """Base class for all distortions."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from torch import Tensor, nn
 
@@ -43,7 +44,7 @@ class Distortion(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Randomly sample distortion parameters.
 
         Called during training to introduce variation. Parameters are sampled
@@ -54,7 +55,7 @@ class Distortion(nn.Module, ABC):
         """
         pass
 
-    def set_parameters(self, **kwargs) -> None:
+    def set_parameters(self, **kwargs: Any) -> None:
         """Set specific parameter values.
 
         Used for deterministic application (e.g., CLI visualization).

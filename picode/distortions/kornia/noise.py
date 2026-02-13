@@ -4,6 +4,8 @@ Note: Kornia doesn't have a direct GaussianNoise equivalent,
 so we use the same torch.randn approach as native.
 """
 
+from typing import Any
+
 import torch
 from torch import Tensor
 
@@ -35,6 +37,6 @@ class GaussianNoise(Distortion):
         noise = torch.randn_like(x) * effective_std
         return torch.clamp(x + noise, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random noise parameters."""
         return {"std": torch.rand(1).item() * self.std}

@@ -1,5 +1,7 @@
 """Compression distortions using Kornia."""
 
+from typing import Any
+
 import kornia.enhance
 import torch
 from torch import Tensor
@@ -40,7 +42,7 @@ class JPEGCompression(Distortion):
 
         return torch.clamp(output, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random compression parameters."""
         quality = int(10 + torch.rand(1).item() * 80)
         return {"quality": quality}

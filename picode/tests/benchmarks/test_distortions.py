@@ -3,7 +3,7 @@
 Run with: pytest picode/tests/benchmarks/ --benchmark-only -v
 """
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import torch
@@ -49,7 +49,7 @@ def test_distortion_benchmark(
         result = distortion(benchmark_image)
         if device.type == "cuda":
             torch.cuda.synchronize()
-        return result
+        return cast(Tensor, result)
 
     # Set benchmark group for nice comparison tables
     benchmark.group = distortion_name

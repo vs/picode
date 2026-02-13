@@ -60,6 +60,11 @@ python_version = "3.10"
 strict = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = "picode.tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
 [tool.pytest.ini_options]
 testpaths = ["picode/tests"]
 python_files = ["test_*.py"]

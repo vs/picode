@@ -7,19 +7,19 @@ from picode.training.config import (
     DataConfig,
     DistortionConfig,
     DistortionRamp,
-    load_config,
     LoggingConfig,
     LossConfig,
     LossRamp,
     TrainingConfig,
+    load_config,
 )
-from picode.training.data import create_dataloader, FolderDataset
+from picode.training.data import FolderDataset, create_dataloader
 from picode.training.distortion_strategy import (
-    create_distortion_strategy,
     CurriculumDistortion,
     FixedDistortion,
     NoDistortion,
     RandomDistortion,
+    create_distortion_strategy,
 )
 from picode.training.evaluation import (
     DEFAULT_ROBUSTNESS_SWEEP,

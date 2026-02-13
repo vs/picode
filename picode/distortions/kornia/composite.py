@@ -3,6 +3,8 @@
 Note: This is identical to native since it's just sequential application.
 """
 
+from typing import cast
+
 from torch import Tensor, nn
 
 from picode.distortions.base import Distortion
@@ -33,4 +35,4 @@ class Compose(nn.Module):
 
     def __getitem__(self, idx: int) -> Distortion:
         """Get distortion by index."""
-        return self.distortions[idx]
+        return cast(Distortion, self.distortions[idx])

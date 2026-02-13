@@ -2,6 +2,7 @@
 
 import torch
 
+from picode.training.config import DistortionConfig, DistortionRamp
 from picode.training.distortion_strategy import (
     CurriculumDistortion,
     FixedDistortion,
@@ -9,7 +10,6 @@ from picode.training.distortion_strategy import (
     RandomDistortion,
     create_distortion_strategy,
 )
-from picode.training.config import DistortionConfig, DistortionRamp
 
 
 class TestNoDistortion:
@@ -33,7 +33,7 @@ class TestFixedDistortion:
 
 class TestRandomDistortion:
     def test_applies_random_subset(self) -> None:
-        from picode.distortions.native import GaussianNoise, BrightnessHue, Saturation
+        from picode.distortions.native import BrightnessHue, GaussianNoise, Saturation
 
         distortions = [
             GaussianNoise(std=0.1),
@@ -46,7 +46,7 @@ class TestRandomDistortion:
         assert result.shape == image.shape
 
     def test_num_apply_range(self) -> None:
-        from picode.distortions.native import GaussianNoise, BrightnessHue, Saturation
+        from picode.distortions.native import BrightnessHue, GaussianNoise, Saturation
 
         distortions = [
             GaussianNoise(std=0.1),

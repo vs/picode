@@ -1,5 +1,7 @@
 """Fixtures for distortion backend benchmarks."""
 
+from typing import cast
+
 import pytest
 import torch
 
@@ -7,13 +9,13 @@ import torch
 @pytest.fixture(params=["native", "kornia"])
 def backend(request: pytest.FixtureRequest) -> str:
     """Parameterized backend fixture."""
-    return request.param
+    return cast(str, request.param)
 
 
 @pytest.fixture(params=[1, 8])
 def batch_size(request: pytest.FixtureRequest) -> int:
     """Parameterized batch size fixture."""
-    return request.param
+    return cast(int, request.param)
 
 
 @pytest.fixture

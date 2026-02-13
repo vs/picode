@@ -101,16 +101,17 @@ class TestLDPCDecode:
         # Soft values in [0, 1]
         received = torch.rand(4, 198)
 
-        decoded = ldpc.decode(received)
+        decoded, success = ldpc.decode(received)
 
         assert decoded.shape == (4, ldpc.message_length)
+        assert success.shape == (4,)
 
     def test_decode_binary_output(self) -> None:
         """Decoded output contains only 0s and 1s."""
         ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
         received = torch.rand(4, 198)
 
-        decoded = ldpc.decode(received)
+        decoded, _ = ldpc.decode(received)
 
         assert torch.all((decoded == 0) | (decoded == 1))
 
@@ -119,9 +120,10 @@ class TestLDPCDecode:
         ldpc = LDPC(n=198, d_v=3, d_c=6, seed=42)
         received = torch.rand(1, 198)
 
-        decoded = ldpc.decode(received)
+        decoded, success = ldpc.decode(received)
 
         assert decoded.shape == (1, ldpc.message_length)
+        assert success.shape == (1,)
 
 
 class TestLDPCRoundtrip:
@@ -135,9 +137,10 @@ class TestLDPCRoundtrip:
 
         encoded = ldpc.encode(message)
         # Perfect channel: codeword as soft values
-        decoded = ldpc.decode(encoded)
+        decoded, success = ldpc.decode(encoded)
 
         assert torch.equal(decoded, message)
+        assert success.all()
 
     def test_roundtrip_low_noise(self) -> None:
         """Recovery with ~5% bit flip noise."""
@@ -151,7 +154,7 @@ class TestLDPCRoundtrip:
         noise_mask = torch.rand_like(encoded) < 0.05
         noisy = torch.where(noise_mask, 1 - encoded, encoded)
 
-        decoded = ldpc.decode(noisy)
+        decoded, _ = ldpc.decode(noisy)
 
         # Should recover at least half of messages perfectly
         correct = (decoded == message).all(dim=1).sum()
@@ -169,7 +172,7 @@ class TestLDPCRoundtrip:
         noise_mask = torch.rand_like(encoded) < 0.07
         noisy = torch.where(noise_mask, 1 - encoded, encoded)
 
-        decoded = ldpc.decode(noisy)
+        decoded, _ = ldpc.decode(noisy)
 
         # Should recover at least some messages perfectly
         correct = (decoded == message).all(dim=1).sum()
@@ -191,8 +194,8 @@ class TestLDPCRoundtrip:
         noisy_soft = noisy_hard.clone()
         noisy_soft[noise_mask] = 0.5  # Mark flipped bits as uncertain
 
-        decoded_hard = ldpc.decode(noisy_hard)
-        decoded_soft = ldpc.decode(noisy_soft)
+        decoded_hard, _ = ldpc.decode(noisy_hard)
+        decoded_soft, _ = ldpc.decode(noisy_soft)
 
         # Soft should be at least as good as hard
         errors_hard = (decoded_hard != message).sum()
@@ -217,9 +220,10 @@ class TestLDPCParameters:
         message = torch.randint(0, 2, (2, ldpc.message_length), dtype=torch.float32)
 
         encoded = ldpc.encode(message)
-        decoded = ldpc.decode(encoded)
+        decoded, success = ldpc.decode(encoded)
 
         assert torch.equal(decoded, message)
+        assert success.all()
         assert encoded.shape[1] == n
         assert decoded.shape[1] == ldpc.message_length
 
@@ -232,10 +236,11 @@ class TestLDPCParameters:
         message = torch.randint(0, 2, (batch_size, ldpc.message_length), dtype=torch.float32)
 
         encoded = ldpc.encode(message)
-        decoded = ldpc.decode(encoded)
+        decoded, success = ldpc.decode(encoded)
 
         assert encoded.shape == (batch_size, 198)
         assert decoded.shape == (batch_size, ldpc.message_length)
+        assert success.shape == (batch_size,)
         assert torch.equal(decoded, message)
 
     def test_stegastamp_compatible(self) -> None:
@@ -252,6 +257,7 @@ class TestLDPCParameters:
         torch.manual_seed(42)
         message = torch.randint(0, 2, (2, ldpc.message_length), dtype=torch.float32)
         encoded = ldpc.encode(message)
-        decoded = ldpc.decode(encoded)
+        decoded, success = ldpc.decode(encoded)
 
         assert torch.equal(decoded, message)
+        assert success.all()

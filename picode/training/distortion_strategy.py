@@ -8,7 +8,7 @@ Provides different strategies for applying distortions during training:
 """
 
 import random
-from typing import Protocol
+from typing import Protocol, cast
 
 from torch import Tensor
 
@@ -77,7 +77,7 @@ class FixedDistortion:
         Returns:
             Distorted tensor.
         """
-        return self.compose(image)
+        return cast(Tensor, self.compose(image))
 
 
 class RandomDistortion:
@@ -113,7 +113,7 @@ class RandomDistortion:
             n = self.num_apply
 
         selected = random.sample(self.distortions, min(n, len(self.distortions)))
-        return Compose(selected)(image)
+        return cast(Tensor, Compose(selected)(image))
 
 
 class CurriculumDistortion:
@@ -200,7 +200,7 @@ class CurriculumDistortion:
         if not distortions:
             return image
 
-        return Compose(distortions)(image)
+        return cast(Tensor, Compose(distortions)(image))
 
 
 def create_distortion_strategy(config: DistortionConfig) -> DistortionStrategy:

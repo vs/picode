@@ -15,10 +15,11 @@ def backend(request):
 def distortion_module(backend):
     """Get the appropriate distortion module based on backend."""
     if backend == "native":
-        from picode.distortions import native as mod
+        from picode.distortions import native
+        return native
     else:
-        from picode.distortions import kornia as mod
-    return mod
+        from picode.distortions import kornia
+        return kornia
 
 
 @pytest.fixture

@@ -1,10 +1,12 @@
 """Command-line interface for distortions."""
 
 from pathlib import Path
+from typing import cast
 
 import click
 import torch
 from PIL import Image
+from torch import Tensor
 from torchvision.transforms.functional import pil_to_tensor, to_pil_image
 
 from picode.distortions.native import (
@@ -40,11 +42,11 @@ DISTORTIONS = {
 }
 
 
-def load_image(path: Path) -> torch.Tensor:
+def load_image(path: Path) -> Tensor:
     """Load image as tensor (1, C, H, W) in [0, 1]."""
     img = Image.open(path).convert("RGB")
     tensor = pil_to_tensor(img).float() / 255.0
-    return tensor.unsqueeze(0)
+    return cast(Tensor, tensor.unsqueeze(0))
 
 
 def save_image(tensor: torch.Tensor, path: Path) -> None:

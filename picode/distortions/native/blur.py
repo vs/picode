@@ -8,6 +8,7 @@ StegaStamp uses probabilistic selection between:
 """
 
 import math
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -140,7 +141,7 @@ class RandomBlur(Distortion):
 
         return blurred
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample which blur type will be used."""
         t = torch.rand(1).item()
         if t < self.prob_gauss:
@@ -204,7 +205,7 @@ class GaussianBlur(Distortion):
         x_padded = F.pad(x, [pad, pad, pad, pad], mode="reflect")
         return F.conv2d(x_padded, kernel, groups=3)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample sigma in StegaStamp range [1.0, 3.0]."""
         return {"sigma": 1.0 + torch.rand(1).item() * 2.0}
 
@@ -277,7 +278,7 @@ class MotionBlur(Distortion):
         x_padded = F.pad(x, [pad, pad, pad, pad], mode="reflect")
         return F.conv2d(x_padded, kernel, groups=3)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample angle and sigma in StegaStamp ranges."""
         return {
             "angle": torch.rand(1).item() * 2.0 * math.pi,

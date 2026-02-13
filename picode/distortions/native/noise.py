@@ -6,6 +6,8 @@ Matches StegaStamp implementation in models.py:144-146:
     encoded_image = tf.clip_by_value(encoded_image, 0, 1)
 """
 
+from typing import Any
+
 import torch
 from torch import Tensor
 
@@ -53,7 +55,7 @@ class GaussianNoise(Distortion):
         noise = torch.randn_like(x) * effective_std
         return torch.clamp(x + noise, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random noise parameters."""
         # StegaStamp samples: rnd_noise = random_uniform([]) * ramp * args.rnd_noise
         return {

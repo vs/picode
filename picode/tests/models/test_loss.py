@@ -27,7 +27,7 @@ class TestMessageLoss:
         message = torch.tensor([[1.0, 0.0]])
         decoded = torch.tensor([[0.5, 0.5]], requires_grad=True)
         loss = message_loss(decoded, message)
-        loss.backward()
+        loss.backward()  # type: ignore[no-untyped-call]
         assert decoded.grad is not None
 
 
@@ -72,7 +72,7 @@ class TestComputeLoss:
         decoded = torch.rand(1, 10, requires_grad=True)
 
         losses = compute_loss(original, encoded, message, decoded, use_lpips=False)
-        losses["loss"].backward()
+        losses["loss"].backward()  # type: ignore[no-untyped-call]
 
         assert encoded.grad is not None
         assert decoded.grad is not None

@@ -8,6 +8,7 @@ gradients to flow through the quantization step.
 """
 
 import math
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -89,6 +90,8 @@ class JPEGCompression(Distortion):
     """
 
     name = "jpeg_compression"
+    dct_matrix: Tensor
+    q_matrix: Tensor
 
     def __init__(self, intensity: float = 0.5, quality: int = 50):
         super().__init__(intensity)
@@ -292,7 +295,7 @@ class JPEGCompression(Distortion):
         # Clamp to valid range
         return torch.clamp(output, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample random compression parameters.
 
         Samples quality in a range that produces visible artifacts.

@@ -5,6 +5,7 @@ using torch.nn.functional.affine_grid and grid_sample for differentiability.
 """
 
 import math
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -85,19 +86,19 @@ class PerspectiveWarp(Distortion):
         """
         # We need H such that src = H @ dst (to sample src given dst coords)
         # So we swap src and dst in the DLT computation
-        A = []
+        rows: list[list[float]] = []
         for i in range(4):
             x, y = dst[i, 0].item(), dst[i, 1].item()
             u, v = src[i, 0].item(), src[i, 1].item()
 
-            A.append([-x, -y, -1, 0, 0, 0, u * x, u * y, u])
-            A.append([0, 0, 0, -x, -y, -1, v * x, v * y, v])
+            rows.append([-x, -y, -1, 0, 0, 0, u * x, u * y, u])
+            rows.append([0, 0, 0, -x, -y, -1, v * x, v * y, v])
 
-        A = torch.tensor(A, device=src.device, dtype=src.dtype)
+        A = torch.tensor(rows, device=src.device, dtype=src.dtype)
 
         # Solve using SVD
         _, _, Vh = torch.linalg.svd(A)
-        H = Vh[-1].reshape(3, 3)
+        H: Tensor = Vh[-1].reshape(3, 3)
 
         # Normalize so H[2,2] = 1
         H = H / H[2, 2]
@@ -163,7 +164,7 @@ class PerspectiveWarp(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample perspective warp parameters."""
         return {"scale": self.scale}
 
@@ -238,7 +239,7 @@ class Rotation(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample rotation parameters."""
         effective_max = self.max_angle * self.intensity
         angle = (torch.rand(1).item() * 2 - 1) * effective_max
@@ -318,7 +319,7 @@ class Scale(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample scale parameters."""
         effective_min = 1.0 + (self.min_scale - 1.0) * self.intensity
         effective_max = 1.0 + (self.max_scale - 1.0) * self.intensity
@@ -342,7 +343,7 @@ class Crop(Distortion):
     def __init__(self, intensity: float = 0.5, min_ratio: float = 0.7):
         super().__init__(intensity)
         self.min_ratio = min_ratio
-        self._current_crop: dict | None = None
+        self._current_crop: dict[str, float] | None = None
 
     def _create_crop_grid(
         self,
@@ -421,7 +422,7 @@ class Crop(Distortion):
 
         return output.clamp(0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         """Sample crop parameters."""
         effective_min = 1.0 - (1.0 - self.min_ratio) * self.intensity
         ratio = torch.rand(1).item() * (1.0 - effective_min) + effective_min

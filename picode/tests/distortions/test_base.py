@@ -1,5 +1,7 @@
 """Tests for base distortion class."""
 
+from typing import Any
+
 import torch
 
 from picode.distortions.base import Distortion
@@ -18,7 +20,7 @@ class ConcreteDistortion(Distortion):
         noise = torch.randn_like(x) * 0.1 * self.intensity
         return torch.clamp(x + noise, 0.0, 1.0)
 
-    def sample_parameters(self) -> dict:
+    def sample_parameters(self) -> dict[str, Any]:
         return {"noise_scale": torch.rand(1).item() * self.intensity}
 
 

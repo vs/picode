@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -290,7 +290,7 @@ class Trainer:
 
         # Backward and optimize
         self.optimizer.zero_grad()
-        total_loss.backward()
+        total_loss.backward()  # type: ignore[no-untyped-call]
         self.optimizer.step()
 
         # Convert to float metrics
@@ -461,7 +461,7 @@ class Trainer:
             # Detach to avoid tracking LPIPS gradients
             loss = lpips_fn(orig_scaled, enc_scaled)
 
-        return loss.mean()
+        return cast(Tensor, loss.mean())
 
     def evaluate(self, dataloader: DataLoader[Tensor] | None = None) -> EvalMetrics:
         """Run evaluation on a dataset.
