@@ -1,0 +1,70 @@
+# configs/gradient_test.yaml
+# Configuration for testing gradient flow through the full pipeline
+# Use this to verify encoder → distortions → decoder gradients work correctly
+
+experiment_name: gradient_test
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 2
+  num_workers: 0
+
+training:
+  num_steps: 200
+  lr: 0.001  # Higher LR to see faster convergence signal
+  num_bits: 100
+  image_size: 256  # Smaller for faster iteration
+  warmup_steps: 10
+
+loss:
+  # All losses enabled from start to verify gradient flow
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.0
+    ramp_steps: 1
+  lpips:
+    scale: 0.5
+    ramp_steps: 1
+  l2_edge_gain: 0.0  # Disabled for simplicity
+  l2_edge_ramp_steps: 1
+  l2_edge_delay_steps: 10000
+  yuv_weights: [1.0, 1.0, 1.0]
+
+distortion:
+  # Start with mild distortions to test differentiability
+  strategy: fixed
+  perspective:
+    strength: 0.02
+    ramp_steps: 1
+  brightness:
+    strength: 0.1
+    ramp_steps: 1
+  saturation:
+    strength: 0.3
+    ramp_steps: 1
+  hue:
+    strength: 0.03
+    ramp_steps: 1
+  noise:
+    strength: 0.01
+    ramp_steps: 1
+  contrast: [0.9, 1.1]
+  contrast_ramp_steps: 1
+  jpeg_quality:
+    strength: 10
+    ramp_steps: 1
+  enable_jpeg: true  # Uses straight-through estimator for differentiable quantization
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 100
+  keep_last: 1
+
+logging:
+  backends: [console]
+  log_every_steps: 10
+  tensorboard_dir: runs
