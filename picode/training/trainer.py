@@ -277,10 +277,10 @@ class Trainer:
         # Forward pass
         encoded = self.encoder(images, messages)
         distorted = self.distortion(encoded, self.global_step)
-        decoded = self.decoder(distorted)
+        decoded_logits = self.decoder(distorted)
 
-        # Compute losses
-        losses = self._compute_ramped_losses(images, encoded, messages, decoded)
+        # Compute losses (decoder outputs logits, loss uses BCE with logits)
+        losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
 
         # Warmup phase: only use message loss
         if self.global_step < self.config.training.warmup_steps:
@@ -302,7 +302,7 @@ class Trainer:
         original: Tensor,
         encoded: Tensor,
         messages: Tensor,
-        decoded: Tensor,
+        decoded_logits: Tensor,
     ) -> dict[str, Tensor]:
         """Compute all losses with ramping applied.
 
@@ -310,7 +310,7 @@ class Trainer:
             original: Original images (B, C, H, W).
             encoded: Encoded images (B, C, H, W).
             messages: Original messages (B, num_bits).
-            decoded: Decoded messages (B, num_bits).
+            decoded_logits: Decoded message logits (B, num_bits) - NOT probabilities.
 
         Returns:
             Dict with loss tensors:
@@ -323,9 +323,9 @@ class Trainer:
         loss_cfg = self.config.loss
         step = self.global_step
 
-        # Message loss (BCE)
+        # Message loss (BCE with logits for numerical stability)
         msg_scale = self._ramp(loss_cfg.message.scale, loss_cfg.message.ramp_steps, step)
-        loss_msg = F.binary_cross_entropy(decoded, messages)
+        loss_msg = F.binary_cross_entropy_with_logits(decoded_logits, messages)
         weighted_msg = msg_scale * loss_msg
 
         # L2 loss (MSE)

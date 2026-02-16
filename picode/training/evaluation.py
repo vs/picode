@@ -110,8 +110,8 @@ class Evaluator:
             ).float()
 
             encoded = self.encoder(images, messages)
-            decoded = self.decoder(encoded)
-            decoded_binary = (decoded > 0.5).float()
+            decoded_logits = self.decoder(encoded)
+            decoded_binary = (decoded_logits > 0).float()  # Logits: > 0 means > 0.5 probability
 
             # Message metrics
             bit_acc = (decoded_binary == messages).float().mean()
@@ -164,8 +164,8 @@ class Evaluator:
                 distortion = self._create_distortion(name, strength)
                 distorted = distortion(encoded)
 
-                decoded = self.decoder(distorted)
-                decoded_binary = (decoded > 0.5).float()
+                decoded_logits = self.decoder(distorted)
+                decoded_binary = (decoded_logits > 0).float()  # Logits threshold
 
                 bit_acc = (decoded_binary == messages).float().mean().item()
                 msg_acc = (decoded_binary == messages).all(dim=1).float().mean().item()
