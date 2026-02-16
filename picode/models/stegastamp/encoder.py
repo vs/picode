@@ -1,4 +1,11 @@
-"""StegaStamp encoder network."""
+"""StegaStamp encoder network.
+
+Matches original TensorFlow implementation exactly:
+- No BatchNorm
+- Input normalization (subtract 0.5)
+- Raw residual output
+- He normal weight initialization
+"""
 
 import torch
 import torch.nn as nn
@@ -8,37 +15,10 @@ from torch import Tensor
 from picode.models.base import Encoder as BaseEncoder
 
 
-class ConvBlock(nn.Module):
-    """Conv -> BatchNorm -> ReLU block."""
-
-    def __init__(self, in_ch: int, out_ch: int, stride: int = 1) -> None:
-        super().__init__()
-        self.conv = nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1)
-        self.bn = nn.BatchNorm2d(out_ch)
-
-    def forward(self, x: Tensor) -> Tensor:
-        return F.relu(self.bn(self.conv(x)))
-
-
-class UpBlock(nn.Module):
-    """Upsample -> Conv -> BatchNorm -> ReLU with skip connection."""
-
-    def __init__(self, in_ch: int, skip_ch: int, out_ch: int) -> None:
-        super().__init__()
-        self.up_conv = nn.Conv2d(in_ch, out_ch, 2, padding=0)
-        self.bn1 = nn.BatchNorm2d(out_ch)
-        self.conv = nn.Conv2d(out_ch + skip_ch, out_ch, 3, padding=1)
-        self.bn2 = nn.BatchNorm2d(out_ch)
-
-    def forward(self, x: Tensor, skip: Tensor) -> Tensor:
-        x = F.interpolate(x, scale_factor=2, mode="nearest")
-        x = F.relu(self.bn1(self.up_conv(F.pad(x, (0, 1, 0, 1)))))
-        x = torch.cat([x, skip], dim=1)
-        return F.relu(self.bn2(self.conv(x)))
-
-
 class Encoder(BaseEncoder):
     """U-Net encoder that embeds a bit message into an image.
+
+    Architecture matches original StegaStamp TensorFlow implementation.
 
     Args:
         num_bits: Number of bits in the message (default: 100).
@@ -49,37 +29,56 @@ class Encoder(BaseEncoder):
         self.num_bits = num_bits
 
         # Message preparation: num_bits -> 7500 -> (50, 50, 3) -> upsample to (400, 400, 3)
-        self.msg_fc = nn.Linear(num_bits, 50 * 50 * 3)
+        self.secret_dense = nn.Linear(num_bits, 7500)
 
-        # Encoder (downsampling path)
-        # Input: 6 channels (image + message)
-        self.conv1 = ConvBlock(6, 32)
-        self.conv2 = ConvBlock(32, 32, stride=2)  # 200x200
-        self.conv3 = ConvBlock(32, 64, stride=2)  # 100x100
-        self.conv4 = ConvBlock(64, 128, stride=2)  # 50x50
-        self.conv5 = ConvBlock(128, 256, stride=2)  # 25x25
+        # Encoder (downsampling path) - no BatchNorm
+        self.conv1 = nn.Conv2d(6, 32, 3, padding=1)
+        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, 3, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(64, 128, 3, stride=2, padding=1)
+        self.conv5 = nn.Conv2d(128, 256, 3, stride=2, padding=1)
 
-        # Decoder (upsampling path with skip connections)
-        self.up6 = UpBlock(256, 128, 128)  # 50x50
-        self.up7 = UpBlock(128, 64, 64)  # 100x100
-        self.up8 = UpBlock(64, 32, 32)  # 200x200
-        self.up9 = UpBlock(32, 32, 32)  # 400x400
+        # Decoder (upsampling path) - no BatchNorm
+        self.up6 = nn.Conv2d(256, 128, 2, padding=0)
+        self.conv6 = nn.Conv2d(256, 128, 3, padding=1)
+        self.up7 = nn.Conv2d(128, 64, 2, padding=0)
+        self.conv7 = nn.Conv2d(128, 64, 3, padding=1)
+        self.up8 = nn.Conv2d(64, 32, 2, padding=0)
+        self.conv8 = nn.Conv2d(64, 32, 3, padding=1)
+        self.up9 = nn.Conv2d(32, 32, 2, padding=0)
+        self.conv9 = nn.Conv2d(70, 32, 3, padding=1)  # 32 + 32 + 6 = 70
 
-        self.conv_out1 = ConvBlock(32, 32)
-        self.conv_out2 = nn.Conv2d(32, 3, 1)  # 1x1 conv to 3 channels
+        # Output layers
+        self.conv10 = nn.Conv2d(32, 32, 3, padding=1)
+        self.residual = nn.Conv2d(32, 3, 1)
+
+        # Initialize weights (He normal)
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Initialize weights with Kaiming normal (He normal)."""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def prepare_message(self, message: Tensor) -> Tensor:
         """Expand message bits to spatial feature map.
 
         Args:
-            message: (B, num_bits) binary tensor
+            message: (B, num_bits) binary tensor (already normalized to [-0.5, 0.5])
 
         Returns:
             (B, 3, 400, 400) spatial tensor
         """
-        x = F.relu(self.msg_fc(message))  # (B, 7500)
+        x = F.relu(self.secret_dense(message))  # (B, 7500)
         x = x.view(-1, 3, 50, 50)  # (B, 3, 50, 50)
-        x = F.interpolate(x, size=(400, 400), mode="nearest")  # (B, 3, 400, 400)
+        x = F.interpolate(x, scale_factor=8, mode="nearest")  # (B, 3, 400, 400)
         return x
 
     def forward(self, image: Tensor, message: Tensor) -> Tensor:
@@ -92,31 +91,51 @@ class Encoder(BaseEncoder):
         Returns:
             Encoded image (B, 3, 400, 400) in [0, 1]
         """
+        # Normalize inputs (match original TF implementation)
+        image_norm = image - 0.5
+        message_norm = message - 0.5
+
         # Prepare message and concatenate with image
-        msg_spatial = self.prepare_message(message)
-        x = torch.cat([image, msg_spatial], dim=1)  # (B, 6, 400, 400)
+        secret_enlarged = self.prepare_message(message_norm)
+        inputs = torch.cat([secret_enlarged, image_norm], dim=1)  # (B, 6, 400, 400)
 
         # Encoder path (save activations for skip connections)
-        c1 = self.conv1(x)  # (B, 32, 400, 400)
-        c2 = self.conv2(c1)  # (B, 32, 200, 200)
-        c3 = self.conv3(c2)  # (B, 64, 100, 100)
-        c4 = self.conv4(c3)  # (B, 128, 50, 50)
-        c5 = self.conv5(c4)  # (B, 256, 25, 25)
+        c1 = F.relu(self.conv1(inputs))  # (B, 32, 400, 400)
+        c2 = F.relu(self.conv2(c1))  # (B, 32, 200, 200)
+        c3 = F.relu(self.conv3(c2))  # (B, 64, 100, 100)
+        c4 = F.relu(self.conv4(c3))  # (B, 128, 50, 50)
+        c5 = F.relu(self.conv5(c4))  # (B, 256, 25, 25)
 
         # Decoder path with skip connections
-        x = self.up6(c5, c4)  # (B, 128, 50, 50)
-        x = self.up7(x, c3)  # (B, 64, 100, 100)
-        x = self.up8(x, c2)  # (B, 32, 200, 200)
-        x = self.up9(x, c1)  # (B, 32, 400, 400)
+        # up6: upsample -> conv -> concat with c4
+        x = F.interpolate(c5, scale_factor=2, mode="nearest")
+        x = F.relu(self.up6(F.pad(x, (0, 1, 0, 1))))  # Pad to handle 2x2 conv
+        x = torch.cat([c4, x], dim=1)  # (B, 256, 50, 50)
+        x = F.relu(self.conv6(x))  # (B, 128, 50, 50)
 
-        # Output layers
-        x = self.conv_out1(x)
-        residual = self.conv_out2(x)  # (B, 3, 400, 400)
+        # up7: upsample -> conv -> concat with c3
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.relu(self.up7(F.pad(x, (0, 1, 0, 1))))
+        x = torch.cat([c3, x], dim=1)  # (B, 128, 100, 100)
+        x = F.relu(self.conv7(x))  # (B, 64, 100, 100)
 
-        # Use tanh to bound residual, then scale
-        # Start with larger scale for learning, reduce later for imperceptibility
-        residual = 0.3 * torch.tanh(residual)
+        # up8: upsample -> conv -> concat with c2
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.relu(self.up8(F.pad(x, (0, 1, 0, 1))))
+        x = torch.cat([c2, x], dim=1)  # (B, 64, 200, 200)
+        x = F.relu(self.conv8(x))  # (B, 32, 200, 200)
 
-        # Add residual to original image (will be in valid range due to tanh)
+        # up9: upsample -> conv -> concat with c1 AND inputs (original skip)
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        x = F.relu(self.up9(F.pad(x, (0, 1, 0, 1))))
+        x = torch.cat([c1, x, inputs], dim=1)  # (B, 70, 400, 400)
+        x = F.relu(self.conv9(x))  # (B, 32, 400, 400)
+
+        # Output layers - raw residual (no activation on final layer)
+        x = F.relu(self.conv10(x))
+        residual = self.residual(x)  # (B, 3, 400, 400)
+
+        # Add residual to original image and clamp to valid range
         encoded = image + residual
+        encoded = torch.clamp(encoded, 0, 1)
         return encoded

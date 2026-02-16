@@ -1,8 +1,27 @@
 """Tests for the encoder module."""
 
 import torch
+import torch.nn as nn
 
 from picode.models.stegastamp.encoder import Encoder
+
+
+class TestEncoderArchitecture:
+    """Test encoder architecture matches original StegaStamp."""
+
+    def test_no_batchnorm(self) -> None:
+        """Encoder has no BatchNorm layers (matches original)."""
+        encoder = Encoder(num_bits=100)
+        for module in encoder.modules():
+            assert not isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)), \
+                f"Found BatchNorm: {module}"
+
+    def test_weight_initialization(self) -> None:
+        """Weights use Kaiming normal initialization."""
+        encoder = Encoder(num_bits=100)
+        # Check a conv layer has non-zero, non-uniform weights
+        conv_weight = encoder.conv1.weight
+        assert conv_weight.std() > 0.01, "Weights appear uninitialized"
 
 
 class TestMessagePreparation:
