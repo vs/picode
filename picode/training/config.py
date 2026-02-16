@@ -25,11 +25,16 @@ class DistortionRamp:
 
 @dataclass
 class LossConfig:
-    """Loss function configuration with ramping."""
+    """Loss function configuration with ramping.
 
-    message: LossRamp = field(default_factory=lambda: LossRamp(1.0, 1))
-    l2: LossRamp = field(default_factory=lambda: LossRamp(2.0, 20000))
-    lpips: LossRamp = field(default_factory=lambda: LossRamp(1.0, 20000))
+    StegaStamp uses ~7x higher message loss than image loss to ensure
+    the encoder prioritizes message encoding over image preservation.
+    Without this, the encoder learns to output the original image unchanged.
+    """
+
+    message: LossRamp = field(default_factory=lambda: LossRamp(7.0, 1))
+    l2: LossRamp = field(default_factory=lambda: LossRamp(1.0, 20000))
+    lpips: LossRamp = field(default_factory=lambda: LossRamp(1.5, 20000))
 
     l2_edge_gain: float = 10.0
     l2_edge_ramp_steps: int = 20000
