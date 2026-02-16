@@ -11,6 +11,7 @@ from torchvision.transforms.functional import pil_to_tensor, to_pil_image
 
 from picode.distortions.native import (
     BrightnessHue,
+    Compose,
     Contrast,
     Crop,
     GaussianBlur,
@@ -102,6 +103,53 @@ def all(input: Path, output: Path, intensity: float) -> None:
         apply_and_save(image, distortion_cls, output / name, intensity)
 
     click.echo(f"Done! Outputs saved to {output}")
+
+
+# Ordered list of distortions for combine command (mimics real-world degradation)
+COMBINE_ORDER: list[type] = [
+    # 1. Geometric transforms (physical manipulation)
+    Rotation,
+    PerspectiveWarp,
+    Scale,
+    Crop,
+    # 2. Color adjustments (processing/editing)
+    BrightnessHue,
+    Contrast,
+    Saturation,
+    # 3. Blur (lens/motion artifacts)
+    GaussianBlur,
+    MotionBlur,
+    # 4. Noise (sensor/transmission artifacts)
+    GaussianNoise,
+    # 5. Compression (saving/sharing - always last)
+    JPEGCompression,
+]
+
+
+@main.command()
+@click.argument("input", type=click.Path(exists=True, path_type=Path))
+@click.option("-o", "--output", required=True, type=click.Path(path_type=Path))
+@click.option("--intensity", default=1.0, type=float, help="Distortion intensity (0-1)")
+def combine(input: Path, output: Path, intensity: float) -> None:
+    """Apply all distortions sequentially to produce a single output.
+
+    Distortions are applied in a fixed order mimicking real-world degradation:
+    geometric -> color -> blur -> noise -> compression.
+    """
+    image = load_image(input)
+
+    # Build pipeline with all distortions
+    distortions = [cls(intensity=intensity) for cls in COMBINE_ORDER]
+    pipeline = Compose(distortions)
+
+    click.echo(f"Applying {len(distortions)} distortions with intensity={intensity}...")
+
+    torch.manual_seed(42)
+    distorted = pipeline(image)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_image(distorted, output)
+    click.echo(f"Done! Output saved to {output}")
 
 
 # Create commands for each distortion
