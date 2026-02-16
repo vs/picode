@@ -147,6 +147,10 @@ def combine(input: Path, output: Path, intensity: float) -> None:
     torch.manual_seed(42)
     distorted = pipeline(image)
 
+    # Add input extension if output has none
+    if not output.suffix:
+        output = output.with_suffix(input.suffix)
+
     output.parent.mkdir(parents=True, exist_ok=True)
     save_image(distorted, output)
     click.echo(f"Done! Output saved to {output}")
