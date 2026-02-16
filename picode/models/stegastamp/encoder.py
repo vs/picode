@@ -9,29 +9,32 @@ from picode.models.base import Encoder as BaseEncoder
 
 
 class ConvBlock(nn.Module):
-    """Conv -> ReLU block."""
+    """Conv -> BatchNorm -> ReLU block."""
 
     def __init__(self, in_ch: int, out_ch: int, stride: int = 1) -> None:
         super().__init__()
         self.conv = nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1)
+        self.bn = nn.BatchNorm2d(out_ch)
 
     def forward(self, x: Tensor) -> Tensor:
-        return F.relu(self.conv(x))
+        return F.relu(self.bn(self.conv(x)))
 
 
 class UpBlock(nn.Module):
-    """Upsample -> Conv -> ReLU with skip connection."""
+    """Upsample -> Conv -> BatchNorm -> ReLU with skip connection."""
 
     def __init__(self, in_ch: int, skip_ch: int, out_ch: int) -> None:
         super().__init__()
         self.up_conv = nn.Conv2d(in_ch, out_ch, 2, padding=0)
+        self.bn1 = nn.BatchNorm2d(out_ch)
         self.conv = nn.Conv2d(out_ch + skip_ch, out_ch, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_ch)
 
     def forward(self, x: Tensor, skip: Tensor) -> Tensor:
         x = F.interpolate(x, scale_factor=2, mode="nearest")
-        x = F.relu(self.up_conv(F.pad(x, (0, 1, 0, 1))))  # Pad to match 2x2 conv
+        x = F.relu(self.bn1(self.up_conv(F.pad(x, (0, 1, 0, 1)))))
         x = torch.cat([x, skip], dim=1)
-        return F.relu(self.conv(x))
+        return F.relu(self.bn2(self.conv(x)))
 
 
 class Encoder(BaseEncoder):
@@ -110,6 +113,10 @@ class Encoder(BaseEncoder):
         x = self.conv_out1(x)
         residual = self.conv_out2(x)  # (B, 3, 400, 400)
 
-        # Add residual to original image and clamp
-        encoded = torch.clamp(image + residual, 0.0, 1.0)
+        # Use tanh to bound residual, then scale
+        # Start with larger scale for learning, reduce later for imperceptibility
+        residual = 0.3 * torch.tanh(residual)
+
+        # Add residual to original image (will be in valid range due to tanh)
+        encoded = image + residual
         return encoded

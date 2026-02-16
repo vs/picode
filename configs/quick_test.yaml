@@ -1,0 +1,65 @@
+# Quick test configuration - 500 steps
+experiment_name: quick_test
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 2
+  num_workers: 0
+
+training:
+  num_steps: 500
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 50
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.5
+    ramp_steps: 200
+  lpips:
+    scale: 0.0
+    ramp_steps: 1
+  l2_edge_gain: 0.0
+  l2_edge_ramp_steps: 1
+  l2_edge_delay_steps: 1000
+  yuv_weights: [1.0, 1.0, 1.0]
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.05
+    ramp_steps: 100
+  brightness:
+    strength: 0.2
+    ramp_steps: 100
+  saturation:
+    strength: 0.5
+    ramp_steps: 100
+  hue:
+    strength: 0.05
+    ramp_steps: 100
+  noise:
+    strength: 0.01
+    ramp_steps: 100
+  contrast: [0.8, 1.2]
+  contrast_ramp_steps: 100
+  jpeg_quality:
+    strength: 10
+    ramp_steps: 100
+  enable_jpeg: false
+  enable_blur: false
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 250
+  keep_last: 2
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 10
+  tensorboard_dir: runs
