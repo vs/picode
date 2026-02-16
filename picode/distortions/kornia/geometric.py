@@ -27,7 +27,6 @@ class Rotation(Distortion):
     def __init__(self, intensity: float = 0.5, max_angle: float = 30.0):
         super().__init__(intensity)
         self.max_angle = max_angle
-        self._current_angle: float | None = None
 
     def forward(self, x: Tensor) -> Tensor:
         """Apply rotation using kornia.geometry.transform.rotate.
@@ -49,8 +48,6 @@ class Rotation(Distortion):
 
         # Random angles for each batch item (in degrees)
         angles = (torch.rand(B, device=device, dtype=dtype) * 2 - 1) * effective_max
-
-        self._current_angle = angles[0].item() if B > 0 else 0.0
 
         # Center of rotation: (B, 2) tensor with (x, y) coordinates
         center = torch.tensor([[W / 2.0, H / 2.0]], device=device, dtype=dtype).expand(B, -1)
@@ -86,7 +83,6 @@ class Scale(Distortion):
         super().__init__(intensity)
         self.min_scale = min_scale
         self.max_scale = max_scale
-        self._current_scale: float | None = None
 
     def forward(self, x: Tensor) -> Tensor:
         """Apply scale transformation using kornia.geometry.transform.resize.
@@ -112,8 +108,6 @@ class Scale(Distortion):
             torch.rand(B, device=device, dtype=dtype) * (effective_max - effective_min)
             + effective_min
         )
-
-        self._current_scale = scales[0].item() if B > 0 else 1.0
 
         # Process each batch item with its own scale factor
         outputs = []
@@ -177,7 +171,6 @@ class Crop(Distortion):
     def __init__(self, intensity: float = 0.5, min_ratio: float = 0.7):
         super().__init__(intensity)
         self.min_ratio = min_ratio
-        self._current_crop: dict[str, float] | None = None
 
     def forward(self, x: Tensor) -> Tensor:
         """Apply crop and resize using kornia.geometry.transform.crop_and_resize.
@@ -207,12 +200,6 @@ class Crop(Distortion):
         max_offsets = 1.0 - crop_ratios
         offset_x = torch.rand(B, device=device, dtype=dtype) * max_offsets
         offset_y = torch.rand(B, device=device, dtype=dtype) * max_offsets
-
-        self._current_crop = {
-            "ratio": crop_ratios[0].item() if B > 0 else 1.0,
-            "offset_x": offset_x[0].item() if B > 0 else 0.0,
-            "offset_y": offset_y[0].item() if B > 0 else 0.0,
-        }
 
         # Build boxes tensor: (B, 4, 2) with corners
         # [top-left, top-right, bottom-right, bottom-left]

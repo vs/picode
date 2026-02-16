@@ -184,7 +184,6 @@ class Rotation(Distortion):
     def __init__(self, intensity: float = 0.5, max_angle: float = 30.0):
         super().__init__(intensity)
         self.max_angle = max_angle
-        self._current_angle: float | None = None
 
     def _create_rotation_matrix(
         self, batch_size: int, device: torch.device, dtype: torch.dtype
@@ -200,8 +199,6 @@ class Rotation(Distortion):
         # Random angles for each batch item
         angles_deg = (torch.rand(batch_size, device=device, dtype=dtype) * 2 - 1) * effective_max
         angles_rad = angles_deg * math.pi / 180.0
-
-        self._current_angle = angles_deg[0].item() if batch_size > 0 else 0.0
 
         cos_a = torch.cos(angles_rad)
         sin_a = torch.sin(angles_rad)
@@ -265,7 +262,6 @@ class Scale(Distortion):
         super().__init__(intensity)
         self.min_scale = min_scale
         self.max_scale = max_scale
-        self._current_scale: float | None = None
 
     def _create_scale_matrix(
         self, batch_size: int, device: torch.device, dtype: torch.dtype
@@ -283,8 +279,6 @@ class Scale(Distortion):
         scales = torch.rand(batch_size, device=device, dtype=dtype) * (
             effective_max - effective_min
         ) + effective_min
-
-        self._current_scale = scales[0].item() if batch_size > 0 else 1.0
 
         # Scale matrix (divide by scale to zoom in, multiply to zoom out)
         # For grid_sample, we need the inverse: to zoom in (scale > 1),
@@ -343,7 +337,6 @@ class Crop(Distortion):
     def __init__(self, intensity: float = 0.5, min_ratio: float = 0.7):
         super().__init__(intensity)
         self.min_ratio = min_ratio
-        self._current_crop: dict[str, float] | None = None
 
     def _create_crop_grid(
         self,
@@ -371,12 +364,6 @@ class Crop(Distortion):
         max_offsets = 1.0 - crop_ratios
         offset_x = torch.rand(batch_size, device=device, dtype=dtype) * max_offsets
         offset_y = torch.rand(batch_size, device=device, dtype=dtype) * max_offsets
-
-        self._current_crop = {
-            "ratio": crop_ratios[0].item() if batch_size > 0 else 1.0,
-            "offset_x": offset_x[0].item() if batch_size > 0 else 0.0,
-            "offset_y": offset_y[0].item() if batch_size > 0 else 0.0,
-        }
 
         # Create grids for each batch item
         grids = []
