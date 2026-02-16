@@ -33,13 +33,13 @@ def train_step(
     else:
         distorted = encoded
 
-    decoded = decoder(distorted)
+    decoded_logits = decoder(distorted)
 
     losses = compute_loss(
         original=images,
         encoded=encoded,
         message=messages,
-        decoded=decoded,
+        decoded_logits=decoded_logits,
         lpips_fn=lpips_fn,
         use_lpips=use_lpips,
     )
@@ -84,5 +84,5 @@ class StegaStampTrainer:
 
     def decode_binary(self, image: Tensor) -> Tensor:
         """Decode binary message from an image."""
-        probs = self.decode(image)
-        return (probs > 0.5).float()
+        logits = self.decode(image)
+        return (logits > 0).float()
