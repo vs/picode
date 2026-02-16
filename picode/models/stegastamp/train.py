@@ -21,7 +21,24 @@ def train_step(
     use_lpips: bool = True,
     lpips_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
 ) -> dict[str, float]:
-    """Execute a single training step."""
+    """Execute a single training step.
+
+    The decoder outputs raw logits, and the loss function uses BCE with logits
+    for numerical stability.
+
+    Args:
+        encoder: StegaStamp encoder model.
+        decoder: StegaStamp decoder model (outputs logits).
+        images: Batch of images (B, 3, H, W) in [0, 1].
+        distortion: Optional distortion to apply to encoded images.
+        optimizer: Optional optimizer. If None, no backward pass is performed.
+        num_bits: Number of message bits.
+        use_lpips: Whether to include LPIPS loss.
+        lpips_fn: LPIPS function. Required if use_lpips=True.
+
+    Returns:
+        Dictionary of loss values (detached floats).
+    """
     batch_size = images.shape[0]
     device = images.device
 
@@ -76,13 +93,27 @@ class StegaStampTrainer:
             return result
 
     def decode(self, image: Tensor) -> Tensor:
-        """Decode a message from an image."""
+        """Decode message probabilities from an image.
+
+        Args:
+            image: Input image tensor (B, 3, H, W) in [0, 1].
+
+        Returns:
+            Message probabilities (B, num_bits) in [0, 1].
+        """
         self.decoder.eval()
         with torch.no_grad():
-            result: Tensor = self.decoder(image.to(self.device))
-            return result
+            logits = self.decoder(image.to(self.device))
+            return torch.sigmoid(logits)
 
     def decode_binary(self, image: Tensor) -> Tensor:
-        """Decode binary message from an image."""
-        logits = self.decode(image)
-        return (logits > 0).float()
+        """Decode binary message from an image.
+
+        Args:
+            image: Input image tensor (B, 3, H, W) in [0, 1].
+
+        Returns:
+            Binary message (B, num_bits) with values {0, 1}.
+        """
+        probs = self.decode(image)
+        return (probs > 0.5).float()

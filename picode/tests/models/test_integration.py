@@ -42,12 +42,14 @@ class TestDistortionIntegration:
         # Forward pass with distortion
         encoded = encoder(images, messages)
         distorted = GaussianNoise(intensity=0.2)(encoded)
-        decoded = decoder(distorted)
+        decoded_logits = decoder(distorted)
 
         # Backward pass
-        loss = decoded.sum()
+        loss = decoded_logits.sum()
         loss.backward()
 
-        # Check gradients exist
-        assert encoder.msg_fc.weight.grad is not None
-        assert decoder.fc2.weight.grad is not None
+        # Check gradients exist in encoder and decoder
+        assert encoder.secret_dense.weight.grad is not None
+        # Check decoder's final linear layer (inside Sequential)
+        decoder_params = list(decoder.decoder.parameters())
+        assert decoder_params[-1].grad is not None  # Last layer bias
