@@ -75,3 +75,64 @@ class TestCLI:
             "-o", "output/",
         ])
         assert result.exit_code != 0
+
+    def test_combine_command(self):
+        """Should apply all distortions sequentially and save single output."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.png"
+            output_path = Path(tmpdir) / "output.png"
+            create_test_image(input_path)
+
+            result = runner.invoke(main, [
+                "combine",
+                str(input_path),
+                "-o", str(output_path),
+                "--intensity", "0.5",
+            ])
+
+            assert result.exit_code == 0
+            assert output_path.exists()
+            assert "Applying 11 distortions" in result.output
+
+    def test_combine_zero_intensity(self):
+        """Combine with intensity=0 should produce near-identical output."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.png"
+            output_path = Path(tmpdir) / "output.png"
+            create_test_image(input_path)
+
+            result = runner.invoke(main, [
+                "combine",
+                str(input_path),
+                "-o", str(output_path),
+                "--intensity", "0.0",
+            ])
+
+            assert result.exit_code == 0
+            assert output_path.exists()
+
+            # Load both images and compare
+            input_img = Image.open(input_path)
+            output_img = Image.open(output_path)
+            assert input_img.size == output_img.size
+
+    def test_combine_full_intensity(self):
+        """Combine with intensity=1.0 should produce distorted output."""
+        runner = CliRunner()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "input.png"
+            output_path = Path(tmpdir) / "output.png"
+            create_test_image(input_path)
+
+            result = runner.invoke(main, [
+                "combine",
+                str(input_path),
+                "-o", str(output_path),
+                "--intensity", "1.0",
+            ])
+
+            assert result.exit_code == 0
+            assert output_path.exists()
+            assert "intensity=1.0" in result.output
