@@ -14,7 +14,7 @@ training:
   num_steps: 200
   lr: 0.001  # Higher LR to see faster convergence signal
   num_bits: 100
-  image_size: 256  # Smaller for faster iteration
+  image_size: 400  # Must match encoder architecture
   warmup_steps: 10
 
 loss:
