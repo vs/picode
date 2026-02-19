@@ -32,4 +32,5 @@ class ResBlock(nn.Module):
         residual = x
         x = self.act(self.norm1(self.conv1(x)))
         x = self.norm2(self.conv2(x))
-        return self.act(x + residual)
+        out: Tensor = self.act(x + residual)
+        return out
