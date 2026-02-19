@@ -58,7 +58,7 @@ CHECKPOINT_PATH = "/checkpoints"
 
 @app.function(
     image=image,
-    gpu="A10G",  # Good balance of performance/cost. Options: T4, A10G, A100, H100
+    gpu="T4",  # Cheapest option for testing ($0.59/hr). Options: T4, A10G, A100, H100
     timeout=3600 * 12,  # 12 hour max
     volumes={
         DATA_PATH: data_volume,
@@ -175,7 +175,7 @@ def list_checkpoints():
 
 @app.function(
     image=image,
-    gpu="A10G",
+    gpu="T4",
     volumes={
         DATA_PATH: data_volume,
         CHECKPOINT_PATH: checkpoint_volume,

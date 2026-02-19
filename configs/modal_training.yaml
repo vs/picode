@@ -1,12 +1,12 @@
 # configs/modal_training.yaml
-# Configuration optimized for Modal A10G GPU (24GB VRAM)
+# Configuration for Modal GPU training (T4/A10G/A100)
 
 experiment_name: picode_modal
 
 data:
   source: folder
   path: /data  # Modal volume mount point
-  batch_size: 8  # A10G can handle larger batches
+  batch_size: 4  # T4 (16GB) - increase to 8 for A10G/A100
   num_workers: 4
 
 training:
