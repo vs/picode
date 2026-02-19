@@ -8,8 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from picode.models.picode import Encoder as PicodeEncoder, Decoder as PicodeDecoder
-from picode.models.stegastamp import Encoder as StegaEncoder, Decoder as StegaDecoder
+from picode.models.picode import Decoder as PicodeDecoder
+from picode.models.picode import Encoder as PicodeEncoder
+from picode.models.stegastamp import Decoder as StegaDecoder
+from picode.models.stegastamp import Encoder as StegaEncoder
 
 
 class TestGradientFlowComparison:
@@ -53,7 +55,9 @@ class TestGradientFlowComparison:
 
         return enc_grad / dec_grad if dec_grad > 0 else 0.0
 
-    def test_picode_better_gradient_ratio(self, sample_data: tuple[torch.Tensor, torch.Tensor]) -> None:
+    def test_picode_better_gradient_ratio(
+        self, sample_data: tuple[torch.Tensor, torch.Tensor]
+    ) -> None:
         """Picode should have better encoder/decoder gradient ratio."""
         images, messages = sample_data
 
@@ -65,13 +69,19 @@ class TestGradientFlowComparison:
         # Picode
         picode_enc = PicodeEncoder(num_bits=100)
         picode_dec = PicodeDecoder(num_bits=100)
-        picode_ratio = self._compute_gradient_ratio(picode_enc, picode_dec, images.clone(), messages)
+        picode_ratio = self._compute_gradient_ratio(
+            picode_enc, picode_dec, images.clone(), messages
+        )
 
         # Picode should have higher ratio (target: >0.2 vs StegaStamp's ~0.06)
-        assert picode_ratio > stega_ratio, f"Picode {picode_ratio:.4f} should be > StegaStamp {stega_ratio:.4f}"
+        assert picode_ratio > stega_ratio, (
+            f"Picode {picode_ratio:.4f} should be > StegaStamp {stega_ratio:.4f}"
+        )
         assert picode_ratio > 0.1, f"Picode ratio {picode_ratio:.4f} should be > 0.1"
 
-    def test_picode_stn_receives_gradients_step_one(self, sample_data: tuple[torch.Tensor, torch.Tensor]) -> None:
+    def test_picode_stn_receives_gradients_step_one(
+        self, sample_data: tuple[torch.Tensor, torch.Tensor]
+    ) -> None:
         """Picode STN should receive gradients from step 1."""
         images, messages = sample_data
 
@@ -89,7 +99,9 @@ class TestGradientFlowComparison:
 
         assert grad_mean > 1e-8, f"STN first conv grad {grad_mean} should be > 1e-8"
 
-    def test_stegastamp_stn_zero_gradients_step_one(self, sample_data: tuple[torch.Tensor, torch.Tensor]) -> None:
+    def test_stegastamp_stn_zero_gradients_step_one(
+        self, sample_data: tuple[torch.Tensor, torch.Tensor]
+    ) -> None:
         """StegaStamp STN has zero gradients on step 1 (known issue)."""
         images, messages = sample_data
 
