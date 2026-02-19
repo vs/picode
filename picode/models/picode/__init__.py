@@ -1,6 +1,5 @@
 """Picode model - improved gradient flow architecture."""
 
-from picode.models.picode.encoder import Encoder
-from picode.models.picode.decoder import Decoder
+from picode.models.picode.blocks import ResBlock
 
-__all__ = ["Encoder", "Decoder"]
+__all__ = ["ResBlock"]
