@@ -42,10 +42,10 @@ class TestDistortionRamp:
 class TestLossConfig:
     def test_defaults(self) -> None:
         cfg = LossConfig()
-        assert cfg.message.scale == 1.0
-        assert cfg.l2.scale == 2.0
+        assert cfg.message.scale == 7.0  # StegaStamp uses ~7x higher message loss
+        assert cfg.l2.scale == 1.0
         assert cfg.l2.ramp_steps == 20000
-        assert cfg.lpips.scale == 1.0
+        assert cfg.lpips.scale == 1.5
         assert cfg.l2_edge_gain == 10.0
         assert cfg.l2_edge_delay_steps == 60000
         assert cfg.yuv_weights == (1.0, 1.0, 1.0)
@@ -103,7 +103,7 @@ class TestConfig:
         )
         assert cfg.experiment_name == "test"
         assert cfg.training.num_steps == 140000
-        assert cfg.loss.l2.scale == 2.0
+        assert cfg.loss.l2.scale == 1.0
 
 
 class TestLoadConfig:
