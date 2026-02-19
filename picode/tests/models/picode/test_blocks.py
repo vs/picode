@@ -33,8 +33,10 @@ class TestResBlock:
         # Zero out conv weights - output should still be non-zero due to skip
         with torch.no_grad():
             block.conv1.weight.zero_()
+            assert block.conv1.bias is not None
             block.conv1.bias.zero_()
             block.conv2.weight.zero_()
+            assert block.conv2.bias is not None
             block.conv2.bias.zero_()
             # Also zero norm parameters to ensure clean pass-through
             block.norm1.weight.fill_(1.0)
