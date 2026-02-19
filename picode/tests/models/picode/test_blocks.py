@@ -8,14 +8,14 @@ from picode.models.picode.blocks import ResBlock
 class TestResBlock:
     """Tests for ResBlock."""
 
-    def test_output_shape_preserved(self):
+    def test_output_shape_preserved(self) -> None:
         """Output shape matches input shape."""
         block = ResBlock(channels=64)
         x = torch.randn(2, 64, 32, 32)
         y = block(x)
         assert y.shape == x.shape
 
-    def test_gradient_flows_through_skip(self):
+    def test_gradient_flows_through_skip(self) -> None:
         """Gradients flow through skip connection."""
         block = ResBlock(channels=32)
         x = torch.randn(2, 32, 16, 16, requires_grad=True)
@@ -26,7 +26,7 @@ class TestResBlock:
         assert x.grad is not None
         assert x.grad.abs().mean() > 0
 
-    def test_skip_connection_exists(self):
+    def test_skip_connection_exists(self) -> None:
         """Skip connection allows identity-like behavior."""
         block = ResBlock(channels=32)
 
@@ -49,7 +49,7 @@ class TestResBlock:
         expected = torch.nn.functional.leaky_relu(x, 0.2)
         assert torch.allclose(y, expected, atol=1e-5)
 
-    def test_handles_various_channel_counts(self):
+    def test_handles_various_channel_counts(self) -> None:
         """Works with different channel counts."""
         for channels in [16, 32, 64, 128]:
             block = ResBlock(channels=channels)
@@ -57,7 +57,7 @@ class TestResBlock:
             y = block(x)
             assert y.shape == x.shape
 
-    def test_groups_adjusted_for_small_channels(self):
+    def test_groups_adjusted_for_small_channels(self) -> None:
         """GroupNorm groups adjusted when channels < default groups."""
         # 16 channels with default groups=8 should work
         block = ResBlock(channels=16, groups=8)
