@@ -1,7 +1,10 @@
 """Tests for Picode decoder."""
 
+from typing import cast
+
 import pytest
 import torch
+import torch.nn as nn
 
 from picode.models.picode.decoder import Decoder
 
@@ -40,9 +43,10 @@ class TestDecoder:
         logits.sum().backward()
 
         # First conv layer should receive gradients
-        first_conv = decoder.stem[0]
-        assert first_conv.weight.grad is not None
-        assert first_conv.weight.grad.abs().mean() > 1e-8
+        first_conv = cast(nn.Conv2d, decoder.stem[0])
+        grad = first_conv.weight.grad
+        assert grad is not None
+        assert grad.abs().mean() > 1e-8
 
     def test_stn_receives_gradients_step_one(
         self, decoder: Decoder, sample_image: torch.Tensor
@@ -52,9 +56,10 @@ class TestDecoder:
         logits.sum().backward()
 
         # STN first conv should have non-zero gradients
-        stn_first_conv = decoder.stn_params[0]
-        assert stn_first_conv.weight.grad is not None
-        assert stn_first_conv.weight.grad.abs().mean() > 1e-10
+        stn_first_conv = cast(nn.Conv2d, decoder.stn_params[0])
+        grad = stn_first_conv.weight.grad
+        assert grad is not None
+        assert grad.abs().mean() > 1e-10
 
     def test_decode_method(self, decoder: Decoder, sample_image: torch.Tensor) -> None:
         """decode() returns binary predictions."""
