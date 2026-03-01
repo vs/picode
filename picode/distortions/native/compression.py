@@ -188,7 +188,7 @@ class JPEGCompression(Distortion):
         """
         # DCT: D @ x @ D^T
         # Using einsum for efficient batched matrix multiplication
-        dct = self.dct_matrix
+        dct = self.dct_matrix.to(blocks.device)
         return torch.einsum("ij,bcnmjk,lk->bcnmil", dct, blocks, dct)
 
     def _idct_2d(self, blocks: Tensor) -> Tensor:
@@ -203,7 +203,7 @@ class JPEGCompression(Distortion):
             Spatial domain blocks of same shape.
         """
         # IDCT: D^T @ x @ D
-        dct = self.dct_matrix
+        dct = self.dct_matrix.to(blocks.device)
         return torch.einsum("ji,bcnmjk,kl->bcnmil", dct, blocks, dct)
 
     def _quantize(self, dct_blocks: Tensor) -> Tensor:
@@ -222,7 +222,7 @@ class JPEGCompression(Distortion):
             Quantized coefficients of same shape.
         """
         # Divide by quantization matrix
-        q_matrix = self.q_matrix.view(1, 1, 1, 1, 8, 8)
+        q_matrix = self.q_matrix.to(dct_blocks.device).view(1, 1, 1, 1, 8, 8)
         divided = dct_blocks / q_matrix
 
         # Round with straight-through estimator
