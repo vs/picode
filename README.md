@@ -4,11 +4,13 @@ PyTorch steganography framework for encoding and decoding hidden messages in ima
 
 ## Features
 
+- **Multiple Model Architectures**: StegaStamp (original) and Picode (improved gradient flow with GroupNorm/LeakyReLU)
 - **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
 - **CNN Decoder**: Extracts hidden messages even from distorted images
 - **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression with swappable backends (native PyTorch, Kornia)
 - **Error Correction Codes**: BCH and LDPC implementations for message robustness
 - **Training Infrastructure**: YAML config, curriculum learning, checkpointing, TensorBoard logging
+- **Cloud Training**: Modal deployment scripts for GPU training with automatic data upload
 
 ## Project Structure
 
@@ -16,6 +18,7 @@ PyTorch steganography framework for encoding and decoding hidden messages in ima
 picode/
 ├── distortions/           # Differentiable image distortions
 │   ├── base.py            # Distortion ABC
+│   ├── cli.py             # CLI tool with combine command
 │   ├── native/            # Pure PyTorch implementations
 │   └── kornia/            # Kornia-based implementations
 ├── ecc/                   # Error correction codes
@@ -24,14 +27,20 @@ picode/
 │   └── ldpc/              # LDPC implementation (pyldpc library)
 ├── models/                # Encoder/decoder models
 │   ├── base.py            # Encoder/Decoder ABC
-│   └── stegastamp/        # StegaStamp implementation
+│   ├── stegastamp/        # StegaStamp implementation (original architecture)
+│   └── picode/            # Picode implementation (improved gradient flow)
 ├── training/              # Training infrastructure
-│   ├── config.py          # YAML config loading
-│   ├── trainer.py         # Trainer with loss ramping
+│   ├── config.py          # YAML config loading with model selection
+│   ├── trainer.py         # Trainer with loss ramping and model selection
 │   ├── evaluation.py      # Evaluator with robustness sweeps
 │   ├── checkpointing.py   # Checkpoint management
 │   └── logging/           # Console and TensorBoard loggers
 └── tests/                 # Test suite
+scripts/
+├── modal_setup.sh         # Modal cloud training utilities
+├── modal_extract.py       # Tarball extraction on Modal
+├── download_coco.sh       # COCO dataset download
+└── download_mirflickr.sh  # MIRFLICKR dataset download
 ```
 
 ## Installation
@@ -56,7 +65,7 @@ pip install -e ".[kornia]"
 import torch
 from picode.models.stegastamp import Encoder, Decoder
 
-# Initialize models
+# Initialize models (StegaStamp architecture)
 encoder = Encoder(num_bits=100)
 decoder = Decoder(num_bits=100)
 
@@ -65,8 +74,14 @@ image = torch.rand(1, 3, 400, 400)  # NCHW, [0, 1] range
 message = torch.randint(0, 2, (1, 100)).float()  # Binary message
 
 encoded_image = encoder(image, message)
-recovered = decoder(encoded_image)
-binary_message = (recovered > 0.5).float()
+logits = decoder(encoded_image)  # Returns logits (pre-sigmoid)
+binary_message = (torch.sigmoid(logits) > 0.5).float()
+
+# Alternative: Use the Picode model (improved gradient flow)
+from picode.models.picode import Encoder as PicodeEncoder, Decoder as PicodeDecoder
+
+encoder = PicodeEncoder(num_bits=100)  # Uses GroupNorm + LeakyReLU
+decoder = PicodeDecoder(num_bits=100)  # Uses ResBlocks
 ```
 
 ### Training with Distortions
@@ -140,6 +155,9 @@ distort --list
 # Apply a distortion to an image
 distort gaussian-blur input.png -o output/ --intensity 0.5
 distort perspective-warp input.png -o output/ --intensity 0.3
+
+# Apply all distortions sequentially (combine command)
+distort combine input.png -o output/ --intensity 0.5
 ```
 
 ## How It Works
@@ -267,10 +285,57 @@ logging:
 - **random**: Randomly sample distortion strength each step
 - **none**: No distortions (for baseline comparison)
 
+## Cloud Training with Modal
+
+Train on cloud GPUs using [Modal](https://modal.com/):
+
+```bash
+# Initial setup (one-time)
+./scripts/modal_setup.sh setup
+
+# Upload training data (uses tarball for large datasets)
+./scripts/modal_setup.sh upload-data ./data/coco/coco2017/train2017
+
+# Start training
+./scripts/modal_setup.sh train
+
+# Resume from checkpoint
+./scripts/modal_setup.sh resume
+
+# Download checkpoints
+./scripts/modal_setup.sh download ./checkpoints_modal
+```
+
+The upload command automatically handles large datasets (like COCO with 118K images) by:
+1. Creating a tarball locally
+2. Uploading the single tarball to Modal
+3. Extracting on Modal's infrastructure
+4. Cleaning up the tarball
+
+## Model Architectures
+
+### StegaStamp (Original)
+- U-Net encoder with BatchNorm and ReLU
+- CNN decoder with 7 conv layers
+- Based on the CVPR 2020 paper
+
+### Picode (Improved)
+- U-Net encoder with **GroupNorm** and **LeakyReLU** for better gradient flow
+- CNN decoder with **ResBlocks** for improved feature extraction
+- Designed to address gradient vanishing issues observed in deep training
+
+Select the model in your config:
+
+```yaml
+training:
+  model: picode  # or 'stegastamp'
+```
+
 ## Documentation
 
 - [Distortions Implementation](docs/distortions_implementation.md) - Technical comparison with original StegaStamp
 - [Model Implementation](docs/model_implementation.md) - Encoder, decoder, and training details
+- [Gradient Flow Analysis](docs/gradient_flow_analysis.md) - Analysis of gradient behavior in different architectures
 - [Project Structure Design](docs/plans/2026-02-03-restructure-design.md) - Architecture decisions
 
 ## License

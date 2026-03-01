@@ -1139,6 +1139,48 @@ class ModernGeometricAugmentation(nn.Module):
 
 ---
 
+## CLI Commands
+
+The distortions library includes a CLI tool for applying distortions to images.
+
+### Basic Usage
+
+```bash
+# List available distortions
+distort --list
+
+# Apply a single distortion
+distort gaussian-blur input.png -o output/ --intensity 0.5
+distort perspective-warp input.png -o output/ --intensity 0.3
+```
+
+### Combine Command (New)
+
+The `combine` command applies all available distortions sequentially to an image:
+
+```bash
+# Apply all distortions in sequence
+distort combine input.png -o output/ --intensity 0.5
+```
+
+This command:
+1. Applies each distortion in sequence: blur, noise, color, geometric, compression
+2. Uses the specified intensity for all distortions
+3. Saves intermediate results and the final combined output
+4. Infers output format from input file extension
+
+Example output files:
+```
+output/input_blur.png
+output/input_noise.png
+output/input_color.png
+output/input_geometric.png
+output/input_compression.png
+output/input_combined.png  # All distortions applied
+```
+
+---
+
 ## Summary
 
 ### Implementation Comparison Table

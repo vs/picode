@@ -479,6 +479,10 @@ class Decoder(nn.Module):
 
     Args:
         num_bits: Number of bits in the message (default: 100).
+
+    Note:
+        Returns raw logits (pre-sigmoid). Use BCEWithLogitsLoss for training
+        and apply sigmoid for inference.
     """
 
     def __init__(self, num_bits: int = 100) -> None:
@@ -501,7 +505,12 @@ class Decoder(nn.Module):
         self.fc2 = nn.Linear(512, num_bits)
 
     def forward(self, image: Tensor) -> Tensor:
-        """Extract message probabilities from image."""
+        """Extract message logits from image.
+
+        Returns:
+            Tensor of shape (B, num_bits) containing raw logits.
+            Apply torch.sigmoid() for probabilities.
+        """
         x = F.relu(self.conv1(image))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
@@ -512,9 +521,10 @@ class Decoder(nn.Module):
 
         x = x.flatten(start_dim=1)  # (B, 21632)
         x = F.relu(self.fc1(x))     # (B, 512)
-        x = torch.sigmoid(self.fc2(x))  # (B, num_bits) in [0, 1]
-        return x
+        return self.fc2(x)          # (B, num_bits) - raw logits
 ```
+
+**Important change (2026-02-16)**: The decoder now outputs **logits** instead of sigmoid probabilities. This matches the original StegaStamp implementation and allows using `BCEWithLogitsLoss` for numerically stable training.
 
 ### Why This Project Omits STN
 
@@ -533,8 +543,8 @@ This project's decoder focuses on the core steganography task without physical-w
 |--------|------------|--------------|
 | Spatial Transformer | Yes (6-param affine) | No |
 | Input normalization | Subtracts 0.5 | No normalization |
-| Output activation | None (raw logits) | Sigmoid (probabilities) |
-| Loss function used | Sigmoid cross-entropy | Binary cross-entropy |
+| Output activation | None (raw logits) | None (raw logits) |
+| Loss function used | Sigmoid cross-entropy | BCEWithLogitsLoss |
 | Feature dimensions | 400→200→100→50→25→13 | Same downsampling pattern |
 | Final FC | 512 → secret_size | 512 → num_bits |
 
@@ -649,10 +659,18 @@ This applies sigmoid internally, which is numerically more stable than applying 
 
 ```python
 def message_loss(decoded: Tensor, message: Tensor) -> Tensor:
-    """Binary cross-entropy loss for message recovery."""
-    # 'decoded' already has sigmoid applied in decoder.forward()
-    return F.binary_cross_entropy(decoded, message)
+    """Binary cross-entropy loss for message recovery.
+
+    Args:
+        decoded: Raw logits from decoder (pre-sigmoid)
+        message: Target binary message
+    """
+    # Use BCEWithLogitsLoss for numerical stability
+    # It combines sigmoid + BCE in a numerically stable way
+    return F.binary_cross_entropy_with_logits(decoded, message)
 ```
+
+**Note (2026-02-16)**: The loss function was updated to use `BCEWithLogitsLoss` to match the decoder's logits output and provide better numerical stability.
 
 ### Image Loss: L2/MSE with YUV Weighting
 
@@ -945,24 +963,80 @@ The decoder's STN learns to undo these transforms during inference.
 
 ---
 
+## Picode Model Architecture
+
+In addition to the StegaStamp implementation, this project includes a **Picode** model with improved gradient flow characteristics.
+
+### Design Goals
+
+The Picode architecture addresses gradient vanishing issues observed during deep training of the StegaStamp model:
+
+1. **GroupNorm instead of BatchNorm**: More stable gradients for small batch sizes
+2. **LeakyReLU instead of ReLU**: Prevents dead neurons with negative slope
+3. **ResBlocks in decoder**: Better gradient flow through skip connections
+
+### Picode Encoder
+
+Located in `picode/models/picode/encoder.py`:
+
+```python
+class ConvBlock(nn.Module):
+    """Conv -> GroupNorm -> LeakyReLU block."""
+
+    def __init__(self, in_ch: int, out_ch: int, stride: int = 1) -> None:
+        super().__init__()
+        self.conv = nn.Conv2d(in_ch, out_ch, 3, stride=stride, padding=1)
+        self.norm = nn.GroupNorm(num_groups=8, num_channels=out_ch)
+        self.act = nn.LeakyReLU(0.2, inplace=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.act(self.norm(self.conv(x)))
+```
+
+### Picode Decoder with ResBlocks
+
+Located in `picode/models/picode/decoder.py`:
+
+```python
+class ResBlock(nn.Module):
+    """Residual block with GroupNorm and LeakyReLU."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.norm1 = nn.GroupNorm(8, channels)
+        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.norm2 = nn.GroupNorm(8, channels)
+        self.act = nn.LeakyReLU(0.2, inplace=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        residual = x
+        x = self.act(self.norm1(self.conv1(x)))
+        x = self.norm2(self.conv2(x))
+        return self.act(x + residual)  # Skip connection
+```
+
+### Gradient Flow Comparison
+
+See `docs/gradient_flow_analysis.md` for detailed analysis of gradient behavior between StegaStamp and Picode models.
+
+---
+
 ## Summary
 
 ### Implementation Comparison Table
 
-| Component | StegaStamp | This Project |
-|-----------|------------|--------------|
-| **Framework** | TensorFlow 1.x + Keras | PyTorch |
-| **Tensor format** | NHWC | NCHW |
-| **Encoder architecture** | U-Net with skip connections | Same structure |
-| **Encoder output** | Residual only | Full encoded image |
-| **Decoder architecture** | STN + CNN | CNN only |
-| **Spatial transformer** | Yes (affine) | No |
-| **Message output** | Logits | Sigmoid probabilities |
-| **Image loss** | YUV-weighted L2 + edge falloff | Simple MSE |
-| **Perceptual loss** | LPIPS | LPIPS (optional) |
-| **GAN loss** | Optional discriminator | Not included |
-| **Loss ramping** | Yes (curriculum learning) | No |
-| **Default message size** | 20 bits | 100 bits |
+| Component | StegaStamp | Picode | This Project (StegaStamp) |
+|-----------|------------|--------|---------------------------|
+| **Framework** | TensorFlow 1.x | PyTorch | PyTorch |
+| **Normalization** | BatchNorm | GroupNorm | BatchNorm |
+| **Activation** | ReLU | LeakyReLU | ReLU |
+| **Encoder** | U-Net | U-Net | U-Net |
+| **Decoder** | CNN | CNN + ResBlocks | CNN |
+| **STN** | Yes | No | No |
+| **Message output** | Logits | Logits | Logits |
+| **Loss function** | Sigmoid CE | BCEWithLogitsLoss | BCEWithLogitsLoss |
+| **Gradient flow** | Standard | Improved | Standard |
 
 ### When to Use Which
 
