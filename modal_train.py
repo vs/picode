@@ -233,5 +233,9 @@ def main():
     print(__doc__)
 
 
-# Mount local code into container
-image = image.add_local_dir(".", remote_path="/root", ignore=["data/", "checkpoints/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/"])
+# Mount local code into container and install picode package
+image = (
+    image
+    .add_local_dir(".", remote_path="/root", ignore=["data/", "checkpoints/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/"])
+    .run_commands("cd /root && pip install -e .")
+)
