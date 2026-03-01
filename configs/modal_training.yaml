@@ -15,7 +15,7 @@ training:
   lr: 0.0001
   num_bits: 100
   image_size: 400
-  warmup_steps: 500
+  warmup_steps: 2000
 
 loss:
   message:
@@ -36,24 +36,24 @@ distortion:
   strategy: curriculum
   perspective:
     strength: 0.1
-    ramp_steps: 10000
+    ramp_steps: 20000
   brightness:
     strength: 0.3
-    ramp_steps: 1000
+    ramp_steps: 10000
   saturation:
     strength: 1.0
-    ramp_steps: 1000
+    ramp_steps: 10000
   hue:
     strength: 0.1
-    ramp_steps: 1000
+    ramp_steps: 10000
   noise:
     strength: 0.02
-    ramp_steps: 1000
+    ramp_steps: 10000
   contrast: [0.5, 1.5]
-  contrast_ramp_steps: 1000
+  contrast_ramp_steps: 10000
   jpeg_quality:
     strength: 25
-    ramp_steps: 1000
+    ramp_steps: 15000
   enable_jpeg: true
   enable_blur: true
 
