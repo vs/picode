@@ -33,7 +33,7 @@ app = modal.App("picode-training")
 data_volume = modal.Volume.from_name("picode-data", create_if_missing=True)
 checkpoint_volume = modal.Volume.from_name("picode-checkpoints", create_if_missing=True)
 
-# Container image with all dependencies
+# Container image with all dependencies and local code
 image = (
     modal.Image.debian_slim(python_version="3.10")
     .apt_install("build-essential")
@@ -51,6 +51,8 @@ image = (
         "kornia>=0.7.0",
         "tensorboard>=2.0",
     )
+    .add_local_dir(".", remote_path="/root", copy=True, ignore=["data/", "checkpoints/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/"])
+    .run_commands("cd /root && pip install -e .")
 )
 
 # Volume mount paths
@@ -231,11 +233,3 @@ def evaluate(checkpoint_path: str, robustness: bool = False):
 def main():
     """Default entrypoint - shows help."""
     print(__doc__)
-
-
-# Mount local code into container and install picode package
-image = (
-    image
-    .add_local_dir(".", remote_path="/root", ignore=["data/", "checkpoints/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/"])
-    .run_commands("cd /root && pip install -e .")
-)
