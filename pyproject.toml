@@ -64,6 +64,7 @@ ignore_missing_imports = true
 module = "picode.tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 testpaths = ["picode/tests"]

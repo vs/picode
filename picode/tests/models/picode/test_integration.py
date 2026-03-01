@@ -51,7 +51,7 @@ class TestEncoderDecoderIntegration:
         loss = F.binary_cross_entropy_with_logits(logits, messages)
 
         # Should not raise
-        loss.backward()  # type: ignore[no-untyped-call]
+        loss.backward()
 
         # Both models should have gradients
         assert any(p.grad is not None for p in encoder.parameters())

@@ -39,7 +39,7 @@ class TestGradientFlowComparison:
 
         # Compute loss and backprop
         loss = F.binary_cross_entropy_with_logits(decoded_logits, messages)
-        loss.sum().backward()  # type: ignore[no-untyped-call]
+        loss.sum().backward()
 
         # Sum gradient magnitudes
         enc_grad = sum(
