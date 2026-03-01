@@ -11,7 +11,12 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from picode.models.stegastamp import Decoder, Encoder
+from picode.models.base import Decoder as BaseDecoder
+from picode.models.base import Encoder as BaseEncoder
+from picode.models.picode import Decoder as PicodeDecoder
+from picode.models.picode import Encoder as PicodeEncoder
+from picode.models.stegastamp import Decoder as StegaDecoder
+from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
 from picode.training.config import (
     CheckpointConfig,
@@ -112,10 +117,14 @@ class Trainer:
         # Set up device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Create models
+        # Create models based on config
         num_bits = config.training.num_bits
-        self.encoder = Encoder(num_bits=num_bits).to(self.device)
-        self.decoder = Decoder(num_bits=num_bits).to(self.device)
+        if config.model == "picode":
+            self.encoder: BaseEncoder = PicodeEncoder(num_bits=num_bits).to(self.device)
+            self.decoder: BaseDecoder = PicodeDecoder(num_bits=num_bits).to(self.device)
+        else:  # default to stegastamp
+            self.encoder = StegaEncoder(num_bits=num_bits).to(self.device)
+            self.decoder = StegaDecoder(num_bits=num_bits).to(self.device)
 
         # Create optimizer
         params = list(self.encoder.parameters()) + list(self.decoder.parameters())
