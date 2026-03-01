@@ -1,12 +1,13 @@
 # configs/modal_training.yaml
-# Configuration for Modal GPU training (T4/A10G/A100)
+# Configuration for Modal GPU training with COCO dataset
+# GPU options: T4 ($0.59/hr), A10G ($1.10/hr), A100 ($3.50/hr)
 
-experiment_name: picode_modal
+experiment_name: picode_coco
 
 data:
   source: folder
-  path: /data  # Modal volume mount point
-  batch_size: 4  # T4 (16GB) - increase to 8 for A10G/A100
+  path: /data/train2017  # COCO train2017 images
+  batch_size: 4  # T4 (16GB) - increase to 8 for A10G, 16 for A100
   num_workers: 4
 
 training:

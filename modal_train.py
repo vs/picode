@@ -35,7 +35,9 @@ checkpoint_volume = modal.Volume.from_name("picode-checkpoints", create_if_missi
 
 # Container image with all dependencies
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.debian_slim(python_version="3.10")
+    .apt_install("build-essential")
+    .pip_install("numpy<2.0", "scipy")  # pyldpc build deps
     .pip_install(
         "torch>=2.0",
         "torchvision>=0.15",
@@ -67,14 +69,14 @@ CHECKPOINT_PATH = "/checkpoints"
 )
 def train(
     config: str = "configs/stegastamp_baseline.yaml",
-    override: list[str] | None = None,
+    override: str = "",
     resume: bool = False,
 ):
     """Run training on Modal GPU.
 
     Args:
         config: Path to config file (relative to repo root)
-        override: List of key=value overrides (e.g., training.lr=0.0002)
+        override: Comma-separated key=value overrides (e.g., "training.lr=0.0002,data.batch_size=8")
         resume: Whether to resume from latest checkpoint
     """
     import os
@@ -88,10 +90,9 @@ def train(
     from picode.training.cli import parse_overrides
     from picode.training.trainer import Trainer
 
-    # Build overrides dict - always override paths
-    override_list = list(override or [])
+    # Build overrides dict - override checkpoint/logging paths (data path from config)
+    override_list = [o.strip() for o in override.split(",") if o.strip()]
     override_list.extend([
-        f"data.path={DATA_PATH}",
         f"checkpoint.dir={CHECKPOINT_PATH}",
         f"logging.tensorboard_dir={CHECKPOINT_PATH}/runs",
     ])

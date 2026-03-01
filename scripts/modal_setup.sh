@@ -50,8 +50,26 @@ case "$1" in
             echo "Usage: ./scripts/modal_setup.sh upload-data <local-path>"
             exit 1
         fi
-        echo "Uploading $2 to Modal volume..."
-        modal volume put picode-data "$2" /
+
+        local_path="$2"
+        dir_name=$(basename "$local_path")
+        tarball="/tmp/picode_upload_${dir_name}.tar"
+
+        echo "Creating tarball from $local_path..."
+        tar -cf "$tarball" -C "$(dirname "$local_path")" "$dir_name"
+        tarball_size=$(du -h "$tarball" | cut -f1)
+        echo "Tarball created: $tarball ($tarball_size)"
+
+        echo "Uploading tarball to Modal volume..."
+        modal volume put picode-data "$tarball" /
+
+        echo "Extracting on Modal..."
+        modal run scripts/modal_extract.py --tarball "/picode_upload_${dir_name}.tar" --dest /
+
+        echo "Cleaning up..."
+        modal volume rm picode-data "/picode_upload_${dir_name}.tar"
+        rm -f "$tarball"
+
         echo "Upload complete!"
         echo "Verify with: modal volume ls picode-data"
         ;;
