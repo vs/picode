@@ -5,6 +5,15 @@ import torch
 from picode.detection.confidence import compute_confidence
 
 
+def test_package_exports() -> None:
+    """Detection package exports main classes."""
+    from picode.detection import Detection, Detector, compute_confidence
+
+    assert Detection is not None
+    assert Detector is not None
+    assert compute_confidence is not None
+
+
 class TestComputeConfidence:
     """Tests for compute_confidence function."""
 
