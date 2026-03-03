@@ -38,6 +38,7 @@ all = [
 ]
 
 [project.scripts]
+picode = "picode.cli:main"
 distort = "picode.distortions.cli:main"
 picode-train = "picode.training.cli:main"
 
