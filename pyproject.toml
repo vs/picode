@@ -41,6 +41,7 @@ all = [
 picode = "picode.cli:main"
 distort = "picode.distortions.cli:main"
 picode-train = "picode.training.cli:main"
+detect = "picode.detection.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
