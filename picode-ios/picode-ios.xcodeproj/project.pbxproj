@@ -1,0 +1,476 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A38167F22E62BAA1E591005 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D25457A8C6197F09569EA7 /* CameraView.swift */; };
+		0CCE24B0CC9BD4653D0CD348 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */; };
+		21F2F273AB706DEFCA118FB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA2045C38D58C57A6B1891D6 /* Assets.xcassets */; };
+		2E8A3F4E8D44BECE4D55DC59 /* PicodeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300972E9F340CD6345BF6A5C /* PicodeApp.swift */; };
+		2FD79D41E1D0DBB03CDC8A28 /* PicodeDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */; };
+		44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */; };
+		599F2CFBDFD060E6184A8BC4 /* CaptureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635784AC68EE83D91DB66729 /* CaptureButton.swift */; };
+		779F630EBEE260A939341414 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FF6280FF1774916B2D97E98 /* DecoderTests.swift */; };
+		A62B69C916596CFE137AC0C0 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19857120E395BEF01C81EE8B /* CameraPreview.swift */; };
+		B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */; };
+		CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */; };
+		D832E2D046C527F83204A09A /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492B237A548764590351C646 /* CameraController.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00B9134E80C66A0D86F0136 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B58E1570CEC76512463280C3 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F06829A1A1F03EBCD8EC297A;
+			remoteInfo = "picode-ios";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		19857120E395BEF01C81EE8B /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsView.swift; sourceTree = "<group>"; };
+		300972E9F340CD6345BF6A5C /* PicodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeApp.swift; sourceTree = "<group>"; };
+		3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubDecoder.swift; sourceTree = "<group>"; };
+		492B237A548764590351C646 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
+		4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeDecoder.swift; sourceTree = "<group>"; };
+		5FF6280FF1774916B2D97E98 /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
+		635784AC68EE83D91DB66729 /* CaptureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButton.swift; sourceTree = "<group>"; };
+		9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
+		C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
+		D004072E32381E3254956C2F /* picode-iosTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "picode-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9D25457A8C6197F09569EA7 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		FA2045C38D58C57A6B1891D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FD0F06900D15F1B64B4917DE /* picode-ios.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "picode-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0B9059BC25DC1142E0270448 /* picode-iosTests */ = {
+			isa = PBXGroup;
+			children = (
+				5FF6280FF1774916B2D97E98 /* DecoderTests.swift */,
+				9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */,
+			);
+			path = "picode-iosTests";
+			sourceTree = "<group>";
+		};
+		2260373753CDD762FD741022 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FD0F06900D15F1B64B4917DE /* picode-ios.app */,
+				D004072E32381E3254956C2F /* picode-iosTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2660B7D75C35B897177340C1 /* picode-ios */ = {
+			isa = PBXGroup;
+			children = (
+				56A6D30E1B8F61E0F91442C1 /* App */,
+				E9E91A5820505071DDF4D4FE /* Camera */,
+				335A99866DEA18658260DE16 /* Decoder */,
+				A8331778B3F2154BDE69D48B /* Views */,
+			);
+			path = "picode-ios";
+			sourceTree = "<group>";
+		};
+		32CB90DB20634EA55DEFD6CE = {
+			isa = PBXGroup;
+			children = (
+				2660B7D75C35B897177340C1 /* picode-ios */,
+				0B9059BC25DC1142E0270448 /* picode-iosTests */,
+				2260373753CDD762FD741022 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		335A99866DEA18658260DE16 /* Decoder */ = {
+			isa = PBXGroup;
+			children = (
+				4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */,
+				3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */,
+			);
+			path = Decoder;
+			sourceTree = "<group>";
+		};
+		56A6D30E1B8F61E0F91442C1 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				FA2045C38D58C57A6B1891D6 /* Assets.xcassets */,
+				300972E9F340CD6345BF6A5C /* PicodeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A8331778B3F2154BDE69D48B /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				F9D25457A8C6197F09569EA7 /* CameraView.swift */,
+				C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */,
+				2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */,
+				CE5C30D783ED5CB840898551 /* Components */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		CE5C30D783ED5CB840898551 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				635784AC68EE83D91DB66729 /* CaptureButton.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		E9E91A5820505071DDF4D4FE /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				492B237A548764590351C646 /* CameraController.swift */,
+				19857120E395BEF01C81EE8B /* CameraPreview.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		49F72E392664DABA3F181B6D /* picode-iosTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A5712824EF9F91821E148471 /* Build configuration list for PBXNativeTarget "picode-iosTests" */;
+			buildPhases = (
+				D110A8CDE4E86FF020A247FE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0356E7D82CE96F8177C6F989 /* PBXTargetDependency */,
+			);
+			name = "picode-iosTests";
+			productName = "picode-iosTests";
+			productReference = D004072E32381E3254956C2F /* picode-iosTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F06829A1A1F03EBCD8EC297A /* picode-ios */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 15955B20831DCFF8BE8F0E43 /* Build configuration list for PBXNativeTarget "picode-ios" */;
+			buildPhases = (
+				9A6376C3A81AC0DA38F57443 /* Sources */,
+				F3DBD43F858D858A18764FAC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "picode-ios";
+			productName = "picode-ios";
+			productReference = FD0F06900D15F1B64B4917DE /* picode-ios.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B58E1570CEC76512463280C3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					F06829A1A1F03EBCD8EC297A = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = EC9C3A457BB60262956ECC3F /* Build configuration list for PBXProject "picode-ios" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 32CB90DB20634EA55DEFD6CE;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F06829A1A1F03EBCD8EC297A /* picode-ios */,
+				49F72E392664DABA3F181B6D /* picode-iosTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F3DBD43F858D858A18764FAC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				21F2F273AB706DEFCA118FB7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9A6376C3A81AC0DA38F57443 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D832E2D046C527F83204A09A /* CameraController.swift in Sources */,
+				A62B69C916596CFE137AC0C0 /* CameraPreview.swift in Sources */,
+				0A38167F22E62BAA1E591005 /* CameraView.swift in Sources */,
+				0CCE24B0CC9BD4653D0CD348 /* CameraViewModel.swift in Sources */,
+				599F2CFBDFD060E6184A8BC4 /* CaptureButton.swift in Sources */,
+				2E8A3F4E8D44BECE4D55DC59 /* PicodeApp.swift in Sources */,
+				2FD79D41E1D0DBB03CDC8A28 /* PicodeDecoder.swift in Sources */,
+				CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */,
+				B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D110A8CDE4E86FF020A247FE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				779F630EBEE260A939341414 /* DecoderTests.swift in Sources */,
+				44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0356E7D82CE96F8177C6F989 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F06829A1A1F03EBCD8EC297A /* picode-ios */;
+			targetProxy = A00B9134E80C66A0D86F0136 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		7BBCBDAC81EB076E21044DBD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = "picode-ios/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.picode.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8A92CD1083A570BF41A8B304 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.picode.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/picode-ios.app/picode-ios";
+			};
+			name = Release;
+		};
+		9CC3C2F8E7D320C5FD3E0A11 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = "picode-ios/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.picode.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B7FE7E9AF0D177B714B49A0A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = "picode-ios/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		C85AEB77B8216BE153FAF892 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.picode.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/picode-ios.app/picode-ios";
+			};
+			name = Debug;
+		};
+		FFBA8B78E6BC709DEE203EB3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = "picode-ios/Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		15955B20831DCFF8BE8F0E43 /* Build configuration list for PBXNativeTarget "picode-ios" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9CC3C2F8E7D320C5FD3E0A11 /* Debug */,
+				7BBCBDAC81EB076E21044DBD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A5712824EF9F91821E148471 /* Build configuration list for PBXNativeTarget "picode-iosTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C85AEB77B8216BE153FAF892 /* Debug */,
+				8A92CD1083A570BF41A8B304 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EC9C3A457BB60262956ECC3F /* Build configuration list for PBXProject "picode-ios" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B7FE7E9AF0D177B714B49A0A /* Debug */,
+				FFBA8B78E6BC709DEE203EB3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = B58E1570CEC76512463280C3 /* Project object */;
+}

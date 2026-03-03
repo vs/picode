@@ -1,0 +1,45 @@
+name: picode-ios
+options:
+  bundleIdPrefix: com.picode
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+settings:
+  SWIFT_VERSION: "5.9"
+  TARGETED_DEVICE_FAMILY: "1"  # iPhone only
+  INFOPLIST_FILE: picode-ios/Info.plist
+
+targets:
+  picode-ios:
+    type: application
+    platform: iOS
+    sources:
+      - path: picode-ios
+        excludes:
+          - "**/*.plist"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.picode.ios
+      INFOPLIST_FILE: picode-ios/Info.plist
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: ""
+    info:
+      path: picode-ios/Info.plist
+      properties:
+        NSCameraUsageDescription: Picode needs camera access to scan encoded images
+        UILaunchScreen:
+          UIColorName: LaunchScreenBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+
+  picode-iosTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: picode-iosTests
+    dependencies:
+      - target: picode-ios
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.picode.ios.tests
