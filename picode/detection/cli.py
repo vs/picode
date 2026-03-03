@@ -52,6 +52,12 @@ from picode.models.stegastamp import Decoder
     is_flag=True,
     help="Show detailed progress.",
 )
+@click.option(
+    "--sample-rate",
+    default=1,
+    type=int,
+    help="For video: process every Nth frame.",
+)
 def main(
     input: str,
     checkpoint: str,
@@ -61,10 +67,11 @@ def main(
     scales: str,
     device: str,
     verbose: bool,
+    sample_rate: int,
 ) -> None:
-    """Detect steganographic images in photos.
+    """Detect steganographic images in photos or videos.
 
-    INPUT is the path to an image file.
+    INPUT is the path to an image or video file.
     """
     input_path = Path(input)
     checkpoint_path = Path(checkpoint)
@@ -95,40 +102,65 @@ def main(
         click.echo(f"Detecting in {input_path}")
         click.echo(f"Scales: {scale_list}, Threshold: {threshold}")
 
-    # Run detection
-    result = detector.detect(input_path)
-
     # Format output
     output_data: dict[str, object] = {
         "input": str(input_path),
         "detections": [],
     }
 
-    if result:
-        detection_dict = {
-            "bbox": list(result.bbox),
-            "confidence": result.confidence,
-            "message_bits": result.message_bits.tolist(),
-        }
+    # Check if input is video
+    video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    is_video = input_path.suffix.lower() in video_extensions
+
+    if is_video:
+        if verbose:
+            click.echo("Processing video...")
+
         detections_list: list[dict[str, object]] = []
-        detections_list.append(detection_dict)
+        for frame_num, result in detector.detect_video(input_path, sample_rate=sample_rate):
+            if result:
+                detection_dict: dict[str, object] = {
+                    "frame": frame_num,
+                    "bbox": list(result.bbox),
+                    "confidence": result.confidence,
+                    "message_bits": result.message_bits.tolist(),
+                }
+                detections_list.append(detection_dict)
+
+                if verbose:
+                    click.echo(f"  Frame {frame_num}: confidence {result.confidence:.4f}")
+
         output_data["detections"] = detections_list
-
-        click.echo("Detection found!")
-        click.echo(f"  Bounding box: {result.bbox}")
-        click.echo(f"  Confidence: {result.confidence:.4f}")
-
-        # Save crop if requested
-        if save_crop:
-            from PIL import Image
-
-            img = Image.open(input_path).convert("RGB")
-            x, y, w, h = result.bbox
-            crop = img.crop((x, y, x + w, y + h))
-            crop.save(save_crop)
-            click.echo(f"  Saved crop to: {save_crop}")
+        click.echo(f"Processed video, found {len(detections_list)} detections.")
     else:
-        click.echo("No detection found above threshold.")
+        # Run image detection
+        result = detector.detect(input_path)
+
+        if result:
+            detection_dict = {
+                "bbox": list(result.bbox),
+                "confidence": result.confidence,
+                "message_bits": result.message_bits.tolist(),
+            }
+            detections_list = []
+            detections_list.append(detection_dict)
+            output_data["detections"] = detections_list
+
+            click.echo("Detection found!")
+            click.echo(f"  Bounding box: {result.bbox}")
+            click.echo(f"  Confidence: {result.confidence:.4f}")
+
+            # Save crop if requested
+            if save_crop:
+                from PIL import Image
+
+                img = Image.open(input_path).convert("RGB")
+                x, y, w, h = result.bbox
+                crop = img.crop((x, y, x + w, y + h))
+                crop.save(save_crop)
+                click.echo(f"  Saved crop to: {save_crop}")
+        else:
+            click.echo("No detection found above threshold.")
 
     # Write JSON output if requested
     if output:

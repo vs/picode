@@ -1,5 +1,6 @@
 """Blind detector for steganographic images."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -151,3 +152,46 @@ class Detector:
         # For V1, just return single best detection
         result = self.detect(image)
         return [result] if result else []
+
+    def detect_video(
+        self,
+        video_path: Path | str,
+        sample_rate: int = 1,
+    ) -> Iterator[tuple[int, Detection | None]]:
+        """Detect in video frames.
+
+        Args:
+            video_path: Path to video file.
+            sample_rate: Process every Nth frame.
+
+        Yields:
+            Tuples of (frame_number, detection_or_none).
+        """
+        import cv2
+
+        video_path = Path(video_path)
+        cap = cv2.VideoCapture(str(video_path))
+
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video: {video_path}")
+
+        frame_num = 0
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                if frame_num % sample_rate == 0:
+                    # Convert BGR to RGB and to tensor
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_tensor = (
+                        torch.from_numpy(frame_rgb).permute(2, 0, 1).float() / 255.0
+                    )
+
+                    detection = self.detect(frame_tensor)
+                    yield (frame_num, detection)
+
+                frame_num += 1
+        finally:
+            cap.release()
