@@ -1,6 +1,13 @@
 # Picode
 
-PyTorch steganography framework for encoding and decoding hidden messages in images. Based on [StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020).
+Steganography framework for encoding and decoding hidden messages in images. Based on [StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020).
+
+## Sub-Projects
+
+This monorepo contains multiple sub-projects:
+
+- **[picode-model/](picode-model/)** - PyTorch training framework for model development
+- **[picode-ios/](picode-ios/)** - iOS application for mobile steganography
 
 ## Features
 
@@ -11,36 +18,28 @@ PyTorch steganography framework for encoding and decoding hidden messages in ima
 - **Error Correction Codes**: BCH and LDPC implementations for message robustness
 - **Training Infrastructure**: YAML config, curriculum learning, checkpointing, TensorBoard logging
 - **Cloud Training**: Modal deployment scripts for GPU training with automatic data upload
+- **iOS App**: Mobile implementation for real-world steganography
 
 ## Project Structure
 
 ```
-picode/
-├── distortions/           # Differentiable image distortions
-│   ├── base.py            # Distortion ABC
-│   ├── cli.py             # CLI tool with combine command
-│   ├── native/            # Pure PyTorch implementations
-│   └── kornia/            # Kornia-based implementations
-├── ecc/                   # Error correction codes
-│   ├── base.py            # ECC ABC
-│   ├── bch/               # BCH implementation (galois library)
-│   └── ldpc/              # LDPC implementation (pyldpc library)
-├── models/                # Encoder/decoder models
-│   ├── base.py            # Encoder/Decoder ABC
-│   ├── stegastamp/        # StegaStamp implementation (original architecture)
-│   └── picode/            # Picode implementation (improved gradient flow)
-├── training/              # Training infrastructure
-│   ├── config.py          # YAML config loading with model selection
-│   ├── trainer.py         # Trainer with loss ramping and model selection
-│   ├── evaluation.py      # Evaluator with robustness sweeps
-│   ├── checkpointing.py   # Checkpoint management
-│   └── logging/           # Console and TensorBoard loggers
-└── tests/                 # Test suite
-scripts/
-├── modal_setup.sh         # Modal cloud training utilities
-├── modal_extract.py       # Tarball extraction on Modal
-├── download_coco.sh       # COCO dataset download
-└── download_mirflickr.sh  # MIRFLICKR dataset download
+/
+├── docs/                    # Shared documentation
+├── picode-ios/              # iOS application
+├── picode-model/            # PyTorch training framework
+│   ├── picode/              # Python package
+│   │   ├── distortions/     # Differentiable image distortions
+│   │   ├── ecc/             # Error correction codes (BCH, LDPC)
+│   │   ├── models/          # Encoder/decoder models
+│   │   ├── training/        # Training infrastructure
+│   │   └── tests/           # Test suite
+│   ├── configs/             # Training configs
+│   ├── scripts/             # Utility scripts
+│   └── pyproject.toml       # Package config
+├── venv/                    # Shared Python virtual environment
+├── CLAUDE.md                # Claude Code instructions
+├── README.md                # This file
+└── LICENSE                  # Apache 2.0
 ```
 
 ## Installation
@@ -50,7 +49,8 @@ scripts/
 git clone <repo-url> && cd picode
 python -m venv venv && source venv/bin/activate
 
-# Install in development mode
+# Install picode-model in development mode
+cd picode-model
 pip install -e ".[dev]"
 
 # Optional: Install with Kornia backend support
@@ -139,6 +139,8 @@ decoded = ldpc.decode(codeword.float())
 ### Training with Config File
 
 ```bash
+cd picode-model
+
 # Train with default config
 picode-train --config configs/stegastamp_baseline.yaml
 
@@ -223,7 +225,8 @@ The native and Kornia backends have identical APIs but may produce slightly diff
 ### Benchmarking Backends
 
 ```bash
-# Run backend benchmarks
+# Run backend benchmarks (from picode-model/)
+cd picode-model
 pytest picode/tests/benchmarks/ -v
 ```
 
@@ -242,7 +245,7 @@ for name, BlurClass in backends:
 
 ## Training Configuration
 
-Training is configured via YAML files (see `configs/stegastamp_baseline.yaml`):
+Training is configured via YAML files (see `picode-model/configs/stegastamp_baseline.yaml`):
 
 ```yaml
 experiment_name: my_experiment
@@ -290,6 +293,8 @@ logging:
 Train on cloud GPUs using [Modal](https://modal.com/):
 
 ```bash
+cd picode-model
+
 # Initial setup (one-time)
 ./scripts/modal_setup.sh setup
 
