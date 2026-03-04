@@ -6,9 +6,29 @@ Analysis of encoded images from the current model reveals **highly visible struc
 
 ---
 
-## 1. Artifact Analysis
+## 1. Mobile Deployment Constraint
 
-### 1.1 Observed Artifacts
+**Critical requirement**: The decoder must run efficiently on mobile devices. Per the [Mobile Deployment Guide](./mobile_deployment.md), this imposes hard constraints on architectural choices:
+
+| Constraint | Requirement | Impact on Improvements |
+|------------|-------------|----------------------|
+| **No GroupNorm** | Use BatchNorm only (fuses with conv) | Affects encoder/decoder architecture |
+| **No LeakyReLU** | Use ReLU6 (hardware accelerated) | Affects all proposed modules |
+| **No STN** | Train robustness instead | Already planned for mobile decoder |
+| **Decoder < 500K params** | Depthwise separable convolutions | Limits decoder complexity |
+| **Inference < 100ms** | Minimize computational overhead | JND/activity maps add latency |
+
+**Implication**: All improvements below must have **two variants**:
+1. **Training/Server variant**: Full quality, can use any operations
+2. **Mobile-compatible variant**: Constrained to mobile-friendly ops
+
+The encoder runs server-side (no constraints), but decoder improvements must be mobile-compatible or provide a mobile fallback.
+
+---
+
+## 2. Artifact Analysis
+
+### 2.1 Observed Artifacts
 
 | Artifact Type | Description | Severity |
 |--------------|-------------|----------|
@@ -18,7 +38,7 @@ Analysis of encoded images from the current model reveals **highly visible struc
 | **Smooth region visibility** | Artifacts most visible in uniform areas (sky, walls, grass) | High |
 | **Content-agnostic embedding** | Same pattern regardless of image content | Critical |
 
-### 1.2 Residual Pattern Analysis
+### 2.2 Residual Pattern Analysis
 
 The residuals show:
 - **Regular, repeating diagonal stripes** (~45° angle)
@@ -28,9 +48,9 @@ The residuals show:
 
 ---
 
-## 2. Root Cause Analysis
+## 3. Root Cause Analysis
 
-### 2.1 Message Expansion Architecture
+### 3.1 Message Expansion Architecture
 
 **Current implementation** (`prepare_message`):
 ```python
@@ -44,7 +64,7 @@ x = F.interpolate(x, scale_factor=8, mode="nearest")  # (B, 3, 400, 400)
 2. **Only 3 channels** - Limited capacity forces high-amplitude perturbations
 3. **No spatial adaptation** - Message pattern doesn't adapt to image content
 
-### 2.2 Loss Function Limitations
+### 3.2 Loss Function Limitations
 
 **Current losses:**
 - L2 (MSE): Treats all pixels equally, doesn't penalize structured noise
@@ -56,7 +76,7 @@ x = F.interpolate(x, scale_factor=8, mode="nearest")  # (B, 3, 400, 400)
 - **Adversarial loss** - To make encoded images indistinguishable from originals
 - **Texture-adaptive loss** - Higher tolerance in textured regions
 
-### 2.3 Encoder Output Stage
+### 3.3 Encoder Output Stage
 
 **Current:**
 ```python
@@ -72,9 +92,9 @@ encoded = torch.clamp(encoded, 0, 1)
 
 ---
 
-## 3. Proposed Improvements
+## 4. Proposed Improvements
 
-### 3.1 Improved Message Expansion (Priority: Critical)
+### 4.1 Improved Message Expansion (Priority: Critical)
 
 **Problem:** Nearest-neighbor upsampling creates visible 8x8 block artifacts.
 
@@ -121,7 +141,9 @@ class ImprovedMessageExpander(nn.Module):
 
 **Expected improvement:** Eliminates blocky 8x8 artifacts from nearest-neighbor upsampling.
 
-### 3.2 Focal Frequency Loss (Priority: High)
+> **Mobile compatibility:** ⚠️ **Encoder-only** - This improvement is encoder-side only (runs on server). The mobile decoder does not use message expansion. However, note the use of GroupNorm and LeakyReLU - if a mobile encoder is ever needed, replace with BatchNorm and ReLU6.
+
+### 4.2 Focal Frequency Loss (Priority: High)
 
 **Problem:** L2/LPIPS don't penalize structured frequency artifacts.
 
@@ -168,7 +190,9 @@ loss:
 
 **Expected improvement:** Reduces structured wave/stripe patterns by directly penalizing frequency-domain artifacts.
 
-### 3.3 Adversarial Training with Discriminator (Priority: High)
+> **Mobile compatibility:** ✅ **Training-only** - FFL is a loss function used only during training. No runtime impact on mobile inference.
+
+### 4.3 Adversarial Training with Discriminator (Priority: High)
 
 **Problem:** No mechanism to make encoded images indistinguishable from originals.
 
@@ -231,7 +255,9 @@ def generator_loss(fake_pred):
 
 **Expected improvement:** Forces encoder to produce perturbations that are statistically indistinguishable from natural image variation.
 
-### 3.4 Content-Adaptive Residual Scaling (Priority: High)
+> **Mobile compatibility:** ✅ **Training-only** - The discriminator is only used during training. Note: uses InstanceNorm and LeakyReLU but this doesn't affect deployment since discriminator is discarded after training.
+
+### 4.4 Content-Adaptive Residual Scaling (Priority: High)
 
 **Problem:** Same perturbation magnitude in smooth and textured regions.
 
@@ -281,7 +307,9 @@ class ContentAdaptiveEncoder(nn.Module):
 
 **Expected improvement:** Hides perturbations in textured regions where they're less visible, reduces artifacts in smooth areas.
 
-### 3.5 Just Noticeable Difference (JND) Masking (Priority: Medium)
+> **Mobile compatibility:** ⚠️ **Encoder-only** - Content-adaptive scaling runs in the encoder (server-side). The decoder does not need to know how the watermark was scaled. If mobile encoding is needed, the `compute_activity_map` uses standard convolutions and can be made mobile-friendly.
+
+### 4.5 Just Noticeable Difference (JND) Masking (Priority: Medium)
 
 **Problem:** Perturbations exceed human visual perception thresholds in some regions.
 
@@ -345,7 +373,9 @@ constrained_residual = torch.tanh(residual) * jnd_mask * 0.1
 
 **Expected improvement:** Mathematically constrains perturbations to be below human perception thresholds.
 
-### 3.6 YUV/LAB Color Space Embedding (Priority: Medium)
+> **Mobile compatibility:** ⚠️ **Encoder-only, but affects decoder if YUV mode used** - JND masking is encoder-side. However, if combined with YUV embedding (4.6), the decoder must also work in YUV space. The JND computation itself uses only standard ops (conv2d, basic math) and is mobile-compatible if needed.
+
+### 4.6 YUV/LAB Color Space Embedding (Priority: Medium)
 
 **Problem:** RGB channels treated equally, but human vision is more sensitive to luminance.
 
@@ -390,7 +420,9 @@ class YUVEncoder(nn.Module):
 
 **Expected improvement:** Reduces luminance artifacts (most visible) while embedding more in chrominance (less visible).
 
-### 3.7 Bilinear/Bicubic Upsampling Throughout (Priority: Medium)
+> **Mobile compatibility:** ⚠️ **Affects both encoder AND decoder** - If the encoder embeds in YUV space, the decoder must also convert to YUV before decoding. RGB↔YUV conversion is simple matrix math and mobile-friendly. **Recommendation:** Train separate RGB and YUV decoder variants, or pre-convert images in the mobile app before feeding to decoder.
+
+### 4.7 Bilinear/Bicubic Upsampling Throughout (Priority: Medium)
 
 **Problem:** Multiple `mode="nearest"` upsampling operations create blocky patterns.
 
@@ -414,11 +446,13 @@ self.upsample = nn.Sequential(
 
 **Expected improvement:** Eliminates blocky artifacts throughout the encoder pathway.
 
+> **Mobile compatibility:** ✅ **Fully compatible** - Bilinear interpolation (`F.interpolate(..., mode='bilinear')`) is well-supported on all mobile frameworks (Core ML, TFLite, ONNX). This is a pure win with no mobile penalty.
+
 ---
 
-## 4. Training Strategy Improvements
+## 5. Training Strategy Improvements
 
-### 4.1 Progressive Perceptual Training
+### 5.1 Progressive Perceptual Training
 
 **Current:** L2 and LPIPS ramp together over 20k steps.
 
@@ -455,7 +489,7 @@ loss:
     delay_steps: 30000
 ```
 
-### 4.2 Stronger Regularization
+### 5.2 Stronger Regularization
 
 ```yaml
 training:
@@ -469,7 +503,7 @@ training:
   ema_decay: 0.999
 ```
 
-### 4.3 Augmentation During Training
+### 5.3 Augmentation During Training
 
 Add augmentations that teach the encoder to avoid detectable patterns:
 
@@ -495,31 +529,55 @@ class EncoderAugmentation:
 
 ---
 
-## 5. Implementation Roadmap
+## 6. Mobile Compatibility Summary
+
+| Improvement | Encoder | Decoder | Mobile Status | Notes |
+|-------------|---------|---------|---------------|-------|
+| 4.1 Improved Message Expansion | ✓ | - | ⚠️ Encoder-only | Uses GroupNorm/LeakyReLU (replace if mobile encoder needed) |
+| 4.2 Focal Frequency Loss | Training | Training | ✅ Training-only | No inference impact |
+| 4.3 Adversarial Training | Training | Training | ✅ Training-only | Discriminator discarded after training |
+| 4.4 Content-Adaptive Scaling | ✓ | - | ⚠️ Encoder-only | Decoder agnostic to scaling method |
+| 4.5 JND Masking | ✓ | - | ⚠️ Encoder-only | Standard ops, mobile-friendly if needed |
+| 4.6 YUV Color Space | ✓ | ✓ | ⚠️ Both affected | Need YUV decoder variant or app-side conversion |
+| 4.7 Bilinear Upsampling | ✓ | - | ✅ Fully compatible | Well-supported on all mobile platforms |
+
+**Key insight:** Most improvements are encoder-side or training-only, with no mobile decoder impact. The only exception is YUV color space embedding (4.6), which requires decoder awareness. Consider making this optional or maintaining separate RGB/YUV decoder models.
+
+---
+
+## 7. Implementation Roadmap
 
 ### Phase 1: Quick Wins (1-2 training runs)
-1. **Replace nearest-neighbor with bilinear** in all `F.interpolate` calls
-2. **Add Focal Frequency Loss** to existing training
-3. **Reduce residual magnitude** with tanh scaling
+1. **Replace nearest-neighbor with bilinear** in all `F.interpolate` calls ✅ Mobile-safe
+2. **Add Focal Frequency Loss** to existing training ✅ Training-only
+3. **Reduce residual magnitude** with tanh scaling ✅ Mobile-safe
 
 ### Phase 2: Architectural Improvements (2-3 training runs)
-4. **Implement ImprovedMessageExpander** with learned upsampling
-5. **Add content-adaptive residual scaling**
-6. **Train in YUV space** with channel-specific weights
+4. **Implement ImprovedMessageExpander** with learned upsampling ⚠️ Encoder-only
+5. **Add content-adaptive residual scaling** ⚠️ Encoder-only
+6. **Train in YUV space** with channel-specific weights ⚠️ **Requires YUV mobile decoder variant**
 
 ### Phase 3: Adversarial Training (3-5 training runs)
-7. **Add PatchDiscriminator** with WGAN-GP
-8. **Implement progressive training schedule**
-9. **Add JND masking** as constraint
+7. **Add PatchDiscriminator** with WGAN-GP ✅ Training-only
+8. **Implement progressive training schedule** ✅ Training-only
+9. **Add JND masking** as constraint ⚠️ Encoder-only
 
 ### Phase 4: Validation & Refinement
 10. **A/B testing** of each improvement
 11. **Perceptual user study** for artifact visibility
 12. **Robustness testing** to ensure decoding accuracy maintained
 
+### Phase 5: Mobile Validation (Required)
+13. **Export improved decoder to Core ML/TFLite** - Verify all ops supported
+14. **Benchmark mobile inference** - Target < 100ms on iPhone 12+
+15. **Validate bit accuracy on mobile** - Target < 2% degradation vs. server
+16. **Test YUV decoder variant** if Phase 2.6 implemented
+
 ---
 
-## 6. Expected Outcomes
+## 8. Expected Outcomes
+
+### Quality Metrics
 
 | Metric | Current | Target | Notes |
 |--------|---------|--------|-------|
@@ -530,9 +588,19 @@ class EncoderAugmentation:
 | Bit accuracy (JPEG Q50) | ~95% | >90% | Slight trade-off acceptable |
 | Visual artifact score | Obvious | Imperceptible | Human evaluation |
 
+### Mobile Deployment Metrics
+
+| Metric | Target (iPhone 12+) | Target (Android Flagship) | Notes |
+|--------|---------------------|--------------------------|-------|
+| Decoder params | < 500K | < 500K | See [mobile_deployment.md](./mobile_deployment.md) |
+| Model size | < 2 MB (INT8) | < 2 MB (INT8) | Post-quantization |
+| Inference time | < 100ms | < 150ms | 400x400 input |
+| Bit accuracy (mobile) | > 97% | > 97% | < 2% degradation vs. server |
+| Mobile ops compatibility | 100% | 100% | No unsupported ops |
+
 ---
 
-## 7. References
+## 9. References
 
 ### Papers
 - [Focal Frequency Loss for Image Reconstruction and Synthesis](https://github.com/EndlessSora/focal-frequency-loss) - Jiang et al., ICCV 2021
@@ -547,7 +615,7 @@ class EncoderAugmentation:
 
 ---
 
-## 8. Appendix: Quick Test Script
+## 10. Appendix: Quick Test Script
 
 ```python
 """Quick visual comparison of improvement techniques."""
@@ -578,4 +646,5 @@ def visualize_residual(encoder, image, message):
 ---
 
 *Document created: 2026-03-03*
+*Updated: 2026-03-04 - Added mobile deployment constraints and compatibility analysis*
 *Status: Proposed improvements pending implementation*
