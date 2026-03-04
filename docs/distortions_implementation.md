@@ -1,5 +1,7 @@
 # Distortions Implementation Comparison
 
+> **Note:** All file paths in this document are relative to `picode-model/` (e.g., `picode/distortions/` refers to `picode-model/picode/distortions/`).
+
 This document compares the distortion implementations between the original **StegaStamp** project (TensorFlow 1.x) and this project's **PyTorch** implementation. Each section explains the mathematical concepts, shows code from both projects, and suggests modern library alternatives.
 
 ## Table of Contents

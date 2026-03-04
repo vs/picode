@@ -1,5 +1,7 @@
 # Gradient Flow Analysis
 
+> **Note:** All file paths in this document are relative to `picode-model/`.
+
 Investigation into gradient flow through the Picode steganography pipeline (encoder → distortions → decoder).
 
 ## What's Working

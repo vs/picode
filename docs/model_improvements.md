@@ -1,5 +1,7 @@
 # Model Improvements: Reducing Visual Artifacts in Picode
 
+> **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
+
 ## Executive Summary
 
 Analysis of encoded images from the current model reveals **highly visible structured artifacts** that compromise imperceptibility despite achieving reliable message decoding. This document proposes architectural and training improvements to make watermarks visually undetectable while maintaining decoding robustness.

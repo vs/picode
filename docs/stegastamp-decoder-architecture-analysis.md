@@ -1,5 +1,7 @@
 # Why StegaStamp Uses a Simple Decoder Without ResNet Connections
 
+> **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
+
 ## Executive Summary
 
 StegaStamp employs an intentionally asymmetric architecture: a complex U-Net encoder with skip connections versus a simple feed-forward CNN decoder without ResNet-style residual blocks. This document analyzes the technical rationale behind this design choice.

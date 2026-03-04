@@ -7,6 +7,7 @@
 - Use double quotes for strings
 
 ```bash
+cd picode-model
 ruff check picode/
 ruff format picode/
 ```
@@ -19,6 +20,7 @@ ruff format picode/
 - Run mypy for type checking:
 
 ```bash
+cd picode-model
 mypy picode/
 ```
 
@@ -99,6 +101,7 @@ class Logger(Protocol):
 - Standard assertions: shape preservation, range validity [0,1], gradient flow
 
 ```bash
+cd picode-model
 pytest picode/tests/ -v                           # All tests
 pytest picode/tests/distortions/ -v               # Distortion tests
 pytest picode/tests/models/ -v                    # Model tests

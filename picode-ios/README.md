@@ -1,5 +1,7 @@
 # Picode iOS
 
+> Part of the [Picode monorepo](../README.md). See also: [picode-model](../picode-model/) for the PyTorch training framework.
+
 iPhone camera app for decoding picode watermarks.
 
 ## Features

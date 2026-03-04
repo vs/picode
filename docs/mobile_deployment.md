@@ -1,5 +1,7 @@
 # Mobile Deployment Guide for Picode
 
+> **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
+
 This document analyzes requirements for running steganography models on mobile devices and proposes architectural changes to optimize the Picode model for mobile inference.
 
 ## Table of Contents
@@ -473,16 +475,18 @@ def distillation_loss(student_logits, teacher_logits, labels, temperature=4.0, a
 ### File Structure
 
 ```
-picode/
-├── models/
-│   ├── mobile/
-│   │   ├── __init__.py
-│   │   ├── decoder.py      # MobileDecoder
-│   │   ├── blocks.py       # InvertedResidual, DSConv
-│   │   └── export.py       # ONNX/CoreML/TFLite export
-│   └── ...
-├── training/
-│   ├── mobile_trainer.py   # Training with distillation
+picode-model/
+├── picode/
+│   ├── models/
+│   │   ├── mobile/
+│   │   │   ├── __init__.py
+│   │   │   ├── decoder.py      # MobileDecoder
+│   │   │   ├── blocks.py       # InvertedResidual, DSConv
+│   │   │   └── export.py       # ONNX/CoreML/TFLite export
+│   │   └── ...
+│   ├── training/
+│   │   ├── mobile_trainer.py   # Training with distillation
+│   │   └── ...
 │   └── ...
 └── ...
 ```

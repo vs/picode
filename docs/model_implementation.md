@@ -1,5 +1,7 @@
 # Model Implementation Comparison
 
+> **Note:** All file paths in this document are relative to `picode-model/` (e.g., `picode/models/` refers to `picode-model/picode/models/`).
+
 This document compares the encoder and decoder implementations between the original **StegaStamp** project (TensorFlow 1.x/Keras) and this project's **PyTorch** implementation. Each section explains the architectural concepts, shows code from both projects, and highlights key differences.
 
 ## Table of Contents

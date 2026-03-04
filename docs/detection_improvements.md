@@ -1,5 +1,7 @@
 # Detection Improvements: Mobile-Optimized Watermark Detection
 
+> **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
+
 ## Executive Summary
 
 The current detection system uses an **exhaustive sliding window approach** that reuses the decoder to measure confidence across image regions. While accurate, this approach is too slow for mobile deployment (100-500ms latency). This document proposes a **dedicated FastDetector model** optimized for mobile real-time detection (< 50ms) while preserving the existing SlowDetector for high-accuracy server-side analysis.
@@ -567,7 +569,7 @@ Sweep across distortion types and strengths:
 ### 7.1 Module Structure
 
 ```
-picode/detection/
+picode-model/picode/detection/
 +-- __init__.py              # Public exports
 +-- types.py                 # Point, Quadrilateral, Detection
 +-- confidence.py            # Existing - confidence scoring

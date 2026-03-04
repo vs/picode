@@ -1,5 +1,7 @@
 # Real-World Capture Dataset: Collection & Training Strategy
 
+> **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
+
 ## Executive Summary
 
 This document outlines a strategy for building a **paired dataset of (original image, real-world capture)** where captures are photographs of images displayed on screens or printed on paper. Unlike synthetic distortions, real captures exhibit complex, correlated artifacts that are difficult to simulate. This dataset enables:

@@ -8,6 +8,7 @@
 4. Install dev dependencies:
 
 ```bash
+cd picode-model
 pip install -e ".[dev]"
 ```
 
@@ -19,12 +20,14 @@ pip install -e ".[dev]"
 4. Run the full test suite:
 
 ```bash
+cd picode-model
 pytest picode/tests/ -v
 ```
 
 5. Run linting and type checking:
 
 ```bash
+cd picode-model
 ruff check picode/
 mypy picode/
 ```
@@ -33,39 +36,39 @@ mypy picode/
 
 ## Project Structure
 
-When contributing, note that this is a single unified package with swappable implementations:
+This is a monorepo with multiple sub-projects. When contributing to the PyTorch model code, work within `picode-model/`:
 
 ```
-picode/
-├── distortions/           # Image distortions with multiple backends
-│   ├── base.py            # Distortion ABC
-│   ├── native/            # Pure PyTorch implementations
-│   └── kornia/            # Kornia-based implementations
-├── ecc/                   # Error correction codes
-│   ├── base.py            # ECC ABC
-│   ├── bch/               # BCH implementation (galois library)
-│   └── ldpc/              # LDPC implementation (pyldpc library)
-├── models/                # Encoder/decoder models
-│   ├── base.py            # Encoder/Decoder ABC
-│   └── stegastamp/        # StegaStamp implementation
-├── training/              # Training infrastructure
-│   ├── config.py          # YAML config loading
-│   ├── trainer.py         # Trainer with loss ramping
-│   ├── evaluation.py      # Evaluator with robustness sweeps
-│   ├── checkpointing.py   # Checkpoint management
-│   ├── distortion_strategy.py  # Curriculum, fixed, random strategies
-│   ├── data.py            # Dataset and dataloader utilities
-│   ├── cli.py             # Training CLI
-│   └── logging/           # Logger implementations
-└── tests/                 # Test suite
-    ├── distortions/
-    ├── ecc/
-    ├── models/
-    ├── training/
-    └── benchmarks/
+/
+├── docs/                    # Shared documentation
+├── picode-ios/              # iOS application
+├── picode-model/            # PyTorch training framework (main dev work)
+│   ├── picode/              # Python package
+│   │   ├── distortions/     # Image distortions with multiple backends
+│   │   │   ├── base.py      # Distortion ABC
+│   │   │   ├── native/      # Pure PyTorch implementations
+│   │   │   └── kornia/      # Kornia-based implementations
+│   │   ├── ecc/             # Error correction codes
+│   │   │   ├── base.py      # ECC ABC
+│   │   │   ├── bch/         # BCH implementation (galois library)
+│   │   │   └── ldpc/        # LDPC implementation (pyldpc library)
+│   │   ├── models/          # Encoder/decoder models
+│   │   │   ├── base.py      # Encoder/Decoder ABC
+│   │   │   └── stegastamp/  # StegaStamp implementation
+│   │   ├── training/        # Training infrastructure
+│   │   │   ├── config.py    # YAML config loading
+│   │   │   ├── trainer.py   # Trainer with loss ramping
+│   │   │   └── ...
+│   │   └── tests/           # Test suite
+│   ├── configs/             # Training configuration files
+│   ├── scripts/             # Utility scripts
+│   └── pyproject.toml       # Package configuration
+└── venv/                    # Shared Python virtual environment
 ```
 
 ## Adding a New Implementation
+
+All paths below are relative to `picode-model/`.
 
 ### New Distortion Backend
 
