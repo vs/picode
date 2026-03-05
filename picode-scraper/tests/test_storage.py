@@ -32,6 +32,11 @@ class TestDetectFormat:
         unknown = b"\x00\x00\x00\x00" + b"\x00" * 100
         assert detect_format(unknown) == "jpg"
 
+    def test_detect_heic(self):
+        """Should detect HEIC format."""
+        heic_header = b"\x00\x00\x00\x0c" + b"\x00" * 100
+        assert detect_format(heic_header) == "heic"
+
 
 class TestLocalStorage:
     """Tests for local filesystem storage."""
@@ -80,6 +85,16 @@ class TestLocalStorage:
         """Delete should not error on missing file."""
         storage.delete("file:///nonexistent/path.jpg")  # Should not raise
 
+    def test_load_rejects_path_traversal(self, storage: LocalStorage):
+        """Load should reject paths outside storage directory."""
+        with pytest.raises(ValueError, match="outside storage"):
+            storage.load("file:///etc/passwd")
+
+    def test_delete_ignores_path_traversal(self, storage: LocalStorage):
+        """Delete should silently ignore paths outside storage."""
+        # Should not raise, should not delete /etc/passwd
+        storage.delete("file:///etc/passwd")
+
 
 class TestStorageFactory:
     """Tests for storage backend factory."""
@@ -98,3 +113,18 @@ class TestStorageFactory:
 
         uri = storage.save(b"test", "jpg")
         assert str(tmp_path) in uri
+
+    def test_s3_backend_not_implemented(self, tmp_path: Path):
+        """Factory should raise NotImplementedError for S3 backend."""
+        config = StorageConfig(backend="s3", local_path=tmp_path, s3_bucket="test")
+        with pytest.raises(NotImplementedError, match="S3 storage"):
+            create_storage_backend(config)
+
+    def test_unknown_backend_raises_value_error(self, tmp_path: Path):
+        """Factory should raise ValueError for unknown backends."""
+        # Create config with valid backend first, then override
+        config = StorageConfig(backend="local", local_path=tmp_path)
+        # Manually override to test invalid backend handling
+        object.__setattr__(config, "backend", "unknown")
+        with pytest.raises(ValueError, match="Unknown storage backend"):
+            create_storage_backend(config)

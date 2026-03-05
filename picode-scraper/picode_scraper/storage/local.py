@@ -16,6 +16,27 @@ class LocalStorage:
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
+    def _validate_path(self, uri: str) -> Path:
+        """Validate and extract path from URI, ensuring it's within base_path.
+
+        Args:
+            uri: file:// URI to validate
+
+        Returns:
+            Resolved Path object
+
+        Raises:
+            ValueError: If path is outside storage directory
+        """
+        path = Path(uri.replace("file://", ""))
+        # Resolve to absolute path and check if within base_path
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(self.base_path.resolve())
+        except ValueError:
+            raise ValueError(f"Path {uri} is outside storage directory")
+        return resolved
+
     def save(self, data: bytes, format: str) -> str:
         """Save image with UUID filename, preserving original format.
 
@@ -39,8 +60,11 @@ class LocalStorage:
 
         Returns:
             Raw image bytes
+
+        Raises:
+            ValueError: If path is outside storage directory
         """
-        path = Path(uri.replace("file://", ""))
+        path = self._validate_path(uri)
         return path.read_bytes()
 
     def delete(self, uri: str) -> None:
@@ -49,5 +73,8 @@ class LocalStorage:
         Args:
             uri: file:// URI to delete
         """
-        path = Path(uri.replace("file://", ""))
-        path.unlink(missing_ok=True)
+        try:
+            path = self._validate_path(uri)
+            path.unlink(missing_ok=True)
+        except ValueError:
+            pass  # Silently ignore paths outside storage (for safety)
