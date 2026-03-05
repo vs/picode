@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from picode_scraper.config import StorageConfig
 from picode_scraper.storage import create_storage_backend, detect_format
 from picode_scraper.storage.local import LocalStorage
-from picode_scraper.config import StorageConfig
 
 
 class TestDetectFormat:

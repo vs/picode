@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from picode_scraper.config import Config, StorageConfig, ValidationConfig, load_config
+from picode_scraper.config import StorageConfig, ValidationConfig, load_config
 
 
 def test_load_config_from_yaml() -> None:
