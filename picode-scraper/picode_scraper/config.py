@@ -68,9 +68,27 @@ class Config(BaseSettings):
 def load_config(path: str | Path) -> Config:
     """Load config from YAML file with environment variable overrides.
 
+    Args:
+        path: Path to YAML configuration file.
+
+    Returns:
+        Config object with loaded settings.
+
+    Raises:
+        FileNotFoundError: If config file does not exist.
+
     IMPORTANT: Database URL should be set via environment variable
     PICODE_DATABASE__URL to avoid committing secrets.
     """
-    with open(path) as f:
-        data: dict[str, Any] = yaml.safe_load(f) or {}
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found: {config_path.absolute()}\n"
+            "Make sure the file exists and the path is correct."
+        )
+    try:
+        with open(config_path) as f:
+            data: dict[str, Any] = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in config file {config_path.absolute()}: {e}") from e
     return Config(**data)

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from picode_scraper.config import StorageConfig, ValidationConfig, load_config
+from picode_scraper.config import Config, StorageConfig, ValidationConfig, load_config
 
 
 def test_load_config_from_yaml() -> None:
@@ -62,3 +62,48 @@ def test_validation_config_defaults() -> None:
     assert config.min_image_size == 256
     assert config.min_corner_confidence == 0.7
     assert config.proxy_resolution == 800
+
+
+def test_load_config_file_not_found() -> None:
+    """load_config should raise FileNotFoundError with helpful message."""
+    with pytest.raises(FileNotFoundError, match="Configuration file not found"):
+        load_config("/nonexistent/path/config.yaml")
+
+
+def test_load_config_with_search_terms() -> None:
+    """Config should load default_search_terms from flattened YAML structure."""
+    config_data = {
+        "database": {
+            "url": "postgresql://user:pass@localhost:5432/test",
+        },
+        "default_search_terms": [
+            "monitor vs print calibration",
+            "screen vs paper color",
+        ],
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = Path(f.name)
+
+    try:
+        config = load_config(config_path)
+        assert config.default_search_terms == [
+            "monitor vs print calibration",
+            "screen vs paper color",
+        ]
+    finally:
+        config_path.unlink()
+
+
+def test_load_config_invalid_yaml() -> None:
+    """load_config should raise ValueError for invalid YAML."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write("invalid: yaml: structure: [")
+        config_path = Path(f.name)
+
+    try:
+        with pytest.raises(ValueError, match="Invalid YAML"):
+            load_config(config_path)
+    finally:
+        config_path.unlink()

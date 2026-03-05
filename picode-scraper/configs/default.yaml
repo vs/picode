@@ -1,8 +1,9 @@
 # picode-scraper default configuration
 # NOTE: Set PICODE_DATABASE__URL environment variable for database connection
+#       to override the placeholder URL below
 
 database:
-  url: postgresql://picode:picode@localhost:5432/picode_scraper
+  url: postgresql://user:pass@localhost:5432/picode_scraper
   pool_size: 5
 
 storage:
@@ -26,8 +27,7 @@ validation:
   min_similarity: 0.6
   proxy_resolution: 800
 
-discovery:
-  default_search_terms:
-    - "monitor vs print calibration"
-    - "screen vs paper color"
-    - "original vs printed photo"
+default_search_terms:
+  - "monitor vs print calibration"
+  - "screen vs paper color"
+  - "original vs printed photo"
