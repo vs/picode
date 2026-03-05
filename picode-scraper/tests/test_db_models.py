@@ -1,6 +1,7 @@
 """Tests for database models."""
 
 import uuid
+from typing import Generator
 
 import pytest
 from sqlalchemy import Engine, create_engine
@@ -10,18 +11,21 @@ from picode_scraper.db.models import Base, HarvestTask, Image, Pair, Source
 
 
 @pytest.fixture
-def engine() -> Engine:
+def engine() -> Generator[Engine, None, None]:
     """Create in-memory SQLite engine for testing."""
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return engine
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture
-def session(engine: Engine) -> Session:  # type: ignore[misc]
+def session(engine: Engine) -> Generator[Session, None, None]:
     """Create a session for testing."""
-    with Session(engine) as session:
-        yield session
+    session = Session(engine)
+    yield session
+    session.rollback()
+    session.close()
 
 
 def test_source_creation(session: Session) -> None:
