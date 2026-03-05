@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "picode-scraper"
+version = "0.1.0"
+description = "Dataset scraper for original/capture image pairs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Picode Team" }]
+
+dependencies = [
+    # CLI
+    "click>=8.1",
+    # HTTP & parsing
+    "httpx>=0.25",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    # Database
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "alembic>=1.13",
+    # Configuration
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    # Image processing
+    "opencv-python-headless>=4.8",
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "imagehash>=4.3",
+    # Storage
+    "boto3>=1.34",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "mypy>=1.7",
+    "moto>=5.0",
+]
+
+[project.scripts]
+picode-scraper = "picode_scraper.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["picode_scraper*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
