@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from picode_scraper.cli import cli
 
 
-def test_cli_help():
+def test_cli_help() -> None:
     """CLI should show help message."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
@@ -17,7 +17,7 @@ def test_cli_help():
     assert "Picode dataset scraper" in result.output
 
 
-def test_cli_version():
+def test_cli_version() -> None:
     """CLI should show version."""
     runner = CliRunner()
     result = runner.invoke(cli, ["--version"])
@@ -25,7 +25,7 @@ def test_cli_version():
     assert "0.1.0" in result.output
 
 
-def test_cli_status_without_config():
+def test_cli_status_without_config() -> None:
     """Status should work without config (shows warning)."""
     runner = CliRunner()
     result = runner.invoke(cli, ["status"])
@@ -33,7 +33,7 @@ def test_cli_status_without_config():
     assert "No config" in result.output or "Status" in result.output
 
 
-def test_cli_with_config():
+def test_cli_with_config() -> None:
     """CLI should load config when provided."""
     config_data = {
         "database": {
@@ -54,7 +54,7 @@ def test_cli_with_config():
     assert result.exit_code == 0
 
 
-def test_cli_discover_requires_config():
+def test_cli_discover_requires_config() -> None:
     """Discover command should require config."""
     runner = CliRunner()
     result = runner.invoke(cli, ["discover"])
@@ -62,9 +62,24 @@ def test_cli_discover_requires_config():
     assert "Config file required" in result.output or "Error" in result.output
 
 
-def test_cli_harvest_requires_config():
+def test_cli_harvest_requires_config() -> None:
     """Harvest command should require config."""
     runner = CliRunner()
     result = runner.invoke(cli, ["harvest"])
     assert result.exit_code == 1
     assert "Config file required" in result.output or "Error" in result.output
+
+
+def test_cli_with_invalid_config() -> None:
+    """CLI should show user-friendly error for invalid config."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write("invalid: yaml: content: [")
+        config_path = f.name
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--config", config_path, "status"])
+
+    Path(config_path).unlink()
+
+    assert result.exit_code != 0
+    assert "Error" in result.output

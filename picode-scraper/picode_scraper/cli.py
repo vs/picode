@@ -23,7 +23,10 @@ def cli(ctx: click.Context, config_path: Path | None) -> None:
     ctx.ensure_object(dict)
 
     if config_path:
-        ctx.obj["config"] = load_config(config_path)
+        try:
+            ctx.obj["config"] = load_config(config_path)
+        except (ValueError, FileNotFoundError) as e:
+            raise click.ClickException(str(e))
     else:
         ctx.obj["config"] = None
 
