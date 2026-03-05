@@ -42,6 +42,7 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.7",
     "moto>=5.0",
+    "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
