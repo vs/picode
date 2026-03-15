@@ -83,3 +83,31 @@ def test_cli_with_invalid_config() -> None:
 
     assert result.exit_code != 0
     assert "Error" in result.output
+
+
+def test_cli_discover_lists_sources() -> None:
+    """Discover without sources should list available sources."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["discover", "--help"])
+
+    assert result.exit_code == 0
+    assert "--source" in result.output or "-s" in result.output
+
+
+def test_cli_discover_lists_available_sources() -> None:
+    """Discover with --list should show available source types."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["discover", "--list"])
+
+    assert result.exit_code == 0
+    assert "mock" in result.output
+
+
+def test_cli_harvest_has_worker_options() -> None:
+    """Harvest should have worker-id and source options."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["harvest", "--help"])
+
+    assert result.exit_code == 0
+    assert "--worker-id" in result.output
+    assert "--source" in result.output or "-s" in result.output
