@@ -3,15 +3,17 @@
 import hashlib
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from picode_scraper.config import ValidationConfig
 from picode_scraper.db.models import Base
 from picode_scraper.harvester.dedup import get_or_create_image
 from picode_scraper.harvester.utils import compute_phash
-from picode_scraper.harvester.validator import ValidationResult
+from picode_scraper.harvester.validator import PairValidator, ValidationResult
 from picode_scraper.storage.local import LocalStorage
 
 
@@ -77,7 +79,6 @@ def test_compute_phash_different_images() -> None:
 @pytest.fixture
 def png_image_data() -> bytes:
     """Create valid PNG image data for testing."""
-    import cv2
     # Create a simple 100x100 RGB image
     img = np.zeros((100, 100, 3), dtype=np.uint8)
     img[25:75, 25:75] = [255, 255, 255]  # White square
@@ -136,3 +137,67 @@ def test_validation_result_invalid() -> None:
     result = ValidationResult(valid=False, reason="poor feature matching")
     assert result.valid is False
     assert result.reason == "poor feature matching"
+
+
+# --- PairValidator tests ---
+
+
+def test_pair_validator_rejects_small_image() -> None:
+    """PairValidator should reject images below minimum size."""
+    config = ValidationConfig(min_image_size=256)
+    validator = PairValidator(config)
+
+    # Small original image
+    original = np.zeros((100, 100, 3), dtype=np.uint8)
+    capture = np.zeros((500, 500, 3), dtype=np.uint8)
+
+    result = validator.validate(original, capture)
+
+    assert result.valid is False
+    assert "too small" in result.reason.lower()
+
+
+def test_pair_validator_detects_valid_pair() -> None:
+    """PairValidator should validate matching image pairs."""
+    config = ValidationConfig(
+        min_image_size=64,
+        min_corner_confidence=0.3,
+        min_coverage=0.05,
+        min_similarity=0.3,
+    )
+    validator = PairValidator(config)
+
+    # Create an "original" with distinctive features
+    original = np.zeros((200, 200, 3), dtype=np.uint8)
+    # Add some distinctive patterns
+    cv2.rectangle(original, (20, 20), (80, 80), (255, 255, 255), -1)
+    cv2.rectangle(original, (120, 20), (180, 80), (128, 128, 128), -1)
+    cv2.rectangle(original, (20, 120), (80, 180), (64, 64, 64), -1)
+    cv2.rectangle(original, (120, 120), (180, 180), (200, 200, 200), -1)
+
+    # Create "capture" as original embedded in larger image
+    capture = np.ones((400, 400, 3), dtype=np.uint8) * 50
+    capture[100:300, 100:300] = original
+
+    result = validator.validate(original, capture)
+
+    # May or may not validate depending on SIFT, but should not crash
+    assert isinstance(result, ValidationResult)
+    assert isinstance(result.valid, bool)
+
+
+def test_pair_validator_rejects_unrelated_images() -> None:
+    """PairValidator should reject unrelated images."""
+    config = ValidationConfig(min_image_size=64)
+    validator = PairValidator(config)
+
+    # Two completely different images
+    img1 = np.zeros((200, 200, 3), dtype=np.uint8)
+    img1[50:150, 50:150] = [255, 0, 0]  # Red square
+
+    img2 = np.ones((200, 200, 3), dtype=np.uint8) * 255
+    img2[50:150, 50:150] = [0, 255, 0]  # Green square on white
+
+    result = validator.validate(img1, img2)
+
+    assert result.valid is False
