@@ -10,13 +10,20 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from picode_scraper.config import ValidationConfig
+from picode_scraper.config import (
+    Config,
+    DatabaseConfig,
+    ScrapingConfig,
+    StorageConfig,
+    ValidationConfig,
+)
 from picode_scraper.db.models import Base
 from picode_scraper.harvester.dedup import get_or_create_image
 from picode_scraper.harvester.pair_finder import PairFinder
 from picode_scraper.harvester.rate_limiter import DomainRateLimiter
 from picode_scraper.harvester.utils import compute_phash
 from picode_scraper.harvester.validator import PairValidator, ValidationResult
+from picode_scraper.harvester.worker import HarvestWorker
 from picode_scraper.sources.base import CandidateImage
 from picode_scraper.storage.local import LocalStorage
 
@@ -232,9 +239,7 @@ def test_pair_finder_limits_combinations() -> None:
     images = []
     for i in range(10):
         img = np.zeros((200, 200, 3), dtype=np.uint8)
-        images.append(
-            (CandidateImage(url=f"http://test.com/{i}.jpg", position=i), b"data", img)
-        )
+        images.append((CandidateImage(url=f"http://test.com/{i}.jpg", position=i), b"data", img))
 
     # Should not check all 45 combinations, just max_combinations
     pairs = finder.find_pairs(images)
@@ -278,3 +283,69 @@ def test_rate_limiter_different_domains_no_wait() -> None:
     elapsed = time.time() - start
 
     assert elapsed < 0.1  # Should be nearly instant
+
+
+# --- HarvestWorker tests ---
+
+
+@pytest.fixture
+def mock_config(tmp_path: Path) -> Config:
+    """Create mock config for testing."""
+    return Config(
+        database=DatabaseConfig(url="postgresql://test:test@localhost:5432/test"),
+        storage=StorageConfig(backend="local", local_path=tmp_path),
+        scraping=ScrapingConfig(request_delay=0.01),
+    )
+
+
+def test_harvest_worker_init(mock_config: Config) -> None:
+    """HarvestWorker should initialize with config."""
+    worker = HarvestWorker(
+        config=mock_config,
+        worker_id="test-worker-1",
+    )
+
+    assert worker.worker_id == "test-worker-1"
+    assert worker.config == mock_config
+    worker.close()
+
+
+def test_harvest_worker_generates_worker_id(mock_config: Config) -> None:
+    """HarvestWorker should generate worker_id if not provided."""
+    worker = HarvestWorker(config=mock_config)
+
+    assert worker.worker_id is not None
+    assert worker.worker_id.startswith("worker-")
+    assert len(worker.worker_id) > len("worker-")
+    worker.close()
+
+
+def test_harvest_worker_source_filter(mock_config: Config) -> None:
+    """HarvestWorker should store source filter."""
+    worker = HarvestWorker(
+        config=mock_config,
+        source_filter=["mock", "dpreview"],
+    )
+
+    assert worker.source_filter == ["mock", "dpreview"]
+    worker.close()
+
+
+def test_harvest_worker_has_required_components(mock_config: Config) -> None:
+    """HarvestWorker should initialize all required components."""
+    worker = HarvestWorker(config=mock_config)
+
+    assert worker.http is not None
+    assert worker.storage is not None
+    assert worker.pair_finder is not None
+    assert worker.rate_limiter is not None
+    worker.close()
+
+
+def test_harvest_worker_close_cleans_up(mock_config: Config) -> None:
+    """HarvestWorker.close() should clean up resources."""
+    worker = HarvestWorker(config=mock_config)
+    worker.close()
+
+    # Verify http client is closed
+    assert worker.http.is_closed
