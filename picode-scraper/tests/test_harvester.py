@@ -1,6 +1,7 @@
 """Tests for harvester utilities."""
 
 import hashlib
+import time
 from pathlib import Path
 
 import cv2
@@ -13,6 +14,7 @@ from picode_scraper.config import ValidationConfig
 from picode_scraper.db.models import Base
 from picode_scraper.harvester.dedup import get_or_create_image
 from picode_scraper.harvester.pair_finder import PairFinder
+from picode_scraper.harvester.rate_limiter import DomainRateLimiter
 from picode_scraper.harvester.utils import compute_phash
 from picode_scraper.harvester.validator import PairValidator, ValidationResult
 from picode_scraper.sources.base import CandidateImage
@@ -238,3 +240,41 @@ def test_pair_finder_limits_combinations() -> None:
     pairs = finder.find_pairs(images)
     # Result depends on validation, but should not crash
     assert isinstance(pairs, list)
+
+
+# --- DomainRateLimiter tests ---
+
+
+def test_rate_limiter_first_request_no_wait() -> None:
+    """First request to a domain should not wait."""
+    limiter = DomainRateLimiter(default_delay=1.0)
+
+    start = time.time()
+    limiter.wait("https://example.com/page1")
+    elapsed = time.time() - start
+
+    assert elapsed < 0.1  # Should be nearly instant
+
+
+def test_rate_limiter_second_request_waits() -> None:
+    """Second request to same domain should wait."""
+    limiter = DomainRateLimiter(default_delay=0.2)
+
+    limiter.wait("https://example.com/page1")
+    start = time.time()
+    limiter.wait("https://example.com/page2")
+    elapsed = time.time() - start
+
+    assert elapsed >= 0.15  # Should wait at least delay - some tolerance
+
+
+def test_rate_limiter_different_domains_no_wait() -> None:
+    """Different domains should not wait for each other."""
+    limiter = DomainRateLimiter(default_delay=1.0)
+
+    limiter.wait("https://example.com/page")
+    start = time.time()
+    limiter.wait("https://other.com/page")  # Different domain
+    elapsed = time.time() - start
+
+    assert elapsed < 0.1  # Should be nearly instant
