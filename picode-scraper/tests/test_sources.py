@@ -99,3 +99,58 @@ def test_get_source_unknown_raises() -> None:
 
     with pytest.raises(KeyError):
         get_source("nonexistent_source")
+
+
+def test_mock_source_discover() -> None:
+    """MockSource should yield configured sources."""
+    # Import to trigger registration
+    from picode_scraper.sources.mock import MockSource  # noqa: F401
+
+    source = get_source("mock")
+    results = list(source.discover(["test"]))
+
+    assert len(results) > 0
+    assert all(isinstance(r, DiscoveredSource) for r in results)
+
+
+def test_mock_source_extract_images() -> None:
+    """MockSource should extract candidate images."""
+    from picode_scraper.sources.mock import MockSource  # noqa: F401
+
+    source = get_source("mock")
+    html = "<html><body><img src='http://test.com/img1.jpg'></body></html>"
+    content = source.extract_images("http://test.com/page", html)
+
+    assert isinstance(content, PageContent)
+    assert content.url == "http://test.com/page"
+
+
+def test_mock_source_filters_icons() -> None:
+    """MockSource should filter out small icons and avatars."""
+    from picode_scraper.sources.mock import MockSource  # noqa: F401
+
+    source = get_source("mock")
+    html = """
+    <html><body>
+        <img src='http://test.com/avatar.jpg'>
+        <img src='http://test.com/icon.png'>
+        <img src='http://test.com/emoji.gif'>
+        <img src='http://test.com/small.jpg' width='50' height='50'>
+        <img src='http://test.com/real_image.jpg'>
+    </body></html>
+    """
+    content = source.extract_images("http://test.com/page", html)
+
+    # Only real_image.jpg should pass filters
+    assert len(content.candidate_images) == 1
+    assert content.candidate_images[0].url == "http://test.com/real_image.jpg"
+
+
+def test_mock_source_get_pagination() -> None:
+    """MockSource should return empty pagination."""
+    from picode_scraper.sources.mock import MockSource  # noqa: F401
+
+    source = get_source("mock")
+    pages = source.get_pagination("http://test.com/page")
+
+    assert pages == []

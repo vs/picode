@@ -1,6 +1,6 @@
 """Source plugin registry."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from picode_scraper.sources.base import Source
@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 _SOURCES: dict[str, type["Source"]] = {}
 
 
-def register(name: str):
+def register(name: str) -> Callable[[type["Source"]], type["Source"]]:
     """Decorator to register a source plugin.
 
     Usage:
