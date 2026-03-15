@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from picode_scraper.db.models import Base
 from picode_scraper.harvester.dedup import get_or_create_image
 from picode_scraper.harvester.utils import compute_phash
+from picode_scraper.harvester.validator import ValidationResult
 from picode_scraper.storage.local import LocalStorage
 
 
@@ -113,3 +114,25 @@ def test_get_or_create_image_returns_existing(
     image2 = get_or_create_image(db_session, png_image_data, "https://other.com/same.png", storage)
 
     assert image1.id == image2.id  # Should return same image
+
+
+def test_validation_result_valid() -> None:
+    """ValidationResult should store validation data."""
+    result = ValidationResult(
+        valid=True,
+        corners=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        corner_confidence=0.85,
+        coverage=0.25,
+        similarity=0.75,
+        quality_score=0.62,
+    )
+    assert result.valid is True
+    assert len(result.corners) == 4
+    assert result.quality_score == 0.62
+
+
+def test_validation_result_invalid() -> None:
+    """ValidationResult should store rejection reason."""
+    result = ValidationResult(valid=False, reason="poor feature matching")
+    assert result.valid is False
+    assert result.reason == "poor feature matching"
