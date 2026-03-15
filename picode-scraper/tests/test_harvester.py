@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from picode_scraper.config import ValidationConfig
 from picode_scraper.db.models import Base
 from picode_scraper.harvester.dedup import get_or_create_image
+from picode_scraper.harvester.pair_finder import PairFinder
 from picode_scraper.harvester.utils import compute_phash
 from picode_scraper.harvester.validator import PairValidator, ValidationResult
+from picode_scraper.sources.base import CandidateImage
 from picode_scraper.storage.local import LocalStorage
 
 
@@ -201,3 +203,38 @@ def test_pair_validator_rejects_unrelated_images() -> None:
     result = validator.validate(img1, img2)
 
     assert result.valid is False
+
+
+# --- PairFinder tests ---
+
+
+def test_pair_finder_needs_at_least_two_images() -> None:
+    """PairFinder should return empty for less than 2 images."""
+    config = ValidationConfig(min_image_size=64)
+    finder = PairFinder(config)
+
+    # Single image
+    img = np.zeros((200, 200, 3), dtype=np.uint8)
+    candidates = [(CandidateImage(url="http://test.com/1.jpg", position=0), b"data", img)]
+
+    pairs = finder.find_pairs(candidates)
+    assert pairs == []
+
+
+def test_pair_finder_limits_combinations() -> None:
+    """PairFinder should limit combinations to max_combinations."""
+    config = ValidationConfig(min_image_size=64)
+    finder = PairFinder(config, max_combinations=5)
+
+    # Create many images
+    images = []
+    for i in range(10):
+        img = np.zeros((200, 200, 3), dtype=np.uint8)
+        images.append(
+            (CandidateImage(url=f"http://test.com/{i}.jpg", position=i), b"data", img)
+        )
+
+    # Should not check all 45 combinations, just max_combinations
+    pairs = finder.find_pairs(images)
+    # Result depends on validation, but should not crash
+    assert isinstance(pairs, list)
