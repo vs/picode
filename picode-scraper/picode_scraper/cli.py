@@ -35,17 +35,61 @@ def cli(ctx: click.Context, config_path: Path | None) -> None:
 @click.pass_context
 def status(ctx: click.Context) -> None:
     """Show harvest progress and statistics."""
+    from sqlalchemy import text
+
+    from picode_scraper.db import get_session, init_db
+
     config: Config | None = ctx.obj.get("config")
 
     if config is None:
-        click.echo("Status: No config file provided")
-        click.echo("Use --config to specify a configuration file")
-        return
+        click.echo("Error: Config file required for status command")
+        raise SystemExit(1)
 
-    hosts = config.database.url.hosts()
-    host_str = hosts[0]["host"] if hosts else "unknown"
-    click.echo(f"Status: Connected to {host_str}")
-    click.echo(f"Storage backend: {config.storage.backend}")
+    # Initialize database
+    init_db(config.database)
+
+    with get_session() as db:
+        # Task status counts
+        task_stats = db.execute(
+            text("""
+                SELECT status, COUNT(*) as count
+                FROM harvest_tasks
+                GROUP BY status
+                ORDER BY status
+            """)
+        ).fetchall()
+
+        # Pair count
+        pair_count = db.execute(text("SELECT COUNT(*) FROM pairs")).scalar() or 0
+
+        # Image count
+        image_count = db.execute(text("SELECT COUNT(*) FROM images")).scalar() or 0
+
+        # Active workers (claimed in last 5 minutes)
+        active_workers = db.execute(
+            text("""
+                SELECT COUNT(DISTINCT claimed_by)
+                FROM harvest_tasks
+                WHERE status = 'claimed'
+                AND claimed_at > NOW() - INTERVAL '5 minutes'
+            """)
+        ).scalar() or 0
+
+    # Display results
+    click.echo("Tasks:")
+    total_tasks = 0
+    for row in task_stats:
+        status = row[0]
+        count = int(row[1])
+        click.echo(f"  {status}: {count}")
+        total_tasks += count
+
+    if total_tasks == 0:
+        click.echo("  (no tasks)")
+
+    click.echo(f"\nPairs collected: {pair_count}")
+    click.echo(f"Images stored: {image_count}")
+    click.echo(f"Active workers: {active_workers}")
 
 
 @cli.command()
