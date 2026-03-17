@@ -205,3 +205,73 @@ def test_status_shows_image_counts(
     result = runner.invoke(cli, ["-c", str(config_file), "status"])
     assert result.exit_code == 0
     assert "Images stored:" in result.output
+
+
+def test_status_shows_active_workers(
+    config_file: Path, runner: CliRunner, mock_db: None
+) -> None:
+    """Status command shows active worker count."""
+    result = runner.invoke(cli, ["-c", str(config_file), "status"])
+    assert result.exit_code == 0
+    assert "Active workers:" in result.output
+
+
+@pytest.fixture
+def mock_db_empty_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock database with no tasks for testing empty state."""
+    from contextlib import contextmanager
+    from typing import Any
+    from unittest.mock import MagicMock
+
+    # Mock init_db to do nothing
+    monkeypatch.setattr("picode_scraper.db.init_db", lambda config: None)
+
+    # Create a mock session with empty task results
+    @contextmanager
+    def mock_get_session() -> Any:
+        mock_session = MagicMock()
+
+        # Mock task stats query result - empty (no tasks)
+        mock_task_result = MagicMock()
+        mock_task_result.fetchall.return_value = []
+
+        # Mock pair count
+        mock_pair_result = MagicMock()
+        mock_pair_result.scalar.return_value = 0
+
+        # Mock image count
+        mock_image_result = MagicMock()
+        mock_image_result.scalar.return_value = 0
+
+        # Mock active workers
+        mock_workers_result = MagicMock()
+        mock_workers_result.scalar.return_value = 0
+
+        # Set up execute to return different mocks based on query
+        call_count = [0]
+
+        def execute_side_effect(query: Any) -> Any:
+            idx = call_count[0]
+            call_count[0] += 1
+            if idx == 0:
+                return mock_task_result
+            elif idx == 1:
+                return mock_pair_result
+            elif idx == 2:
+                return mock_image_result
+            else:
+                return mock_workers_result
+
+        mock_session.execute.side_effect = execute_side_effect
+        yield mock_session
+
+    monkeypatch.setattr("picode_scraper.db.get_session", mock_get_session)
+
+
+def test_status_shows_no_tasks_message(
+    config_file: Path, runner: CliRunner, mock_db_empty_tasks: None
+) -> None:
+    """Status command shows '(no tasks)' when task list is empty."""
+    result = runner.invoke(cli, ["-c", str(config_file), "status"])
+    assert result.exit_code == 0
+    assert "(no tasks)" in result.output
