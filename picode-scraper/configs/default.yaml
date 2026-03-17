@@ -1,24 +1,19 @@
-# picode-scraper default configuration
-# NOTE: Set PICODE_DATABASE__URL environment variable for database connection
-#       to override the placeholder URL below
-
 database:
-  url: postgresql://user:pass@localhost:5432/picode_scraper
+  # URL set via environment variable PICODE_DATABASE__URL
+  url: postgresql://picode:picode@localhost:5432/picode_scraper
   pool_size: 5
 
 storage:
   backend: local
   local_path: /data/images
-  # S3 settings (for production)
-  # s3_bucket: picode-dataset
-  # s3_prefix: images
-  # s3_endpoint_url: null
 
 scraping:
-  user_agent: "PicodeDatasetCollector/1.0 (research)"
+  user_agent: "PicodeDatasetCollector/1.0 (research; +https://github.com/picode)"
   request_delay: 1.0
   max_retries: 3
   timeout: 30
+  proxy_url: null
+  proxy_rotation: false
 
 validation:
   min_image_size: 256
@@ -26,8 +21,3 @@ validation:
   min_coverage: 0.1
   min_similarity: 0.6
   proxy_resolution: 800
-
-default_search_terms:
-  - "monitor vs print calibration"
-  - "screen vs paper color"
-  - "original vs printed photo"

@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: picode
+      POSTGRES_PASSWORD: picode
+      POSTGRES_DB: picode_scraper
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U picode -d picode_scraper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    command: ["python", "-c", "from picode_scraper.db import init_db; from picode_scraper.config import load_config; init_db(load_config('/app/configs/default.yaml').database)"]
+    environment:
+      PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
+    depends_on:
+      db:
+        condition: service_healthy
+
+  discover:
+    build: .
+    command: ["discover", "-c", "/app/configs/default.yaml", "--list"]
+    environment:
+      PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles:
+      - discover
+
+  worker:
+    build: .
+    command: ["harvest", "-c", "/app/configs/default.yaml"]
+    environment:
+      PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
+    volumes:
+      - dataset:/data/images
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 3
+    stop_grace_period: 30s
+    profiles:
+      - harvest
+
+  status:
+    build: .
+    command: ["status", "-c", "/app/configs/default.yaml"]
+    environment:
+      PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - status
+
+volumes:
+  pgdata:
+  dataset:
