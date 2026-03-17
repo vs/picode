@@ -442,3 +442,203 @@ class TestExportService:
         result = service.export()
 
         assert result == {"total_pairs": 0, "train_count": 0, "val_count": 0, "test_count": 0}
+
+
+class TestExportCLI:
+    """Tests for export CLI command."""
+
+    @pytest.fixture
+    def config_file(self, tmp_path: Path) -> Path:
+        """Create a minimal config file for testing."""
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(
+            """
+database:
+  url: "postgresql://user:pass@localhost/test"
+storage:
+  backend: local
+  local_path: /tmp/images
+"""
+        )
+        return config_path
+
+    @pytest.fixture
+    def mock_export(self, monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+        """Mock ExportService for CLI tests."""
+        # Mock init_db to do nothing
+        monkeypatch.setattr("picode_scraper.db.init_db", lambda config: None)
+
+        # Create mock service
+        mock_service = MagicMock()
+        mock_service.export.return_value = {
+            "total_pairs": 10,
+            "train_count": 8,
+            "val_count": 1,
+            "test_count": 1,
+        }
+
+        # Mock ExportService class to return our mock instance
+        mock_service_class = MagicMock(return_value=mock_service)
+        monkeypatch.setattr("picode_scraper.export.ExportService", mock_service_class)
+
+        return mock_service_class
+
+    def test_export_command_with_defaults(
+        self,
+        mock_export: MagicMock,
+        config_file: Path,
+        tmp_path: Path,
+    ):
+        """export command works with default options."""
+        from click.testing import CliRunner
+
+        from picode_scraper.cli import cli
+
+        runner = CliRunner()
+        output_dir = tmp_path / "output"
+
+        result = runner.invoke(
+            cli, ["-c", str(config_file), "export", "-o", str(output_dir)]
+        )
+
+        assert result.exit_code == 0, f"Command failed with output: {result.output}"
+        assert "Exporting dataset to:" in result.output
+        assert "Total pairs: 10" in result.output
+        assert "Train: 8" in result.output
+        assert "Val: 1" in result.output
+        assert "Test: 1" in result.output
+
+        # Verify ExportConfig was created with defaults
+        mock_export.assert_called_once()
+        call_args = mock_export.call_args[0][0]
+        assert call_args.train_ratio == 0.8
+        assert call_args.val_ratio == 0.1
+        assert call_args.test_ratio == 0.1
+        assert call_args.min_quality_score == 0.0
+        assert call_args.create_symlinks is True
+
+    def test_export_command_with_custom_options(
+        self,
+        mock_export: MagicMock,
+        config_file: Path,
+        tmp_path: Path,
+    ):
+        """export command respects custom options."""
+        from click.testing import CliRunner
+
+        from picode_scraper.cli import cli
+
+        # Update mock to return different values
+        mock_service = mock_export.return_value
+        mock_service.export.return_value = {
+            "total_pairs": 5,
+            "train_count": 3,
+            "val_count": 1,
+            "test_count": 1,
+        }
+
+        runner = CliRunner()
+        output_dir = tmp_path / "output"
+
+        result = runner.invoke(
+            cli,
+            [
+                "-c",
+                str(config_file),
+                "export",
+                "-o",
+                str(output_dir),
+                "--train-ratio",
+                "0.6",
+                "--val-ratio",
+                "0.2",
+                "--test-ratio",
+                "0.2",
+                "--min-quality",
+                "0.5",
+                "--no-symlinks",
+                "--seed",
+                "42",
+            ],
+        )
+
+        assert result.exit_code == 0, f"Command failed with output: {result.output}"
+        assert "train: 0.6" in result.output
+        assert "val: 0.2" in result.output
+        assert "test: 0.2" in result.output
+        assert "Minimum quality score: 0.5" in result.output
+        assert "Random seed: 42" in result.output
+
+        # Verify ExportConfig was created with custom values
+        call_args = mock_export.call_args[0][0]
+        assert call_args.train_ratio == 0.6
+        assert call_args.val_ratio == 0.2
+        assert call_args.test_ratio == 0.2
+        assert call_args.min_quality_score == 0.5
+        assert call_args.create_symlinks is False
+
+        # Verify seed was passed to export()
+        mock_service.export.assert_called_once_with(seed=42)
+
+    def test_export_command_requires_config(self, tmp_path: Path):
+        """export command fails without config file."""
+        from click.testing import CliRunner
+
+        from picode_scraper.cli import cli
+
+        runner = CliRunner()
+        output_dir = tmp_path / "output"
+
+        result = runner.invoke(cli, ["export", "-o", str(output_dir)])
+
+        assert result.exit_code == 1
+        assert "Config file required" in result.output
+
+    def test_export_command_requires_output(self, tmp_path: Path):
+        """export command fails without output directory."""
+        from click.testing import CliRunner
+
+        from picode_scraper.cli import cli
+
+        runner = CliRunner()
+
+        # Without -c, we never reach option validation, so just check the error
+        result = runner.invoke(cli, ["export"])
+
+        assert result.exit_code != 0
+
+    def test_export_command_shows_warning_for_no_pairs(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        config_file: Path,
+        tmp_path: Path,
+    ):
+        """export command shows warning when no pairs found."""
+        from click.testing import CliRunner
+
+        from picode_scraper.cli import cli
+
+        # Mock init_db to do nothing
+        monkeypatch.setattr("picode_scraper.db.init_db", lambda config: None)
+
+        # Setup mock to return zero pairs
+        mock_service = MagicMock()
+        mock_service.export.return_value = {
+            "total_pairs": 0,
+            "train_count": 0,
+            "val_count": 0,
+            "test_count": 0,
+        }
+        mock_service_class = MagicMock(return_value=mock_service)
+        monkeypatch.setattr("picode_scraper.export.ExportService", mock_service_class)
+
+        runner = CliRunner()
+        output_dir = tmp_path / "output"
+
+        result = runner.invoke(
+            cli, ["-c", str(config_file), "export", "-o", str(output_dir)]
+        )
+
+        assert result.exit_code == 0, f"Command failed with output: {result.output}"
+        assert "Total pairs: 0" in result.output
+        assert "No pairs found to export" in result.output

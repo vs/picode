@@ -185,6 +185,70 @@ def discover(
 
 
 @cli.command()
+@click.option("--output", "-o", required=True, type=click.Path(), help="Output directory")
+@click.option("--train-ratio", default=0.8, type=float, help="Training set ratio")
+@click.option("--val-ratio", default=0.1, type=float, help="Validation set ratio")
+@click.option("--test-ratio", default=0.1, type=float, help="Test set ratio")
+@click.option("--min-quality", default=0.0, type=float, help="Minimum quality score filter")
+@click.option("--no-symlinks", is_flag=True, help="Skip creating by_type symlinks")
+@click.option("--seed", type=int, default=None, help="Random seed for reproducible splits")
+@click.pass_context
+def export(
+    ctx: click.Context,
+    output: str,
+    train_ratio: float,
+    val_ratio: float,
+    test_ratio: float,
+    min_quality: float,
+    no_symlinks: bool,
+    seed: int | None,
+) -> None:
+    """Export collected pairs to training dataset format."""
+    from picode_scraper.db import init_db
+    from picode_scraper.export import ExportConfig, ExportService
+
+    config: Config | None = ctx.obj.get("config")
+
+    if config is None:
+        click.echo("Error: Config file required for export command")
+        raise SystemExit(1)
+
+    # Initialize database
+    init_db(config.database)
+
+    # Create export config from CLI options
+    export_config = ExportConfig(
+        output_dir=output,
+        train_ratio=train_ratio,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+        min_quality_score=min_quality,
+        create_symlinks=not no_symlinks,
+    )
+
+    click.echo(f"Exporting dataset to: {output}")
+    click.echo(f"Split ratios - train: {train_ratio}, val: {val_ratio}, test: {test_ratio}")
+    if min_quality > 0:
+        click.echo(f"Minimum quality score: {min_quality}")
+    if seed is not None:
+        click.echo(f"Random seed: {seed}")
+
+    # Run export
+    service = ExportService(export_config)
+    result = service.export(seed=seed)
+
+    # Display results
+    click.echo("\nExport complete:")
+    click.echo(f"  Total pairs: {result['total_pairs']}")
+    click.echo(f"  Train: {result['train_count']}")
+    click.echo(f"  Val: {result['val_count']}")
+    click.echo(f"  Test: {result['test_count']}")
+
+    if result["total_pairs"] == 0:
+        click.echo("\nWarning: No pairs found to export")
+
+
+@cli.command()
 @click.option("--worker-id", default=None, help="Unique worker identifier")
 @click.option("--source", "-s", multiple=True, help="Limit to specific sources")
 @click.pass_context
