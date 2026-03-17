@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from picode_scraper.db import Pair, get_session
-from picode_scraper.storage import create_storage_backend
+from picode_scraper.storage import StorageBackend, create_storage_backend
 
 
 @dataclass
@@ -48,6 +48,8 @@ class ExportPairData:
 
 class ExportService:
     """Service for exporting collected pairs to training dataset format."""
+
+    _storage: StorageBackend | None
 
     def __init__(self, config: ExportConfig) -> None:
         """Initialize export service.
@@ -108,13 +110,15 @@ class ExportService:
 
             self._storage = create_storage_backend(StorageConfig(backend="local"))
 
+        storage = self._storage  # Type narrowing for mypy
+
         # Copy images
         original_ext = Path(pair.original_uri).suffix or ".png"
-        original_data = self._storage.load(pair.original_uri)
+        original_data = storage.load(pair.original_uri)
         (pair_dir / f"original{original_ext}").write_bytes(original_data)
 
         capture_ext = Path(pair.capture_uri).suffix or ".jpg"
-        capture_data = self._storage.load(pair.capture_uri)
+        capture_data = storage.load(pair.capture_uri)
         (pair_dir / f"capture{capture_ext}").write_bytes(capture_data)
 
         # Write corners.json

@@ -238,12 +238,8 @@ class TestExportService:
         # Verify totals
         assert len(train) + len(val) + len(test) == len(pairs)
 
-        # Verify each split has both types
+        # Verify train split has both types (with enough samples)
         train_types = {p.capture_type for p in train}
-        val_types = {p.capture_type for p in val}
-        test_types = {p.capture_type for p in test}
-
-        # With enough samples, each split should have both types
         assert "screen" in train_types
         assert "photo" in train_types
 
