@@ -349,3 +349,60 @@ def test_harvest_worker_close_cleans_up(mock_config: Config) -> None:
 
     # Verify http client is closed
     assert worker.http.is_closed
+
+
+# --- ShutdownHandler tests ---
+
+
+def test_shutdown_handler_sets_flag() -> None:
+    """ShutdownHandler sets shutdown flag when signaled."""
+    import signal
+
+    from picode_scraper.harvester.shutdown import ShutdownHandler
+
+    handler = ShutdownHandler()
+    assert not handler.should_shutdown
+
+    # Simulate SIGTERM
+    handler.handle_signal(signal.SIGTERM, None)
+
+    assert handler.should_shutdown
+
+
+def test_shutdown_handler_handles_sigint() -> None:
+    """ShutdownHandler sets shutdown flag on SIGINT."""
+    import signal
+
+    from picode_scraper.harvester.shutdown import ShutdownHandler
+
+    handler = ShutdownHandler()
+    assert not handler.should_shutdown
+
+    # Simulate SIGINT (Ctrl+C)
+    handler.handle_signal(signal.SIGINT, None)
+
+    assert handler.should_shutdown
+
+
+def test_shutdown_handler_register_unregister() -> None:
+    """ShutdownHandler registers and unregisters signal handlers."""
+    import signal
+
+    from picode_scraper.harvester.shutdown import ShutdownHandler
+
+    # Store original handlers
+    original_sigterm = signal.getsignal(signal.SIGTERM)
+    original_sigint = signal.getsignal(signal.SIGINT)
+
+    handler = ShutdownHandler()
+    handler.register()
+
+    # After register, signals should point to our handler
+    assert signal.getsignal(signal.SIGTERM) == handler.handle_signal
+    assert signal.getsignal(signal.SIGINT) == handler.handle_signal
+
+    handler.unregister()
+
+    # After unregister, signals should be restored
+    assert signal.getsignal(signal.SIGTERM) == original_sigterm
+    assert signal.getsignal(signal.SIGINT) == original_sigint
