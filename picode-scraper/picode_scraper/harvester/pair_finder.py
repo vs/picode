@@ -1,12 +1,16 @@
 """Pair finding via validate-first approach."""
 
 from itertools import combinations
+from typing import Any, TypeAlias
 
 import numpy as np
 
 from picode_scraper.config import ValidationConfig
 from picode_scraper.harvester.validator import PairValidator, ValidationResult
 from picode_scraper.sources.base import CandidateImage
+
+# Type alias for image tuple (candidate metadata, raw bytes, decoded array)
+ImageTuple: TypeAlias = tuple[CandidateImage, bytes, np.ndarray[Any, Any]]
 
 
 class PairFinder:
@@ -32,8 +36,8 @@ class PairFinder:
 
     def find_pairs(
         self,
-        images: list[tuple[CandidateImage, bytes, np.ndarray]],
-    ) -> list[tuple[tuple, tuple, ValidationResult]]:
+        images: list[ImageTuple],
+    ) -> list[tuple[ImageTuple, ImageTuple, ValidationResult]]:
         """Find all valid pairs among candidate images.
 
         Args:
@@ -45,7 +49,7 @@ class PairFinder:
         if len(images) < 2:
             return []
 
-        valid_pairs: list[tuple[tuple, tuple, ValidationResult]] = []
+        valid_pairs: list[tuple[ImageTuple, ImageTuple, ValidationResult]] = []
 
         # Generate combinations (limit to avoid O(n^2) explosion)
         combos = list(combinations(images, 2))

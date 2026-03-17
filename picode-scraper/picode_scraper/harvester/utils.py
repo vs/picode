@@ -1,11 +1,13 @@
 """Harvester utility functions."""
 
+from typing import Any
+
 import imagehash
 import numpy as np
 from PIL import Image
 
 
-def compute_phash(image: np.ndarray) -> bytes:
+def compute_phash(image: np.ndarray[Any, Any]) -> bytes:
     """Compute perceptual hash for an image.
 
     Args:

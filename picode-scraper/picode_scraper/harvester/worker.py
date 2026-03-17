@@ -2,6 +2,7 @@
 
 import time
 import uuid
+from typing import Any
 
 import cv2
 import httpx
@@ -160,7 +161,7 @@ class HarvestWorker:
 
     def _download_candidates(
         self, candidates: list[CandidateImage]
-    ) -> list[tuple[CandidateImage, bytes, np.ndarray]]:
+    ) -> list[tuple[CandidateImage, bytes, np.ndarray[Any, Any]]]:
         """Download candidate images, respecting rate limits.
 
         Args:
@@ -170,7 +171,7 @@ class HarvestWorker:
             List of (candidate, raw_bytes, decoded_array) tuples for
             successfully downloaded images meeting size requirements
         """
-        results: list[tuple[CandidateImage, bytes, np.ndarray]] = []
+        results: list[tuple[CandidateImage, bytes, np.ndarray[Any, Any]]] = []
 
         for candidate in candidates:
             self.rate_limiter.wait(candidate.url)
@@ -194,8 +195,8 @@ class HarvestWorker:
         self,
         db: Session,
         task: HarvestTask,
-        original: tuple[CandidateImage, bytes, np.ndarray],
-        capture: tuple[CandidateImage, bytes, np.ndarray],
+        original: tuple[CandidateImage, bytes, np.ndarray[Any, Any]],
+        capture: tuple[CandidateImage, bytes, np.ndarray[Any, Any]],
         validation: ValidationResult,
         content: PageContent,
     ) -> None:

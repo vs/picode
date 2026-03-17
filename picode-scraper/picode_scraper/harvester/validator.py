@@ -1,6 +1,7 @@
 """Pair validation using SIFT feature matching."""
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import cv2
 import numpy as np
@@ -54,7 +55,9 @@ class PairValidator:
         self.sift = cv2.SIFT_create()  # type: ignore[attr-defined]
         self.matcher = cv2.BFMatcher()
 
-    def validate(self, original: np.ndarray, capture: np.ndarray) -> ValidationResult:
+    def validate(
+        self, original: np.ndarray[Any, Any], capture: np.ndarray[Any, Any]
+    ) -> ValidationResult:
         """Validate that capture contains original.
 
         Args:
@@ -103,7 +106,7 @@ class PairValidator:
             quality_score=quality_score,
         )
 
-    def _to_proxy(self, image: np.ndarray) -> np.ndarray:
+    def _to_proxy(self, image: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         """Resize to proxy resolution for fast initial matching.
 
         Args:
@@ -119,8 +122,8 @@ class PairValidator:
         return cv2.resize(image, None, fx=scale, fy=scale)
 
     def _find_corners(
-        self, original: np.ndarray, capture: np.ndarray
-    ) -> tuple[np.ndarray, float]:
+        self, original: np.ndarray[Any, Any], capture: np.ndarray[Any, Any]
+    ) -> tuple[np.ndarray[Any, Any], float]:
         """SIFT + RANSAC homography estimation.
 
         Args:
@@ -164,7 +167,9 @@ class PairValidator:
 
         return transformed.reshape(4, 2), inlier_ratio
 
-    def _compute_coverage(self, corners: np.ndarray, capture_shape: tuple) -> float:
+    def _compute_coverage(
+        self, corners: np.ndarray[Any, Any], capture_shape: tuple[int, ...]
+    ) -> float:
         """Compute what fraction of capture the original occupies.
 
         Args:
@@ -178,7 +183,9 @@ class PairValidator:
         capture_area = capture_shape[0] * capture_shape[1]
         return quad_area / capture_area if capture_area > 0 else 0.0
 
-    def _rectify(self, capture: np.ndarray, corners: np.ndarray) -> np.ndarray:
+    def _rectify(
+        self, capture: np.ndarray[Any, Any], corners: np.ndarray[Any, Any]
+    ) -> np.ndarray[Any, Any]:
         """Rectify capture to match original perspective.
 
         Args:
@@ -193,7 +200,9 @@ class PairValidator:
         M = cv2.getPerspectiveTransform(corners.astype(np.float32), dst)
         return cv2.warpPerspective(capture, M, (w, h))
 
-    def _compute_similarity(self, original: np.ndarray, rectified: np.ndarray) -> float:
+    def _compute_similarity(
+        self, original: np.ndarray[Any, Any], rectified: np.ndarray[Any, Any]
+    ) -> float:
         """Compute perceptual similarity between images.
 
         Args:
