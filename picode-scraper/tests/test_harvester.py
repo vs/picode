@@ -406,3 +406,40 @@ def test_shutdown_handler_register_unregister() -> None:
     # After unregister, signals should be restored
     assert signal.getsignal(signal.SIGTERM) == original_sigterm
     assert signal.getsignal(signal.SIGINT) == original_sigint
+
+
+# --- Worker Shutdown Integration tests ---
+
+
+def test_worker_has_shutdown_handler(mock_config, monkeypatch):
+    """Worker initializes with shutdown handler."""
+    from unittest.mock import patch
+
+    from picode_scraper.harvester.worker import HarvestWorker
+
+    with patch("picode_scraper.harvester.worker.create_storage_backend"):
+        worker = HarvestWorker(mock_config)
+
+    assert hasattr(worker, "shutdown_handler")
+    assert not worker.shutdown_handler.should_shutdown
+
+
+def test_worker_exits_on_shutdown_flag(mock_config, monkeypatch):
+    """Worker exits run loop when shutdown flag is set."""
+    from unittest.mock import patch
+
+    from picode_scraper.harvester.worker import HarvestWorker
+
+    with patch("picode_scraper.harvester.worker.create_storage_backend"):
+        worker = HarvestWorker(mock_config)
+
+    # Set shutdown flag before run
+    worker.shutdown_handler.should_shutdown = True
+
+    # Mock claim_task to track if it's called
+    with patch.object(worker, "_claim_task") as mock_claim:
+        with patch("picode_scraper.harvester.worker.get_session"):
+            worker.run()
+
+        # Should exit immediately without claiming
+        mock_claim.assert_not_called()

@@ -16,6 +16,7 @@ from picode_scraper.db.models import HarvestTask, Pair, Source
 from picode_scraper.harvester.dedup import get_or_create_image
 from picode_scraper.harvester.pair_finder import PairFinder
 from picode_scraper.harvester.rate_limiter import DomainRateLimiter
+from picode_scraper.harvester.shutdown import ShutdownHandler
 from picode_scraper.harvester.validator import ValidationResult
 from picode_scraper.sources import get_source
 from picode_scraper.sources.base import CandidateImage, PageContent
@@ -63,32 +64,62 @@ class HarvestWorker:
         self.storage = create_storage_backend(config.storage)
         self.pair_finder = PairFinder(config.validation)
         self.rate_limiter = DomainRateLimiter(config.scraping.request_delay)
+        self.shutdown_handler = ShutdownHandler()
+        self._current_task_id: int | None = None
 
     def run(self) -> None:
         """Main worker loop.
 
         Continuously claims and processes tasks until no tasks are available
-        for several consecutive polls. Uses exponential backoff when no tasks
-        are found.
+        for several consecutive polls, or shutdown is requested. Uses
+        exponential backoff when no tasks are found.
         """
+        self.shutdown_handler.register()
         consecutive_empty = 0
 
-        while consecutive_empty < 5:  # Exit after 5 empty polls
-            with get_session() as db:
-                task = self._claim_task(db)
+        try:
+            while consecutive_empty < 5 and not self.shutdown_handler.should_shutdown:
+                with get_session() as db:
+                    task = self._claim_task(db)
 
-                if task is None:
-                    consecutive_empty += 1
-                    time.sleep(2**consecutive_empty)  # Exponential backoff
-                    continue
+                    if task is None:
+                        consecutive_empty += 1
+                        # Check shutdown during sleep
+                        for _ in range(2**consecutive_empty):
+                            if self.shutdown_handler.should_shutdown:
+                                return
+                            time.sleep(1)
+                        continue
 
-                consecutive_empty = 0
+                    consecutive_empty = 0
+                    self._current_task_id = task.id
 
-                try:
-                    self._process_task(db, task)
-                    self._mark_completed(db, task.id)
-                except Exception as e:
-                    self._mark_failed(db, task.id, str(e))
+                    try:
+                        self._process_task(db, task)
+                        self._mark_completed(db, task.id)
+                    except Exception as e:
+                        self._mark_failed(db, task.id, str(e))
+                    finally:
+                        self._current_task_id = None
+        finally:
+            self.shutdown_handler.unregister()
+            self._release_on_shutdown()
+
+    def _release_on_shutdown(self) -> None:
+        """Release any claimed task back to pending on shutdown."""
+        if self._current_task_id is not None and self.shutdown_handler.should_shutdown:
+            try:
+                with get_session() as db:
+                    db.execute(
+                        text("""
+                            UPDATE harvest_tasks
+                            SET status = 'pending', claimed_by = NULL, claimed_at = NULL
+                            WHERE id = :id AND status = 'claimed'
+                        """),
+                        {"id": self._current_task_id},
+                    )
+            except Exception:
+                pass  # Best effort - don't fail shutdown
 
     def _claim_task(self, db: Session) -> HarvestTask | None:
         """Claim next available task using FOR UPDATE SKIP LOCKED.
