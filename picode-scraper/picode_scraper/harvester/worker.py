@@ -280,20 +280,33 @@ class HarvestWorker:
         )
 
     def _mark_failed(self, db: Session, task_id: int, error: str) -> None:
-        """Mark task as failed.
+        """Mark task as failed or dead_letter if max retries exceeded.
 
         Args:
             db: Database session
             task_id: ID of task to mark
             error: Error message to record
         """
+        # Get current retry count
+        result = db.execute(
+            text("SELECT retry_count FROM harvest_tasks WHERE id = :id"),
+            {"id": task_id},
+        ).fetchone()
+
+        current_retries = result[0] if result else 0
+        new_status = (
+            "dead_letter"
+            if current_retries >= self.config.scraping.max_retries
+            else "failed"
+        )
+
         db.execute(
             text("""
             UPDATE harvest_tasks
-            SET status = 'failed', error_message = :error, retry_count = retry_count + 1
+            SET status = :status, error_message = :error, retry_count = retry_count + 1
             WHERE id = :id
         """),
-            {"id": task_id, "error": error},
+            {"id": task_id, "error": error, "status": new_status},
         )
 
     def close(self) -> None:

@@ -443,3 +443,54 @@ def test_worker_exits_on_shutdown_flag(mock_config, monkeypatch):
 
         # Should exit immediately without claiming
         mock_claim.assert_not_called()
+
+
+# --- Dead Letter tests ---
+
+
+def test_worker_marks_dead_letter_after_max_retries(mock_config: Config) -> None:
+    """Worker marks task as dead_letter when max retries exceeded."""
+    from unittest.mock import MagicMock, patch
+
+    from picode_scraper.harvester.worker import HarvestWorker
+
+    # Set max_retries to 3
+    mock_config.scraping.max_retries = 3
+
+    with patch("picode_scraper.harvester.worker.create_storage_backend"):
+        worker = HarvestWorker(mock_config)
+
+    # Create mock database session
+    mock_db = MagicMock()
+
+    # Test case 1: retry_count = 2 (below max), should mark as 'failed'
+    mock_db.execute.return_value.fetchone.return_value = (2,)  # current retry_count = 2
+    worker._mark_failed(mock_db, task_id=1, error="Test error")
+
+    # Check that status is 'failed'
+    call_args = mock_db.execute.call_args_list[-1]
+    assert call_args[0][1]["status"] == "failed"
+
+    # Reset mock
+    mock_db.reset_mock()
+
+    # Test case 2: retry_count = 3 (equals max), should mark as 'dead_letter'
+    mock_db.execute.return_value.fetchone.return_value = (3,)  # current retry_count = 3
+    worker._mark_failed(mock_db, task_id=2, error="Test error")
+
+    # Check that status is 'dead_letter'
+    call_args = mock_db.execute.call_args_list[-1]
+    assert call_args[0][1]["status"] == "dead_letter"
+
+    # Reset mock
+    mock_db.reset_mock()
+
+    # Test case 3: retry_count = 5 (above max), should mark as 'dead_letter'
+    mock_db.execute.return_value.fetchone.return_value = (5,)  # current retry_count = 5
+    worker._mark_failed(mock_db, task_id=3, error="Test error")
+
+    # Check that status is 'dead_letter'
+    call_args = mock_db.execute.call_args_list[-1]
+    assert call_args[0][1]["status"] == "dead_letter"
+
+    worker.close()
