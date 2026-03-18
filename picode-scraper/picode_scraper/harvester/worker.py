@@ -18,6 +18,7 @@ from picode_scraper.harvester.pair_finder import PairFinder
 from picode_scraper.harvester.rate_limiter import DomainRateLimiter
 from picode_scraper.harvester.shutdown import ShutdownHandler
 from picode_scraper.harvester.validator import ValidationResult
+from picode_scraper.logging import get_logger
 from picode_scraper.sources import get_source
 from picode_scraper.sources.base import CandidateImage, PageContent
 from picode_scraper.storage import create_storage_backend
@@ -66,6 +67,7 @@ class HarvestWorker:
         self.rate_limiter = DomainRateLimiter(config.scraping.request_delay)
         self.shutdown_handler = ShutdownHandler()
         self._current_task_id: int | None = None
+        self.log = get_logger("worker").bind(worker_id=self.worker_id)
 
     def run(self) -> None:
         """Main worker loop.
@@ -76,6 +78,7 @@ class HarvestWorker:
         """
         self.shutdown_handler.register()
         consecutive_empty = 0
+        self.log.info("worker_started")
 
         try:
             while consecutive_empty < 5 and not self.shutdown_handler.should_shutdown:
@@ -93,15 +96,19 @@ class HarvestWorker:
 
                     consecutive_empty = 0
                     self._current_task_id = task.id
+                    self.log.info("task_claimed", task_id=task.id, url=task.url)
 
                     try:
                         self._process_task(db, task)
                         self._mark_completed(db, task.id)
+                        self.log.info("task_completed", task_id=task.id)
                     except Exception as e:
                         self._mark_failed(db, task.id, str(e))
+                        self.log.error("task_failed", task_id=task.id, error=str(e))
                     finally:
                         self._current_task_id = None
         finally:
+            self.log.info("worker_finished", reason="no_more_tasks")
             self.shutdown_handler.unregister()
             self._release_on_shutdown()
 
@@ -308,6 +315,9 @@ class HarvestWorker:
         """),
             {"id": task_id, "error": error, "status": new_status},
         )
+
+        if new_status == "dead_letter":
+            self.log.warning("task_dead_lettered", task_id=task_id, error=error)
 
     def close(self) -> None:
         """Clean up resources."""
