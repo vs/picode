@@ -16,10 +16,16 @@ from picode_scraper.config import Config, load_config
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file",
 )
+@click.option("--json-logs", is_flag=True, help="Output JSON formatted logs")
+@click.option("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
 @click.version_option(version=__version__)
 @click.pass_context
-def cli(ctx: click.Context, config_path: Path | None) -> None:
+def cli(ctx: click.Context, config_path: Path | None, json_logs: bool, log_level: str) -> None:
     """Picode dataset scraper - collect original/capture image pairs."""
+    from picode_scraper.logging import configure_logging
+
+    configure_logging(json_format=json_logs, level=log_level)
+
     ctx.ensure_object(dict)
 
     if config_path:

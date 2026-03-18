@@ -33,6 +33,8 @@ dependencies = [
     "imagehash>=4.3",
     # Storage
     "boto3>=1.34",
+    # Logging
+    "structlog>=24.0",
 ]
 
 [project.optional-dependencies]
