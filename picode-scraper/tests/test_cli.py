@@ -275,3 +275,19 @@ def test_status_shows_no_tasks_message(
     result = runner.invoke(cli, ["-c", str(config_file), "status"])
     assert result.exit_code == 0
     assert "(no tasks)" in result.output
+
+
+def test_requeue_command_requires_config(runner: CliRunner) -> None:
+    """requeue command requires config file."""
+    result = runner.invoke(cli, ["requeue"])
+    assert result.exit_code == 1
+    assert "Config file required" in result.output
+
+
+def test_requeue_command_validates_status(
+    runner: CliRunner, config_file: Path, mock_db: None
+) -> None:
+    """requeue command validates status option."""
+    result = runner.invoke(cli, ["-c", str(config_file), "requeue", "--status", "invalid"])
+    assert result.exit_code == 1
+    assert "Status must be one of" in result.output

@@ -249,6 +249,59 @@ def export(
 
 
 @cli.command()
+@click.option("--status", "-s", default="failed", help="Status to requeue (failed, dead_letter)")
+@click.option("--limit", "-l", type=int, default=None, help="Max tasks to requeue")
+@click.pass_context
+def requeue(ctx: click.Context, status: str, limit: int | None) -> None:
+    """Requeue failed or dead_letter tasks for retry."""
+    from sqlalchemy import text
+
+    from picode_scraper.db import get_session, init_db
+
+    config: Config | None = ctx.obj.get("config")
+    if config is None:
+        click.echo("Error: Config file required for requeue command")
+        raise SystemExit(1)
+
+    init_db(config.database)
+
+    valid_statuses = ("failed", "dead_letter")
+    if status not in valid_statuses:
+        click.echo(f"Error: Status must be one of {valid_statuses}")
+        raise SystemExit(1)
+
+    with get_session() as db:
+        if limit:
+            # Requeue only up to limit tasks
+            result = db.execute(
+                text("""
+                    UPDATE harvest_tasks
+                    SET status = 'pending', error_message = NULL,
+                        claimed_by = NULL, claimed_at = NULL, retry_count = 0
+                    WHERE id IN (
+                        SELECT id FROM harvest_tasks
+                        WHERE status = :status
+                        LIMIT :limit
+                    )
+                """),
+                {"status": status, "limit": limit},
+            )
+        else:
+            result = db.execute(
+                text("""
+                    UPDATE harvest_tasks
+                    SET status = 'pending', error_message = NULL,
+                        claimed_by = NULL, claimed_at = NULL, retry_count = 0
+                    WHERE status = :status
+                """),
+                {"status": status},
+            )
+        count = result.rowcount  # type: ignore[attr-defined]
+
+    click.echo(f"Requeued {count} tasks from '{status}' to 'pending'")
+
+
+@cli.command()
 @click.option("--worker-id", default=None, help="Unique worker identifier")
 @click.option("--source", "-s", multiple=True, help="Limit to specific sources")
 @click.pass_context
