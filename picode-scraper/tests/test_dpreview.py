@@ -2,7 +2,7 @@
 
 import pytest
 
-from picode_scraper.sources.dpreview.parser import is_content_image
+from picode_scraper.sources.dpreview.parser import extract_post_images, is_content_image
 
 
 class TestIsContentImage:
@@ -67,3 +67,56 @@ class TestIsContentImage:
         img = soup.find("img")
         assert img is not None
         assert is_content_image(img) is True
+
+
+class TestExtractPostImages:
+    """Tests for extract_post_images function."""
+
+    def test_extracts_content_images(self) -> None:
+        """Should extract content images from post HTML."""
+        html = """
+        <div class="post-content">
+            <img src="http://test.com/photo1.jpg" width="800" height="600">
+            <img src="http://test.com/photo2.jpg" width="640" height="480">
+        </div>
+        """
+        images = extract_post_images(html)
+        assert len(images) == 2
+        assert images[0].url == "http://test.com/photo1.jpg"
+        assert images[1].url == "http://test.com/photo2.jpg"
+
+    def test_filters_avatars_and_icons(self) -> None:
+        """Should filter out avatars and icons."""
+        html = """
+        <div class="post-content">
+            <img class="avatar" src="http://test.com/avatar.jpg">
+            <img src="http://test.com/icons/quote.gif" width="16" height="16">
+            <img src="http://test.com/photo.jpg" width="800" height="600">
+        </div>
+        """
+        images = extract_post_images(html)
+        assert len(images) == 1
+        assert images[0].url == "http://test.com/photo.jpg"
+
+    def test_captures_alt_text(self) -> None:
+        """Should capture alt text from images."""
+        html = '<img src="http://test.com/photo.jpg" alt="Before calibration">'
+        images = extract_post_images(html)
+        assert len(images) == 1
+        assert images[0].alt_text == "Before calibration"
+
+    def test_assigns_position(self) -> None:
+        """Should assign position based on order found."""
+        html = """
+        <img src="http://test.com/photo1.jpg">
+        <img src="http://test.com/photo2.jpg">
+        """
+        images = extract_post_images(html)
+        assert images[0].position == 0
+        assert images[1].position == 1
+
+    def test_returns_empty_for_no_images(self) -> None:
+        """Should return empty list when no images found."""
+        html = "<div class='post-content'>No images here</div>"
+        images = extract_post_images(html)
+        assert images == []

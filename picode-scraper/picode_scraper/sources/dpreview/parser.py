@@ -2,6 +2,10 @@
 
 from typing import TYPE_CHECKING
 
+from bs4 import BeautifulSoup
+
+from picode_scraper.sources.base import CandidateImage
+
 if TYPE_CHECKING:
     from bs4.element import Tag
 
@@ -62,3 +66,37 @@ def is_content_image(img: "Tag") -> bool:
         pass
 
     return True
+
+
+def extract_post_images(html: str) -> list[CandidateImage]:
+    """Extract content images from post HTML.
+
+    Args:
+        html: HTML string of a single post
+
+    Returns:
+        List of CandidateImage objects for content images
+    """
+    soup = BeautifulSoup(html, "lxml")
+    candidates: list[CandidateImage] = []
+    position = 0
+
+    for img in soup.find_all("img", src=True):
+        if not is_content_image(img):
+            continue
+
+        src = img.get("src")
+        if not src or not isinstance(src, str):
+            continue
+
+        alt = img.get("alt")
+        candidates.append(
+            CandidateImage(
+                url=src,
+                alt_text=alt if isinstance(alt, str) else None,
+                position=position,
+            )
+        )
+        position += 1
+
+    return candidates
