@@ -323,6 +323,68 @@ class TestDPReviewSource:
         assert isinstance(results, list)
 
 
+class TestDPReviewIntegration:
+    """Integration tests with mocked data."""
+
+    def test_full_extraction_flow(self) -> None:
+        """Should extract images through full flow."""
+        from picode_scraper.sources import get_source
+
+        source = get_source("dpreview")
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+
+        # Extract images
+        content = source.extract_images(
+            "https://dpreview.com/forums/thread/12345",
+            html,
+        )
+
+        # Verify structure
+        assert content.url == "https://dpreview.com/forums/thread/12345"
+        assert len(content.candidate_images) == 3
+
+        # Verify first image
+        assert "screen_capture.jpg" in content.candidate_images[0].url
+        assert content.candidate_images[0].alt_text == "Monitor screenshot"
+
+        # Verify context captured
+        assert content.candidate_images[0].context is not None
+        assert "monitor" in content.candidate_images[0].context.lower()
+
+    def test_pagination_extraction_with_html(self) -> None:
+        """Should extract pagination when given HTML."""
+        from picode_scraper.sources.dpreview.parser import get_pagination_urls
+
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/12345")
+
+        assert len(urls) == 2
+        assert all("dpreview.com" in url for url in urls)
+
+    def test_handles_empty_thread(self) -> None:
+        """Should handle threads with no content images."""
+        from picode_scraper.sources import get_source
+
+        source = get_source("dpreview")
+        html = """
+        <div class="thread-container">
+            <div class="post" id="post-1">
+                <div class="post-header">
+                    <img class="avatar" src="/avatar.jpg">
+                </div>
+                <div class="post-content">
+                    <p>Just text, no images.</p>
+                </div>
+            </div>
+        </div>
+        """
+
+        content = source.extract_images("https://dpreview.com/thread/empty", html)
+
+        assert content.candidate_images == []
+        assert content.metadata["post_count"] == 1
+
+
 class TestDPReviewRegistration:
     """Tests for DPReview source auto-registration."""
 
