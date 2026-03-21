@@ -34,7 +34,8 @@ def is_content_image(img: "Tag") -> bool:
         True if image appears to be content, False if avatar/icon/UI
     """
     # Check class attribute for avatar
-    classes = img.get("class", [])
+    class_attr = img.get("class")
+    classes: str | list[str] = class_attr if class_attr else []
     if isinstance(classes, list):
         class_str = " ".join(classes).lower()
     else:
@@ -57,7 +58,7 @@ def is_content_image(img: "Tag") -> bool:
     try:
         width_attr = img.get("width")
         height_attr = img.get("height")
-        if width_attr and height_attr:
+        if isinstance(width_attr, str) and isinstance(height_attr, str):
             w = int(width_attr)
             h = int(height_attr)
             if w < MIN_IMAGE_DIMENSION or h < MIN_IMAGE_DIMENSION:
