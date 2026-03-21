@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from picode_scraper.sources.dpreview.parser import (
+    PostContent,
     ThreadInfo,
     extract_post_images,
     is_content_image,
     parse_search_results,
+    parse_thread_page,
 )
 
 
@@ -172,3 +174,46 @@ class TestParseSearchResults:
         threads = parse_search_results(html)
 
         assert threads == []
+
+
+class TestParseThreadPage:
+    """Tests for parse_thread_page function."""
+
+    def test_extracts_posts(self) -> None:
+        """Should extract posts from thread page."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        posts = parse_thread_page(html)
+
+        assert len(posts) == 3
+
+    def test_extracts_images_from_posts(self) -> None:
+        """Should extract content images from each post."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        posts = parse_thread_page(html)
+
+        # First post has 2 content images
+        assert len(posts[0].images) == 2
+        assert "screen_capture.jpg" in posts[0].images[0].url
+
+        # Second post has 1 content image (quote button filtered)
+        assert len(posts[1].images) == 1
+
+        # Third post has no images
+        assert len(posts[2].images) == 0
+
+    def test_filters_avatars(self) -> None:
+        """Should not include avatars in post images."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        posts = parse_thread_page(html)
+
+        for post in posts:
+            for img in post.images:
+                assert "avatar" not in img.url.lower()
+
+    def test_captures_post_id(self) -> None:
+        """Should capture post ID if available."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        posts = parse_thread_page(html)
+
+        assert posts[0].post_id == "post-1"
+        assert posts[1].post_id == "post-2"

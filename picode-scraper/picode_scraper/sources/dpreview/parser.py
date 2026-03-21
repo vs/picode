@@ -21,6 +21,15 @@ class ThreadInfo:
     forum: str | None = None
     post_count: int | None = None
 
+
+@dataclass
+class PostContent:
+    """Content extracted from a single forum post."""
+
+    post_id: str | None
+    images: list[CandidateImage]
+    text: str | None = None
+
 # Known UI element patterns to filter
 UI_PATTERNS = (
     "avatar",
@@ -159,3 +168,39 @@ def parse_search_results(html: str) -> list[ThreadInfo]:
         )
 
     return threads
+
+
+def parse_thread_page(html: str) -> list[PostContent]:
+    """Parse thread page to extract posts with their images.
+
+    Args:
+        html: HTML string of thread page
+
+    Returns:
+        List of PostContent objects
+    """
+    soup = BeautifulSoup(html, "lxml")
+    posts: list[PostContent] = []
+
+    for post_elem in soup.select(".post"):
+        post_id = post_elem.get("id")
+
+        # Get post content HTML and extract images
+        content_elem = post_elem.select_one(".post-content")
+        if content_elem:
+            content_html = str(content_elem)
+            images = extract_post_images(content_html)
+            text = content_elem.get_text(strip=True)
+        else:
+            images = []
+            text = None
+
+        posts.append(
+            PostContent(
+                post_id=post_id if isinstance(post_id, str) else None,
+                images=images,
+                text=text[:500] if text else None,
+            )
+        )
+
+    return posts
