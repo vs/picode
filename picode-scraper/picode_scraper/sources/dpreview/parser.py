@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -204,3 +205,43 @@ def parse_thread_page(html: str) -> list[PostContent]:
         )
 
     return posts
+
+
+def get_pagination_urls(html: str, base_url: str) -> list[str]:
+    """Extract pagination URLs from a thread page.
+
+    Args:
+        html: HTML string of thread page
+        base_url: Base URL for making relative URLs absolute
+
+    Returns:
+        List of absolute URLs for other pages (excluding current)
+    """
+    soup = BeautifulSoup(html, "lxml")
+    urls: set[str] = set()
+
+    pagination = soup.select_one(".pagination")
+    if not pagination:
+        return []
+
+    for link in pagination.find_all("a", href=True):
+        # Skip current page
+        class_attr = link.get("class")
+        classes: str | list[str] = class_attr if class_attr else []
+        if isinstance(classes, list):
+            class_str = " ".join(classes).lower()
+        else:
+            class_str = str(classes).lower()
+
+        if "current" in class_str:
+            continue
+
+        href = link.get("href")
+        if not href or not isinstance(href, str):
+            continue
+
+        # Make URL absolute
+        absolute_url = urljoin(base_url, href)
+        urls.add(absolute_url)
+
+    return sorted(urls)

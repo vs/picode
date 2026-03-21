@@ -8,6 +8,7 @@ from picode_scraper.sources.dpreview.parser import (
     PostContent,
     ThreadInfo,
     extract_post_images,
+    get_pagination_urls,
     is_content_image,
     parse_search_results,
     parse_thread_page,
@@ -217,3 +218,48 @@ class TestParseThreadPage:
 
         assert posts[0].post_id == "post-1"
         assert posts[1].post_id == "post-2"
+
+
+class TestGetPaginationUrls:
+    """Tests for get_pagination_urls function."""
+
+    def test_extracts_pagination_links(self) -> None:
+        """Should extract all pagination URLs."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/12345")
+
+        assert len(urls) == 2
+        assert "/forums/thread/12345?page=2" in urls[0]
+        assert "/forums/thread/12345?page=3" in urls[1]
+
+    def test_excludes_current_page(self) -> None:
+        """Should not include current page in results."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/12345")
+
+        for url in urls:
+            assert "page=1" not in url or "class='current'" not in url
+
+    def test_deduplicates_urls(self) -> None:
+        """Should deduplicate pagination URLs."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/12345")
+
+        # page=3 appears twice (numbered and "Last" link) but should be deduped
+        page3_urls = [u for u in urls if "page=3" in u]
+        assert len(page3_urls) == 1
+
+    def test_returns_empty_for_single_page(self) -> None:
+        """Should return empty list for single-page threads."""
+        html = "<div class='thread-container'>No pagination</div>"
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/999")
+
+        assert urls == []
+
+    def test_makes_urls_absolute(self) -> None:
+        """Should convert relative URLs to absolute."""
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        urls = get_pagination_urls(html, "https://dpreview.com/forums/thread/12345")
+
+        for url in urls:
+            assert url.startswith("https://")
