@@ -321,3 +321,21 @@ class TestDPReviewSource:
 
         # Without HTTP, returns empty (discovery requires network)
         assert isinstance(results, list)
+
+
+class TestDPReviewRegistration:
+    """Tests for DPReview source auto-registration."""
+
+    def test_registered_on_sources_import(self) -> None:
+        """Should be registered when importing picode_scraper.sources."""
+        from picode_scraper.sources import list_sources
+
+        sources = list_sources()
+        assert "dpreview" in sources
+
+    def test_can_get_source_without_explicit_import(self) -> None:
+        """Should be able to get dpreview source without explicit import."""
+        from picode_scraper.sources import get_source
+
+        source = get_source("dpreview")
+        assert source.name == "dpreview"
