@@ -1,8 +1,18 @@
 """Tests for DPReview source plugin."""
 
+from pathlib import Path
+
 import pytest
 
-from picode_scraper.sources.dpreview.parser import extract_post_images, is_content_image
+from picode_scraper.sources.dpreview.parser import (
+    ThreadInfo,
+    extract_post_images,
+    is_content_image,
+    parse_search_results,
+)
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "dpreview"
 
 
 class TestIsContentImage:
@@ -120,3 +130,45 @@ class TestExtractPostImages:
         html = "<div class='post-content'>No images here</div>"
         images = extract_post_images(html)
         assert images == []
+
+
+class TestParseSearchResults:
+    """Tests for parse_search_results function."""
+
+    def test_extracts_threads_from_search(self) -> None:
+        """Should extract thread URLs from search results."""
+        html = (FIXTURES_DIR / "search_results.html").read_text()
+        threads = parse_search_results(html)
+
+        assert len(threads) == 3
+        assert threads[0].url == "/forums/thread/12345"
+        assert threads[0].title == "Monitor vs Print color comparison"
+
+    def test_captures_thread_metadata(self) -> None:
+        """Should capture forum name and post count."""
+        html = (FIXTURES_DIR / "search_results.html").read_text()
+        threads = parse_search_results(html)
+
+        assert threads[0].forum == "Printing & Finishing"
+        assert threads[0].post_count == 15
+
+    def test_handles_missing_metadata(self) -> None:
+        """Should handle threads with missing metadata gracefully."""
+        html = """
+        <div class="search-result">
+            <a href="/forums/thread/999" class="thread-title">Minimal thread</a>
+        </div>
+        """
+        threads = parse_search_results(html)
+
+        assert len(threads) == 1
+        assert threads[0].url == "/forums/thread/999"
+        assert threads[0].forum is None
+        assert threads[0].post_count is None
+
+    def test_returns_empty_for_no_results(self) -> None:
+        """Should return empty list when no search results."""
+        html = "<div class='search-results'>No results found</div>"
+        threads = parse_search_results(html)
+
+        assert threads == []

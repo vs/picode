@@ -1,5 +1,7 @@
 """HTML parsing utilities for DPReview forum pages."""
 
+import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from bs4 import BeautifulSoup
@@ -8,6 +10,16 @@ from picode_scraper.sources.base import CandidateImage
 
 if TYPE_CHECKING:
     from bs4.element import Tag
+
+
+@dataclass
+class ThreadInfo:
+    """Information about a discovered thread."""
+
+    url: str
+    title: str
+    forum: str | None = None
+    post_count: int | None = None
 
 # Known UI element patterns to filter
 UI_PATTERNS = (
@@ -101,3 +113,49 @@ def extract_post_images(html: str) -> list[CandidateImage]:
         position += 1
 
     return candidates
+
+
+def parse_search_results(html: str) -> list[ThreadInfo]:
+    """Parse search results page to extract thread information.
+
+    Args:
+        html: HTML string of search results page
+
+    Returns:
+        List of ThreadInfo objects
+    """
+    soup = BeautifulSoup(html, "lxml")
+    threads: list[ThreadInfo] = []
+
+    for result in soup.select(".search-result"):
+        link = result.select_one("a.thread-title")
+        if not link:
+            continue
+
+        url = link.get("href")
+        title = link.get_text(strip=True)
+        if not url or not isinstance(url, str):
+            continue
+
+        # Extract optional metadata
+        forum_elem = result.select_one(".forum-name")
+        forum = forum_elem.get_text(strip=True) if forum_elem else None
+
+        post_count_elem = result.select_one(".post-count")
+        post_count: int | None = None
+        if post_count_elem:
+            text = post_count_elem.get_text(strip=True)
+            match = re.search(r"(\d+)", text)
+            if match:
+                post_count = int(match.group(1))
+
+        threads.append(
+            ThreadInfo(
+                url=url,
+                title=title,
+                forum=forum,
+                post_count=post_count,
+            )
+        )
+
+    return threads
