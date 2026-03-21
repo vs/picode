@@ -263,3 +263,61 @@ class TestGetPaginationUrls:
 
         for url in urls:
             assert url.startswith("https://")
+
+
+class TestDPReviewSource:
+    """Tests for DPReviewSource class."""
+
+    def test_has_required_attributes(self) -> None:
+        """Should have name and display_name attributes."""
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        source = DPReviewSource()
+        assert source.name == "dpreview"
+        assert source.display_name == "DPReview Forums (Archive)"
+
+    def test_has_subforums_config(self) -> None:
+        """Should have SUBFORUMS class attribute."""
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        assert len(DPReviewSource.SUBFORUMS) >= 2
+        assert "/forums/post/printing-finishing" in DPReviewSource.SUBFORUMS
+
+    def test_has_default_search_terms(self) -> None:
+        """Should have DEFAULT_SEARCH_TERMS class attribute."""
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        assert len(DPReviewSource.DEFAULT_SEARCH_TERMS) >= 3
+        assert "monitor vs print" in DPReviewSource.DEFAULT_SEARCH_TERMS
+
+    def test_extract_images_returns_page_content(self) -> None:
+        """Should return PageContent from HTML."""
+        from picode_scraper.sources.base import PageContent
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        source = DPReviewSource()
+        html = (FIXTURES_DIR / "thread_page.html").read_text()
+        content = source.extract_images("https://dpreview.com/thread/123", html)
+
+        assert isinstance(content, PageContent)
+        assert len(content.candidate_images) == 3  # 2 from post-1, 1 from post-2
+
+    def test_get_pagination_returns_list(self) -> None:
+        """Should return list from get_pagination."""
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        source = DPReviewSource()
+        pages = source.get_pagination("https://dpreview.com/forums/thread/12345")
+
+        # Without actual HTTP call, this returns empty list
+        assert isinstance(pages, list)
+
+    def test_discover_returns_iterator(self) -> None:
+        """Should return iterator from discover."""
+        from picode_scraper.sources.dpreview.scraper import DPReviewSource
+
+        source = DPReviewSource()
+        results = list(source.discover(["test"]))
+
+        # Without HTTP, returns empty (discovery requires network)
+        assert isinstance(results, list)
