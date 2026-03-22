@@ -1,0 +1,52 @@
+# picode_v2 training configuration
+# Mobile-optimized decoder with artifact-reducing encoder
+
+experiment_name: picode_v2_baseline
+
+model: picode_v2
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 4
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 500
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+  # FFL and GAN losses require trainer modifications (future work)
+  # ffl:
+  #   scale: 0.1
+  #   ramp_steps: 40000
+  #   delay_steps: 20000
+  # gan:
+  #   scale: 0.01
+  #   ramp_steps: 50000
+  #   delay_steps: 30000
+
+distortion:
+  strategy: curriculum
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 3
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
+  tensorboard_dir: runs
