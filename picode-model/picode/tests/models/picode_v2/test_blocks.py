@@ -2,7 +2,7 @@
 
 import torch
 
-from picode.models.picode_v2.blocks import InvertedResidual
+from picode.models.picode_v2.blocks import InvertedResidual, MessageExpander
 
 
 class TestInvertedResidual:
@@ -74,3 +74,52 @@ class TestInvertedResidual:
         )
         assert has_batchnorm is True
         assert has_groupnorm is False
+
+
+class TestMessageExpander:
+    """Tests for MessageExpander."""
+
+    def test_output_shape(self) -> None:
+        """Output is (B, 3, 400, 400)."""
+        expander = MessageExpander(num_bits=100)
+        msg = torch.randn(2, 100)
+        out = expander(msg)
+        assert out.shape == (2, 3, 400, 400)
+
+    def test_gradient_flow(self) -> None:
+        """Gradients flow to input message."""
+        expander = MessageExpander(num_bits=100)
+        msg = torch.randn(2, 100, requires_grad=True)
+        out = expander(msg)
+        out.sum().backward()
+        assert msg.grad is not None
+        assert msg.grad.abs().mean() > 0
+
+    def test_different_messages_different_outputs(self) -> None:
+        """Different messages produce different outputs."""
+        expander = MessageExpander(num_bits=100)
+        msg1 = torch.zeros(1, 100)
+        msg2 = torch.ones(1, 100)
+        out1 = expander(msg1)
+        out2 = expander(msg2)
+        assert not torch.allclose(out1, out2, atol=1e-3)
+
+    def test_uses_bilinear_upsampling(self) -> None:
+        """Uses nn.Upsample (not ConvTranspose2d) to avoid checkerboard."""
+        expander = MessageExpander(num_bits=100)
+        has_upsample = any(
+            isinstance(m, torch.nn.Upsample) for m in expander.modules()
+        )
+        has_convtranspose = any(
+            isinstance(m, torch.nn.ConvTranspose2d) for m in expander.modules()
+        )
+        assert has_upsample is True
+        assert has_convtranspose is False
+
+    def test_different_num_bits(self) -> None:
+        """Works with different message lengths."""
+        for num_bits in [50, 100, 200]:
+            expander = MessageExpander(num_bits=num_bits)
+            msg = torch.randn(1, num_bits)
+            out = expander(msg)
+            assert out.shape == (1, 3, 400, 400)

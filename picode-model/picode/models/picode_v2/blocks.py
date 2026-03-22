@@ -1,6 +1,7 @@
 """Building blocks for picode_v2 mobile-optimized model."""
 
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 
@@ -57,4 +58,51 @@ class InvertedResidual(nn.Module):
         out: Tensor = self.conv(x)
         if self.use_residual:
             out = x + out
+        return out
+
+
+class MessageExpander(nn.Module):
+    """Progressive learned upsampling for message expansion.
+
+    Uses Upsample + Conv2d instead of ConvTranspose2d to avoid
+    checkerboard artifacts (Odena et al., "Deconvolution and Checkerboard Artifacts").
+
+    Args:
+        num_bits: Number of message bits.
+        hidden_ch: Hidden channel dimension.
+    """
+
+    def __init__(self, num_bits: int = 100, hidden_ch: int = 64) -> None:
+        super().__init__()
+        self.dense = nn.Linear(num_bits, hidden_ch * 5 * 5)
+
+        # Progressive upsampling: 5x5 -> 25x25 -> 100x100 -> 400x400
+        self.up1 = nn.Sequential(
+            nn.Upsample(scale_factor=5, mode='bilinear', align_corners=False),
+            nn.Conv2d(hidden_ch, hidden_ch, 3, padding=1),
+            nn.GroupNorm(8, hidden_ch),
+            nn.LeakyReLU(0.2),
+        )
+        self.up2 = nn.Sequential(
+            nn.Upsample(scale_factor=4, mode='bilinear', align_corners=False),
+            nn.Conv2d(hidden_ch, 32, 3, padding=1),
+            nn.GroupNorm(8, 32),
+            nn.LeakyReLU(0.2),
+        )
+        self.up3 = nn.Sequential(
+            nn.Upsample(scale_factor=4, mode='bilinear', align_corners=False),
+            nn.Conv2d(32, 16, 3, padding=1),
+            nn.GroupNorm(4, 16),
+            nn.LeakyReLU(0.2),
+        )
+        self.refine = nn.Conv2d(16, 3, 3, padding=1)
+
+    def forward(self, message: Tensor) -> Tensor:
+        """Expand message to spatial feature map."""
+        x = F.leaky_relu(self.dense(message), 0.2)
+        x = x.view(-1, 64, 5, 5)
+        x = self.up1(x)   # 5x5 -> 25x25
+        x = self.up2(x)   # 25x25 -> 100x100
+        x = self.up3(x)   # 100x100 -> 400x400
+        out: Tensor = self.refine(x)
         return out
