@@ -15,6 +15,8 @@ from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
 from picode.models.picode import Decoder as PicodeDecoder
 from picode.models.picode import Encoder as PicodeEncoder
+from picode.models.picode_v2 import Decoder as PicodeV2Decoder
+from picode.models.picode_v2 import Encoder as PicodeV2Encoder
 from picode.models.stegastamp import Decoder as StegaDecoder
 from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
@@ -119,9 +121,12 @@ class Trainer:
 
         # Create models based on config
         num_bits = config.training.num_bits
-        if config.model == "picode":
-            self.encoder: BaseEncoder = PicodeEncoder(num_bits=num_bits).to(self.device)
-            self.decoder: BaseDecoder = PicodeDecoder(num_bits=num_bits).to(self.device)
+        if config.model == "picode_v2":
+            self.encoder: BaseEncoder = PicodeV2Encoder(num_bits=num_bits).to(self.device)
+            self.decoder: BaseDecoder = PicodeV2Decoder(num_bits=num_bits).to(self.device)
+        elif config.model == "picode":
+            self.encoder = PicodeEncoder(num_bits=num_bits).to(self.device)
+            self.decoder = PicodeDecoder(num_bits=num_bits).to(self.device)
         else:  # default to stegastamp
             self.encoder = StegaEncoder(num_bits=num_bits).to(self.device)
             self.decoder = StegaDecoder(num_bits=num_bits).to(self.device)

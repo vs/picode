@@ -109,7 +109,7 @@ class Config:
 
     experiment_name: str
     data: DataConfig
-    model: str = "stegastamp"  # "stegastamp" or "picode"
+    model: str = "stegastamp"  # "stegastamp", "picode", or "picode_v2"
     training: TrainingConfig = field(default_factory=TrainingConfig)
     loss: LossConfig = field(default_factory=LossConfig)
     distortion: DistortionConfig = field(default_factory=DistortionConfig)
