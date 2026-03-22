@@ -2,7 +2,12 @@
 
 import torch
 
-from picode.models.picode_v2.loss import FocalFrequencyLoss
+from picode.models.picode_v2.discriminator import PatchDiscriminator
+from picode.models.picode_v2.loss import (
+    FocalFrequencyLoss,
+    discriminator_loss,
+    generator_loss,
+)
 
 
 class TestFocalFrequencyLoss:
@@ -58,3 +63,47 @@ class TestFocalFrequencyLoss:
         loss_xy = ffl(x, y)
         loss_yx = ffl(y, x)
         assert torch.allclose(loss_xy, loss_yx, atol=1e-5)
+
+
+class TestGANLosses:
+    """Tests for GAN loss functions."""
+
+    def test_discriminator_loss_computes(self) -> None:
+        """Discriminator loss computes without error."""
+        disc = PatchDiscriminator()
+        real = torch.rand(2, 3, 64, 64)
+        fake = torch.rand(2, 3, 64, 64)
+        loss = discriminator_loss(disc, real, fake)
+        assert loss.dim() == 0
+        assert not torch.isnan(loss)
+
+    def test_generator_loss_computes(self) -> None:
+        """Generator loss computes without error."""
+        disc = PatchDiscriminator()
+        fake = torch.rand(2, 3, 64, 64)
+        fake_pred = disc(fake)
+        loss = generator_loss(fake_pred)
+        assert loss.dim() == 0
+        assert not torch.isnan(loss)
+
+    def test_discriminator_loss_gradient_to_disc(self) -> None:
+        """Gradients flow to discriminator parameters."""
+        disc = PatchDiscriminator()
+        real = torch.rand(2, 3, 64, 64)
+        fake = torch.rand(2, 3, 64, 64)
+        loss = discriminator_loss(disc, real, fake)
+        loss.backward()
+        # Check first conv has gradients
+        first_conv = disc.model[0][0]
+        assert first_conv.weight.grad is not None
+        assert first_conv.weight.grad.abs().mean() > 0
+
+    def test_generator_loss_gradient_to_input(self) -> None:
+        """Gradients flow from generator loss to input."""
+        disc = PatchDiscriminator()
+        fake = torch.rand(2, 3, 64, 64, requires_grad=True)
+        fake_pred = disc(fake)
+        loss = generator_loss(fake_pred)
+        loss.backward()
+        assert fake.grad is not None
+        assert fake.grad.abs().mean() > 0
