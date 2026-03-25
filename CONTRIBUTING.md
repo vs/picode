@@ -54,7 +54,12 @@ This is a monorepo with multiple sub-projects. When contributing to the PyTorch 
 │   │   │   └── ldpc/        # LDPC implementation (pyldpc library)
 │   │   ├── models/          # Encoder/decoder models
 │   │   │   ├── base.py      # Encoder/Decoder ABC
-│   │   │   └── stegastamp/  # StegaStamp implementation
+│   │   │   ├── stegastamp/  # StegaStamp implementation (original)
+│   │   │   ├── picode/      # Picode implementation (improved gradient flow)
+│   │   │   └── picode_v2/   # Picode v2 (mobile-optimized with GAN training)
+│   │   ├── detection/       # Blind steganographic image detection
+│   │   │   ├── detector.py  # Multi-scale sliding window detector
+│   │   │   └── cli.py       # Detection CLI
 │   │   ├── training/        # Training infrastructure
 │   │   │   ├── config.py    # YAML config loading
 │   │   │   ├── trainer.py   # Trainer with loss ramping
@@ -62,6 +67,10 @@ This is a monorepo with multiple sub-projects. When contributing to the PyTorch 
 │   │   └── tests/           # Test suite
 │   ├── configs/             # Training configuration files
 │   ├── scripts/             # Utility scripts
+│   └── pyproject.toml       # Package configuration
+├── picode-scraper/          # Distributed image dataset scraper
+│   ├── picode_scraper/      # Python package
+│   ├── configs/             # Scraper configuration
 │   └── pyproject.toml       # Package configuration
 └── venv/                    # Shared Python virtual environment
 ```
@@ -90,6 +99,13 @@ All paths below are relative to `picode-model/`.
 2. Implement ECC inheriting from `picode.ecc.base.ECC`
 3. Export in `__init__.py`
 4. Add tests in `picode/tests/ecc/`
+
+### New Detection Component
+
+1. Add module in `picode/detection/`
+2. Export in `picode/detection/__init__.py`
+3. Add tests in `picode/tests/detection/`
+4. Update CLI in `picode/detection/cli.py` if adding new commands
 
 ### New Training Component
 

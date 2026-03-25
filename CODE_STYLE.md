@@ -58,10 +58,17 @@ def encode(self, image: Tensor, message: Tensor) -> Tensor:
 ### Models (`picode/models/`)
 
 - Base classes in `base.py`
-- Each architecture in its own subdirectory (e.g., `stegastamp/`)
+- Each architecture in its own subdirectory (e.g., `stegastamp/`, `picode/`, `picode_v2/`)
 - Encoder and decoder in separate files
 - Loss functions in `loss.py`
 - Training utilities in `train.py`
+- GAN components (e.g., `discriminator.py`) where applicable
+
+### Detection (`picode/detection/`)
+
+- Main detector in `detector.py`
+- CLI interface in `cli.py`
+- Supporting utilities in separate files (`window.py`, `confidence.py`)
 
 ### ECC (`picode/ecc/`)
 
@@ -133,7 +140,12 @@ from picode.distortions.base import Distortion
 
 # Models - import from specific architecture
 from picode.models.stegastamp import Encoder, Decoder, train_step
+from picode.models.picode import Encoder, Decoder  # Improved gradient flow
+from picode.models.picode_v2 import Encoder, Decoder, PatchDiscriminator  # Mobile-optimized
 from picode.models.base import Encoder as BaseEncoder
+
+# Detection - import detector
+from picode.detection import Detector
 
 # ECC - import from specific implementation
 from picode.ecc import BCH, ECC

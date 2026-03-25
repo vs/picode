@@ -8,16 +8,19 @@ This monorepo contains multiple sub-projects:
 
 - **[picode-model/](picode-model/)** - PyTorch training framework for model development
 - **[picode-ios/](picode-ios/)** - iOS application for mobile steganography
+- **[picode-scraper/](picode-scraper/)** - Distributed web scraper for collecting paired image datasets
 
 ## Features
 
-- **Multiple Model Architectures**: StegaStamp (original) and Picode (improved gradient flow with GroupNorm/LeakyReLU)
+- **Multiple Model Architectures**: StegaStamp (original), Picode (improved gradient flow), and Picode v2 (mobile-optimized with GAN training)
 - **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
 - **CNN Decoder**: Extracts hidden messages even from distorted images
+- **Blind Detection**: Multi-scale sliding window detector for finding steganographic images in photos/videos
 - **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression with swappable backends (native PyTorch, Kornia)
 - **Error Correction Codes**: BCH and LDPC implementations for message robustness
 - **Training Infrastructure**: YAML config, curriculum learning, checkpointing, TensorBoard logging
 - **Cloud Training**: Modal deployment scripts for GPU training with automatic data upload
+- **Data Collection**: Distributed web scraper for collecting paired image datasets
 - **iOS App**: Mobile implementation for real-world steganography
 
 ## Project Structure
@@ -30,11 +33,16 @@ This monorepo contains multiple sub-projects:
 │   ├── picode/              # Python package
 │   │   ├── distortions/     # Differentiable image distortions
 │   │   ├── ecc/             # Error correction codes (BCH, LDPC)
-│   │   ├── models/          # Encoder/decoder models
+│   │   ├── models/          # Encoder/decoder models (stegastamp, picode, picode_v2)
+│   │   ├── detection/       # Blind steganographic image detection
 │   │   ├── training/        # Training infrastructure
 │   │   └── tests/           # Test suite
 │   ├── configs/             # Training configs
 │   ├── scripts/             # Utility scripts
+│   └── pyproject.toml       # Package config
+├── picode-scraper/          # Distributed image dataset scraper
+│   ├── picode_scraper/      # Python package
+│   ├── configs/             # Scraper configs
 │   └── pyproject.toml       # Package config
 ├── venv/                    # Shared Python virtual environment
 ├── CLAUDE.md                # Claude Code instructions
@@ -82,6 +90,12 @@ from picode.models.picode import Encoder as PicodeEncoder, Decoder as PicodeDeco
 
 encoder = PicodeEncoder(num_bits=100)  # Uses GroupNorm + LeakyReLU
 decoder = PicodeDecoder(num_bits=100)  # Uses ResBlocks
+
+# Alternative: Use Picode v2 (mobile-optimized with GAN training)
+from picode.models.picode_v2 import Encoder as V2Encoder, Decoder as V2Decoder
+
+encoder = V2Encoder(num_bits=100)  # Artifact-reducing encoder
+decoder = V2Decoder(num_bits=100)  # Lightweight mobile decoder
 ```
 
 ### Training with Distortions
@@ -329,11 +343,17 @@ The upload command automatically handles large datasets (like COCO with 118K ima
 - CNN decoder with **ResBlocks** for improved feature extraction
 - Designed to address gradient vanishing issues observed in deep training
 
+### Picode v2 (Mobile-Optimized)
+- Artifact-reducing encoder with **InvertedResidual** blocks
+- Lightweight **MobileDecoder** optimized for mobile inference
+- **GAN training** with PatchDiscriminator for improved visual quality
+- **FocalFrequencyLoss** to reduce frequency-domain artifacts
+
 Select the model in your config:
 
 ```yaml
 training:
-  model: picode  # or 'stegastamp'
+  model: picode_v2  # or 'picode' or 'stegastamp'
 ```
 
 ## Documentation
@@ -341,7 +361,9 @@ training:
 - [Distortions Implementation](docs/distortions_implementation.md) - Technical comparison with original StegaStamp
 - [Model Implementation](docs/model_implementation.md) - Encoder, decoder, and training details
 - [Gradient Flow Analysis](docs/gradient_flow_analysis.md) - Analysis of gradient behavior in different architectures
-- [Project Structure Design](docs/plans/2026-02-03-restructure-design.md) - Architecture decisions
+- [Model Improvements](docs/model_improvements.md) - Architecture improvements and optimizations
+- [Detection Improvements](docs/detection_improvements.md) - Blind detection system design
+- [Data Scraper](docs/data_scraper.md) - Distributed image collection pipeline
 
 ## License
 
