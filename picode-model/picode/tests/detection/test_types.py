@@ -25,6 +25,25 @@ class TestPoint:
         assert scaled.y == 50.0
 
 
+def test_public_exports() -> None:
+    """Test that all public classes are exported from detection module."""
+    from picode.detection import (
+        Detection,
+        FastDetector,
+        FastDetectorModel,
+        Point,
+        Quadrilateral,
+        Rectifier,
+    )
+
+    assert Detection is not None
+    assert FastDetector is not None
+    assert FastDetectorModel is not None
+    assert Point is not None
+    assert Quadrilateral is not None
+    assert Rectifier is not None
+
+
 class TestQuadrilateral:
     @pytest.fixture
     def unit_quad(self) -> Quadrilateral:
