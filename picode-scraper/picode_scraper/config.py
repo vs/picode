@@ -1,17 +1,27 @@
 """Configuration loading and validation."""
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml
-from pydantic import PostgresDsn, field_validator
+from pydantic import AfterValidator, field_validator
 from pydantic_settings import BaseSettings
+
+
+def _validate_database_url(v: str) -> str:
+    """Validate database URL supports PostgreSQL or SQLite."""
+    if not v.startswith(("postgresql://", "sqlite://")):
+        raise ValueError("Database URL must be postgresql:// or sqlite://")
+    return v
+
+
+DatabaseUrl = Annotated[str, AfterValidator(_validate_database_url)]
 
 
 class DatabaseConfig(BaseSettings):
     """Database connection configuration."""
 
-    url: PostgresDsn
+    url: DatabaseUrl
     pool_size: int = 5
 
 

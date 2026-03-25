@@ -117,22 +117,19 @@ class HarvestWorker:
         if self._current_task_id is not None and self.shutdown_handler.should_shutdown:
             try:
                 with get_session() as db:
-                    db.execute(
-                        text("""
-                            UPDATE harvest_tasks
-                            SET status = 'pending', claimed_by = NULL, claimed_at = NULL
-                            WHERE id = :id AND status = 'claimed'
-                        """),
-                        {"id": self._current_task_id},
-                    )
+                    task = db.get(HarvestTask, self._current_task_id)
+                    if task and task.status == "claimed":
+                        task.status = "pending"
+                        task.claimed_by = None
+                        task.claimed_at = None
             except Exception:
                 pass  # Best effort - don't fail shutdown
 
     def _claim_task(self, db: Session) -> HarvestTask | None:
-        """Claim next available task using FOR UPDATE SKIP LOCKED.
+        """Claim next available task.
 
-        This ensures multiple workers can safely claim tasks concurrently
-        without conflicts.
+        For PostgreSQL, uses FOR UPDATE SKIP LOCKED for concurrent safety.
+        For SQLite, uses simple update (single-worker only).
 
         Args:
             db: Database session
@@ -140,26 +137,46 @@ class HarvestWorker:
         Returns:
             Claimed HarvestTask or None if no pending tasks
         """
-        result = db.execute(
-            text("""
-            UPDATE harvest_tasks
-            SET status = 'claimed', claimed_by = :worker, claimed_at = NOW()
-            WHERE id = (
-                SELECT id FROM harvest_tasks
-                WHERE status = 'pending'
-                ORDER BY id ASC
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            RETURNING *
-        """),
-            {"worker": self.worker_id},
-        )
-        row = result.fetchone()
-        if row is None:
-            return None
+        # Check if using SQLite (doesn't support FOR UPDATE SKIP LOCKED)
+        is_sqlite = "sqlite" in str(db.bind.url) if db.bind else False
 
-        return db.get(HarvestTask, row.id)
+        if is_sqlite:
+            # SQLite: simple claim for single-worker testing
+            task = (
+                db.query(HarvestTask)
+                .filter_by(status="pending")
+                .order_by(HarvestTask.id)
+                .first()
+            )
+            if task is None:
+                return None
+
+            task.status = "claimed"
+            task.claimed_by = self.worker_id
+            db.flush()
+            return task
+        else:
+            # PostgreSQL: use FOR UPDATE SKIP LOCKED for concurrent safety
+            result = db.execute(
+                text("""
+                UPDATE harvest_tasks
+                SET status = 'claimed', claimed_by = :worker, claimed_at = NOW()
+                WHERE id = (
+                    SELECT id FROM harvest_tasks
+                    WHERE status = 'pending'
+                    ORDER BY id ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                RETURNING *
+            """),
+                {"worker": self.worker_id},
+            )
+            row = result.fetchone()
+            if row is None:
+                return None
+
+            return db.get(HarvestTask, row.id)
 
     def _process_task(self, db: Session, task: HarvestTask) -> None:
         """Process a single harvest task.
@@ -277,14 +294,13 @@ class HarvestWorker:
             db: Database session
             task_id: ID of task to mark
         """
-        db.execute(
-            text("""
-            UPDATE harvest_tasks
-            SET status = 'completed', completed_at = NOW()
-            WHERE id = :id
-        """),
-            {"id": task_id},
-        )
+        # Use ORM update for database-agnostic datetime handling
+        task = db.get(HarvestTask, task_id)
+        if task:
+            from datetime import datetime, timezone
+
+            task.status = "completed"
+            task.completed_at = datetime.now(timezone.utc)
 
     def _mark_failed(self, db: Session, task_id: int, error: str) -> None:
         """Mark task as failed or dead_letter if max retries exceeded.
@@ -294,27 +310,21 @@ class HarvestWorker:
             task_id: ID of task to mark
             error: Error message to record
         """
-        # Get current retry count
-        result = db.execute(
-            text("SELECT retry_count FROM harvest_tasks WHERE id = :id"),
-            {"id": task_id},
-        ).fetchone()
+        # Use ORM for database-agnostic handling
+        task = db.get(HarvestTask, task_id)
+        if not task:
+            return
 
-        current_retries = result[0] if result else 0
+        current_retries = task.retry_count or 0
         new_status = (
             "dead_letter"
             if current_retries >= self.config.scraping.max_retries
             else "failed"
         )
 
-        db.execute(
-            text("""
-            UPDATE harvest_tasks
-            SET status = :status, error_message = :error, retry_count = retry_count + 1
-            WHERE id = :id
-        """),
-            {"id": task_id, "error": error, "status": new_status},
-        )
+        task.status = new_status
+        task.error_message = error
+        task.retry_count = current_retries + 1
 
         if new_status == "dead_letter":
             self.log.warning("task_dead_lettered", task_id=task_id, error=error)

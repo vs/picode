@@ -24,11 +24,17 @@ def init_db(config: DatabaseConfig) -> Engine:
     """
     global _engine, _session_factory
 
-    _engine = create_engine(
-        str(config.url),
-        pool_size=config.pool_size,
-        pool_pre_ping=True,
-    )
+    url = str(config.url)
+
+    # SQLite doesn't support pool_size or pool_pre_ping
+    if url.startswith("sqlite://"):
+        _engine = create_engine(url, connect_args={"check_same_thread": False})
+    else:
+        _engine = create_engine(
+            url,
+            pool_size=config.pool_size,
+            pool_pre_ping=True,
+        )
     _session_factory = sessionmaker(bind=_engine)
     return _engine
 

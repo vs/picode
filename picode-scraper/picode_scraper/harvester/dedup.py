@@ -60,5 +60,6 @@ def get_or_create_image(
         height=img.shape[0],
     )
     db.add(image)
+    db.flush()  # Ensure ID is assigned before returning
 
     return image
