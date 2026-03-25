@@ -1,0 +1,70 @@
+# configs/modal_training_picode_v2.yaml
+# Configuration for Modal GPU training with picode_v2 model
+# GPU options: T4 ($0.59/hr), A10G ($1.10/hr), A100 ($3.50/hr)
+
+experiment_name: picode_v2_modal
+
+model: picode_v2
+
+data:
+  source: folder
+  path: /data/train2017  # COCO train2017 images
+  batch_size: 4  # T4 (16GB) - increase to 8 for A10G, 16 for A100
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 2000
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+  l2_edge_gain: 10.0
+  l2_edge_ramp_steps: 20000
+  l2_edge_delay_steps: 60000
+  yuv_weights: [1.0, 1.0, 1.0]
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 20000
+  brightness:
+    strength: 0.3
+    ramp_steps: 10000
+  saturation:
+    strength: 1.0
+    ramp_steps: 10000
+  hue:
+    strength: 0.1
+    ramp_steps: 10000
+  noise:
+    strength: 0.02
+    ramp_steps: 10000
+  contrast: [0.5, 1.5]
+  contrast_ramp_steps: 10000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 15000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: /checkpoints  # Modal volume mount point
+  save_every_steps: 5000  # More frequent saves for cloud
+  keep_last: 5
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 50  # More frequent logging to observe progress
+  tensorboard_dir: /checkpoints/runs  # Persistent on Modal volume
