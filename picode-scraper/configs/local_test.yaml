@@ -1,0 +1,22 @@
+database:
+  url: sqlite:///./test_scraper.db
+  pool_size: 5
+
+storage:
+  backend: local
+  local_path: ./test_data/images
+
+scraping:
+  user_agent: "PicodeTestScraper/1.0 (local test)"
+  request_delay: 0.1
+  max_retries: 2
+  timeout: 10
+  proxy_url: null
+  proxy_rotation: false
+
+validation:
+  min_image_size: 64
+  min_corner_confidence: 0.3
+  min_coverage: 0.05
+  min_similarity: 0.3
+  proxy_resolution: 400
