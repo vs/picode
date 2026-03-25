@@ -1,11 +1,15 @@
 # picode/tests/detection/test_fast_detector.py
 """Tests for FastDetector model and inference."""
 
+from pathlib import Path
+from unittest.mock import Mock
+
 import pytest
 import torch
 from torch import Tensor
 
-from picode.detection.fast_detector import FastDetectorModel
+from picode.detection.fast_detector import FastDetector, FastDetectorModel
+from picode.detection.types import Detection, Quadrilateral
 
 
 class TestFastDetectorModel:
@@ -98,3 +102,119 @@ class TestFastDetectorModel:
         total_params = sum(p.numel() for p in model.parameters())
         # Should be around 1.2M params
         assert 1_000_000 < total_params < 2_000_000
+
+
+class TestFastDetector:
+    """Tests for high-level FastDetector API."""
+
+    @pytest.fixture
+    def mock_model(self) -> Mock:
+        model = Mock(spec=FastDetectorModel)
+        model.input_size = 320
+        model.eval = Mock(return_value=model)
+        model.to = Mock(return_value=model)
+        # Return positive detection with corners
+        model.return_value = {
+            "is_watermark": torch.tensor([[2.0]]),  # Positive logit
+            "corners": torch.tensor([[0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9]]),
+            "corner_confidence": torch.tensor([[0.8]]),
+        }
+        return model
+
+    @pytest.fixture
+    def detector(self, mock_model: Mock) -> FastDetector:
+        return FastDetector(model=mock_model, threshold=0.5, device="cpu")
+
+    @pytest.fixture
+    def sample_image_tensor(self) -> Tensor:
+        return torch.rand(3, 480, 640)
+
+    def test_detector_creation(self, detector: FastDetector) -> None:
+        assert detector.threshold == 0.5
+        assert detector.device == "cpu"
+
+    def test_detect_returns_detection(
+        self, detector: FastDetector, sample_image_tensor: Tensor
+    ) -> None:
+        result = detector.detect(sample_image_tensor)
+
+        assert result is not None
+        assert isinstance(result, Detection)
+        assert isinstance(result.corners, Quadrilateral)
+        assert result.detector_type == "fast"
+
+    def test_detect_returns_none_below_threshold(
+        self, mock_model: Mock, sample_image_tensor: Tensor
+    ) -> None:
+        # Set model to return low confidence
+        mock_model.return_value = {
+            "is_watermark": torch.tensor([[-2.0]]),  # Negative logit
+            "corners": torch.tensor([[0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]]),
+            "corner_confidence": torch.tensor([[0.1]]),
+        }
+        detector = FastDetector(model=mock_model, threshold=0.5, device="cpu")
+
+        result = detector.detect(sample_image_tensor)
+
+        assert result is None
+
+    def test_detect_corners_denormalized(
+        self, detector: FastDetector, sample_image_tensor: Tensor
+    ) -> None:
+        result = detector.detect(sample_image_tensor)
+
+        assert result is not None
+        # Corners should be in pixel coordinates, not normalized
+        # Original image is 640x480, so corners should be scaled
+        assert result.corners.top_left.x > 1.0 or result.corners.top_left.y > 1.0
+
+    def test_detect_confidence_in_result(
+        self, detector: FastDetector, sample_image_tensor: Tensor
+    ) -> None:
+        result = detector.detect(sample_image_tensor)
+
+        assert result is not None
+        assert 0.0 <= result.confidence <= 1.0
+
+    def test_detect_batch(
+        self, detector: FastDetector, mock_model: Mock
+    ) -> None:
+        images = [torch.rand(3, 480, 640) for _ in range(3)]
+
+        # Mock batch output
+        mock_model.return_value = {
+            "is_watermark": torch.tensor([[2.0], [2.0], [-2.0]]),
+            "corners": torch.tensor([
+                [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9],
+                [0.2, 0.2, 0.8, 0.2, 0.8, 0.8, 0.2, 0.8],
+                [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            ]),
+            "corner_confidence": torch.tensor([[0.8], [0.7], [0.1]]),
+        }
+
+        results = detector.detect_batch(images)
+
+        assert len(results) == 3
+        assert results[0] is not None
+        assert results[1] is not None
+        assert results[2] is None  # Below threshold
+
+    def test_detect_with_low_corner_confidence(
+        self, mock_model: Mock, sample_image_tensor: Tensor
+    ) -> None:
+        # High classification confidence but low corner confidence
+        mock_model.return_value = {
+            "is_watermark": torch.tensor([[2.0]]),
+            "corners": torch.tensor([[0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]]),
+            "corner_confidence": torch.tensor([[0.1]]),  # Low confidence
+        }
+        detector = FastDetector(
+            model=mock_model,
+            threshold=0.5,
+            corner_confidence_threshold=0.3,
+            device="cpu",
+        )
+
+        result = detector.detect(sample_image_tensor)
+
+        assert result is None  # Rejected due to low corner confidence

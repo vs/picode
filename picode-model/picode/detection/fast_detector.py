@@ -3,10 +3,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision.models as models
+from PIL import Image
 from torch import Tensor
+from torchvision import transforms
+
+from picode.detection.types import Detection, Point, Quadrilateral
 
 
 class FastDetectorModel(nn.Module):
@@ -101,3 +108,194 @@ class FastDetectorModel(nn.Module):
             "corners": self.corner_head(pooled),
             "corner_confidence": self.conf_head(pooled),
         }
+
+
+class FastDetector:
+    """High-level API for fast watermark detection.
+
+    Example:
+        >>> detector = FastDetector.from_checkpoint("fast_detector.pt")
+        >>> result = detector.detect("photo.jpg")
+        >>> if result:
+        ...     print(f"Watermark at {result.corners}")
+    """
+
+    def __init__(
+        self,
+        model: FastDetectorModel,
+        threshold: float = 0.5,
+        corner_confidence_threshold: float = 0.3,
+        device: str | torch.device = "cpu",
+    ) -> None:
+        """Initialize FastDetector.
+
+        Args:
+            model: FastDetectorModel instance
+            threshold: Classification threshold for detection
+            corner_confidence_threshold: Minimum corner confidence to accept
+            device: Device to run inference on
+        """
+        self.model = model
+        self.model.eval()
+        self.model.to(device)
+        self.threshold = threshold
+        self.corner_conf_threshold = corner_confidence_threshold
+        self.device = device if isinstance(device, str) else str(device)
+        self.input_size = model.input_size
+
+        self._transform = transforms.Compose(
+            [
+                transforms.Resize((self.input_size, self.input_size)),
+                transforms.ToTensor(),
+            ]
+        )
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str | Path,
+        device: str = "cpu",
+        **kwargs,
+    ) -> "FastDetector":
+        """Load from saved checkpoint.
+
+        Args:
+            checkpoint_path: Path to checkpoint file
+            device: Device to run on
+            **kwargs: Additional arguments for FastDetector
+
+        Returns:
+            Initialized FastDetector
+        """
+        ckpt = torch.load(checkpoint_path, map_location=device)
+        model_config = ckpt.get("model_config", {})
+        model = FastDetectorModel(**model_config)
+        model.load_state_dict(ckpt["model_state_dict"])
+        return cls(model, device=device, **kwargs)
+
+    def _preprocess(self, image: Tensor | str | Path) -> tuple[Tensor, tuple[int, int]]:
+        """Preprocess image for model input.
+
+        Args:
+            image: Input image (tensor, path, or PIL Image)
+
+        Returns:
+            Tuple of (preprocessed tensor, original size (H, W))
+        """
+        if isinstance(image, (str, Path)):
+            pil_image = Image.open(image).convert("RGB")
+            original_size = (pil_image.height, pil_image.width)
+            tensor = self._transform(pil_image)
+        elif isinstance(image, Tensor):
+            if image.dim() == 3:
+                original_size = (image.shape[1], image.shape[2])
+            else:
+                original_size = (image.shape[2], image.shape[3])
+            # Resize to input size
+            tensor = F.interpolate(
+                image.unsqueeze(0) if image.dim() == 3 else image,
+                size=(self.input_size, self.input_size),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0)
+        else:
+            raise TypeError(f"Unsupported image type: {type(image)}")
+
+        return tensor, original_size
+
+    def _denormalize_corners(
+        self, corners_norm: Tensor, original_size: tuple[int, int]
+    ) -> Tensor:
+        """Convert normalized corners to pixel coordinates.
+
+        Args:
+            corners_norm: (8,) tensor of normalized [0, 1] coordinates
+            original_size: (H, W) of original image
+
+        Returns:
+            (8,) tensor of pixel coordinates
+        """
+        h, w = original_size
+        corners_px = corners_norm.clone()
+        corners_px[0::2] *= w  # x coordinates
+        corners_px[1::2] *= h  # y coordinates
+        return corners_px
+
+    def detect(self, image: Tensor | str | Path) -> Detection | None:
+        """Detect watermark in image.
+
+        Args:
+            image: Input image (path, tensor, or numpy array)
+
+        Returns:
+            Detection if watermark found, None otherwise
+        """
+        # Preprocess
+        img_tensor, original_size = self._preprocess(image)
+
+        # Run inference
+        with torch.no_grad():
+            output = self.model(img_tensor.unsqueeze(0).to(self.device))
+
+        # Check classification threshold
+        is_watermark = torch.sigmoid(output["is_watermark"]).item()
+        if is_watermark < self.threshold:
+            return None
+
+        # Check corner confidence threshold
+        corner_conf = output["corner_confidence"].item()
+        if corner_conf < self.corner_conf_threshold:
+            return None
+
+        # Denormalize corners to pixel coordinates
+        corners_norm = output["corners"][0]
+        corners_px = self._denormalize_corners(corners_norm, original_size)
+
+        return Detection(
+            corners=Quadrilateral.from_tensor(corners_px),
+            confidence=is_watermark,
+            detector_type="fast",
+        )
+
+    def detect_batch(self, images: list[Tensor | str | Path]) -> list[Detection | None]:
+        """Batch detection for efficiency.
+
+        Args:
+            images: List of input images
+
+        Returns:
+            List of Detection or None for each image
+        """
+        # Preprocess all images
+        tensors = []
+        sizes = []
+        for img in images:
+            t, size = self._preprocess(img)
+            tensors.append(t)
+            sizes.append(size)
+
+        batch = torch.stack(tensors).to(self.device)
+
+        # Single forward pass
+        with torch.no_grad():
+            outputs = self.model(batch)
+
+        # Process results
+        results = []
+        for i in range(len(images)):
+            is_wm = torch.sigmoid(outputs["is_watermark"][i]).item()
+            corner_conf = outputs["corner_confidence"][i].item()
+
+            if is_wm < self.threshold or corner_conf < self.corner_conf_threshold:
+                results.append(None)
+            else:
+                corners_px = self._denormalize_corners(outputs["corners"][i], sizes[i])
+                results.append(
+                    Detection(
+                        corners=Quadrilateral.from_tensor(corners_px),
+                        confidence=is_wm,
+                        detector_type="fast",
+                    )
+                )
+
+        return results
