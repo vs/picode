@@ -122,7 +122,10 @@ class Trainer:
         # Create models based on config
         num_bits = config.training.num_bits
         if config.model == "picode_v2":
-            self.encoder: BaseEncoder = PicodeV2Encoder(num_bits=num_bits).to(self.device)
+            residual_scale = config.training.residual_scale
+            self.encoder: BaseEncoder = PicodeV2Encoder(
+                num_bits=num_bits, residual_scale=residual_scale
+            ).to(self.device)
             self.decoder: BaseDecoder = PicodeV2Decoder(num_bits=num_bits).to(self.device)
         elif config.model == "picode":
             self.encoder = PicodeEncoder(num_bits=num_bits).to(self.device)

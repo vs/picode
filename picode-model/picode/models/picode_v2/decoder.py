@@ -51,12 +51,33 @@ class MobileDecoder(BaseDecoder):
             InvertedResidual(64, 96, stride=2, expand_ratio=6),
         )
 
-        # Head: global pool and classify
+        # Head: global pool -> hidden layer -> output
+        # Hidden layer added to increase capacity and avoid variance collapse
+        # from global average pooling (13x13 -> 1x1 reduces variance ~13x)
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
-            nn.Linear(96, num_bits),
+            nn.Linear(96, 256),
+            nn.ReLU(inplace=True),
+            nn.Linear(256, num_bits),
         )
+
+        # Initialize final layers with larger weights to compensate for
+        # variance reduction from global average pooling
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """Initialize weights, especially the head to handle GAP variance reduction."""
+        for m in self.head.modules():
+            if isinstance(m, nn.Linear):
+                # Use larger gain to compensate for variance reduction from GAP
+                # GAP over 13x13 reduces variance by ~13x, so we scale up
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                # Scale weights by sqrt(spatial_size) to compensate for GAP
+                # 13x13 = 169 spatial positions, sqrt(169) ≈ 13
+                m.weight.data *= 4.0  # Conservative scaling
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
     def forward(self, image: Tensor) -> Tensor:
         """Extract message logits from image.

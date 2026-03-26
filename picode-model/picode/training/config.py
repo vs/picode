@@ -73,6 +73,7 @@ class TrainingConfig:
     num_bits: int = 100
     image_size: int = 400
     warmup_steps: int = 500
+    residual_scale: float = 0.1  # picode_v2 encoder residual magnitude (0.1 default, try 0.3 for training)
 
 
 @dataclass

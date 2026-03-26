@@ -17,10 +17,11 @@ training:
   num_bits: 100
   image_size: 400
   warmup_steps: 500
+  residual_scale: 0.3  # Higher than default 0.1 for stronger signal during training
 
 loss:
   message:
-    scale: 1.0
+    scale: 7.0  # Higher weight to prioritize message recovery (was 1.0)
     ramp_steps: 1
   l2:
     scale: 1.5
