@@ -56,7 +56,7 @@ class Rectifier:
         """
         # Convert corners to numpy array
         if isinstance(corners, Tensor):
-            src_corners = corners.cpu().numpy().reshape(4, 2).astype(np.float32)
+            src_corners = corners.detach().cpu().numpy().reshape(4, 2).astype(np.float32)
         else:
             src_corners = corners.to_numpy()
 
