@@ -61,17 +61,22 @@ class Encoder(BaseEncoder):
     """U-Net encoder with artifact reduction.
 
     Embeds a bit message into an image using a U-Net architecture.
-    Features content-adaptive residual scaling and tanh-bounded output.
+    Features optional content-adaptive residual scaling and tanh-bounded output.
 
     Args:
         num_bits: Number of bits in the message (default: 100).
         residual_scale: Maximum residual magnitude (default: 0.1).
+        use_content_adaptive: Whether to use content-adaptive scaling (default: False).
+            When True, residuals are larger in textured regions and smaller in smooth areas.
     """
 
-    def __init__(self, num_bits: int = 100, residual_scale: float = 0.1) -> None:
+    def __init__(
+        self, num_bits: int = 100, residual_scale: float = 0.1, use_content_adaptive: bool = False
+    ) -> None:
         super().__init__()
         self.num_bits = num_bits
         self.residual_scale = residual_scale
+        self.use_content_adaptive = use_content_adaptive
 
         # Message expansion using learned upsampling
         self.message_expander = MessageExpander(num_bits=num_bits)
@@ -201,12 +206,15 @@ class Encoder(BaseEncoder):
         # Apply tanh for bounded residual
         bounded_residual = torch.tanh(raw_residual) * self.residual_scale
 
-        # Content-adaptive scaling: larger residuals in textured regions
-        activity_map = compute_activity_map(image)
-        # Scale from [0.3, 1.0] based on activity (never fully zero)
-        scaling = 0.3 + 0.7 * activity_map
-        adaptive_residual = bounded_residual * scaling
+        # Optional content-adaptive scaling: larger residuals in textured regions
+        if self.use_content_adaptive:
+            activity_map = compute_activity_map(image)
+            # Scale from [0.3, 1.0] based on activity (never fully zero)
+            scaling = 0.3 + 0.7 * activity_map
+            final_residual = bounded_residual * scaling
+        else:
+            final_residual = bounded_residual
 
         # Add residual and clamp
-        encoded = image + adaptive_residual
+        encoded = image + final_residual
         return torch.clamp(encoded, 0, 1)
