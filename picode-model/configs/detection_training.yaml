@@ -1,0 +1,77 @@
+# Detection Training Configuration
+# Train FastDetector for mobile-optimized watermark detection
+
+experiment_name: fast_detector_v1
+
+# Model
+model:
+  input_size: 320
+  pretrained_backbone: true
+
+# Data
+data:
+  # Positive samples (watermarked images)
+  positive_dir: ./data/detection/positive
+  # Negative samples (hard negatives)
+  negative_dir: ./data/detection/negative
+  # Trained encoder for generating positives
+  encoder_checkpoint: ./checkpoints/encoder.pt
+
+  num_bits: 100
+  positive_ratio: 0.5  # Balance positive/negative
+  batch_size: 16
+  num_workers: 4
+
+# Augmentation
+augmentation:
+  photometric_p: 0.5
+  geometric_p: 0.5
+  perspective_strength: [0.0, 0.15]
+  rotation_degrees: [-15, 15]
+
+  # Hard negative transforms
+  jpeg_quality_range: [20, 70]
+  resize_scale_range: [0.3, 0.7]
+
+# Training
+training:
+  num_epochs: 50
+  lr: 0.0001
+  weight_decay: 0.0001
+
+  # Learning rate schedule
+  scheduler: cosine
+  warmup_epochs: 5
+
+# Loss weights
+loss:
+  cls_weight: 1.0
+  corner_weight: 5.0
+  conf_weight: 0.5
+
+# Detection thresholds
+detection:
+  threshold: 0.5
+  corner_confidence_threshold: 0.3
+  iou_threshold: 0.5
+
+# Checkpoint
+checkpoint:
+  dir: ./checkpoints/detection
+  save_every_epochs: 5
+  keep_best: 3
+
+# Logging
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
+  tensorboard_dir: ./runs/detection
+
+# Evaluation
+evaluation:
+  eval_every_epochs: 5
+  distortion_sweep: true
+  distortions:
+    - jpeg_quality: [30, 50, 70, 90]
+    - resize_scale: [0.5, 0.75, 1.0]
+    - blur_sigma: [0.5, 1.0, 2.0]
