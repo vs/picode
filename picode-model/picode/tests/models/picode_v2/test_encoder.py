@@ -27,13 +27,14 @@ class TestEncoder:
         assert encoded.max() <= 1.0
 
     def test_residual_bounded(self) -> None:
-        """Residual is bounded (content-adaptive + tanh)."""
-        encoder = Encoder(num_bits=100)
+        """Residual is bounded by tanh * residual_scale."""
+        encoder = Encoder(num_bits=100, residual_scale=0.1)
         image = torch.rand(2, 3, 400, 400)
         message = torch.randint(0, 2, (2, 100)).float()
         encoded = encoder(image, message)
         residual = encoded - image
-        assert residual.abs().max() <= 0.15  # Some tolerance
+        # Residual bounded by tanh * 0.1 = [-0.1, 0.1]
+        assert residual.abs().max() <= 0.15  # Some tolerance for clamping
 
     def test_gradient_flow(self) -> None:
         """Gradients flow through encoder."""
@@ -56,8 +57,9 @@ class TestEncoder:
         assert not torch.allclose(enc1, enc2, atol=1e-3)
 
     def test_content_adaptive_scaling(self) -> None:
-        """Residual is smaller in smooth regions."""
-        encoder = Encoder(num_bits=100)
+        """Residual is smaller in smooth regions when content-adaptive enabled."""
+        # Content-adaptive scaling is optional; test with it enabled
+        encoder = Encoder(num_bits=100, use_content_adaptive=True)
         message = torch.randint(0, 2, (1, 100)).float()
         smooth = torch.ones(1, 3, 400, 400) * 0.5
         textured = torch.rand(1, 3, 400, 400)

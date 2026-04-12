@@ -1,7 +1,7 @@
-"""picode_v2 model - mobile-optimized decoder with artifact-reducing encoder."""
+"""picode_v2 model - StegaStamp-style decoder with artifact-reducing encoder."""
 
 from picode.models.picode_v2.blocks import InvertedResidual, MessageExpander
-from picode.models.picode_v2.decoder import MobileDecoder
+from picode.models.picode_v2.decoder import Decoder, MobileDecoder
 from picode.models.picode_v2.discriminator import PatchDiscriminator
 from picode.models.picode_v2.encoder import Encoder
 from picode.models.picode_v2.loss import (
@@ -9,9 +9,6 @@ from picode.models.picode_v2.loss import (
     discriminator_loss,
     generator_loss,
 )
-
-# Alias MobileDecoder as Decoder for consistency with other model packages
-Decoder = MobileDecoder
 
 __all__ = [
     "Encoder",
