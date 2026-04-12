@@ -5,7 +5,8 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-from picode.detection.detector import Detection, Detector
+from picode.detection.detector import Detector
+from picode.detection.types import Detection, Point, Quadrilateral
 
 
 class TestDetection:
@@ -13,9 +14,16 @@ class TestDetection:
 
     def test_detection_attributes(self) -> None:
         """Detection has required attributes."""
+        corners = Quadrilateral(
+            top_left=Point(10, 20),
+            top_right=Point(110, 20),
+            bottom_right=Point(110, 100),
+            bottom_left=Point(10, 100),
+        )
         d = Detection(
-            bbox=(10, 20, 100, 80),
+            corners=corners,
             confidence=0.35,
+            detector_type="slow",
             message_bits=torch.ones(100),
             message_probs=torch.ones(100) * 0.9,
         )
@@ -23,6 +31,7 @@ class TestDetection:
         assert d.confidence == 0.35
         assert d.message_bits.shape == (100,)
         assert d.message_probs.shape == (100,)
+        assert d.detector_type == "slow"
 
 
 class TestDetector:
@@ -82,6 +91,25 @@ class TestDetector:
         assert isinstance(result, Detection)
         assert result.confidence > 0.15
         assert len(result.bbox) == 4
+
+    def test_detect_returns_quadrilateral_corners(
+        self, mock_decoder: Mock
+    ) -> None:
+        """SlowDetector returns Detection with Quadrilateral corners."""
+        mock_decoder.return_value = torch.randn(1, 100) * 5
+
+        detector = Detector(decoder=mock_decoder, scales=[0.5])
+        image = torch.rand(3, 200, 200)
+        result = detector.detect(image)
+
+        assert result is not None
+        assert isinstance(result.corners, Quadrilateral)
+        assert result.detector_type == "slow"
+        # Corners should form axis-aligned rectangle
+        assert result.corners.top_left.y == result.corners.top_right.y
+        assert result.corners.bottom_left.y == result.corners.bottom_right.y
+        assert result.corners.top_left.x == result.corners.bottom_left.x
+        assert result.corners.top_right.x == result.corners.bottom_right.x
 
     def test_detect_all_returns_empty_on_random_image(self, mock_decoder: Mock) -> None:
         """detect_all returns empty list when no encoded region found."""

@@ -1,7 +1,6 @@
 """Blind detector for steganographic images."""
 
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -9,25 +8,9 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from picode.detection.confidence import compute_confidence
+from picode.detection.types import Detection, Point, Quadrilateral
 from picode.detection.window import Window, WindowGenerator
 from picode.models.base import Decoder as BaseDecoder
-
-
-@dataclass
-class Detection:
-    """A detected steganographic region.
-
-    Attributes:
-        bbox: Bounding box as (x, y, width, height).
-        confidence: Confidence score in [0, 0.5].
-        message_bits: Decoded binary message (num_bits,).
-        message_probs: Bit probabilities (num_bits,).
-    """
-
-    bbox: tuple[int, int, int, int]
-    confidence: float
-    message_bits: Tensor
-    message_probs: Tensor
 
 
 class Detector:
@@ -128,9 +111,17 @@ class Detector:
                 best_confidence = confidence
                 probs = torch.sigmoid(logits)
                 bits = (probs > 0.5).float()
+                # Create Quadrilateral from axis-aligned bounding box
+                corners = Quadrilateral(
+                    top_left=Point(float(window.x), float(window.y)),
+                    top_right=Point(float(window.x + window.w), float(window.y)),
+                    bottom_right=Point(float(window.x + window.w), float(window.y + window.h)),
+                    bottom_left=Point(float(window.x), float(window.y + window.h)),
+                )
                 best_detection = Detection(
-                    bbox=(window.x, window.y, window.w, window.h),
+                    corners=corners,
                     confidence=confidence,
+                    detector_type="slow",
                     message_bits=bits.cpu(),
                     message_probs=probs.cpu(),
                 )
