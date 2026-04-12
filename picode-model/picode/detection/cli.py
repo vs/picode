@@ -8,7 +8,7 @@ import torch
 
 from picode.detection import Detector
 from picode.detection.fast_detector import FastDetector, FastDetectorModel
-from picode.detection.pipeline import DetectionPipeline, PipelineResult
+from picode.detection.pipeline import DetectionPipeline
 from picode.models.stegastamp import Decoder
 
 

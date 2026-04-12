@@ -3,6 +3,7 @@
 from picode.detection.confidence import compute_confidence
 from picode.detection.detector import Detector
 from picode.detection.fast_detector import FastDetector, FastDetectorModel
+from picode.detection.pipeline import DetectionPipeline, PipelineResult
 from picode.detection.rectifier import Rectifier
 from picode.detection.types import Detection, Point, Quadrilateral
 from picode.detection.window import Window, WindowGenerator
@@ -20,6 +21,9 @@ __all__ = [
     # Fast detector (new)
     "FastDetector",
     "FastDetectorModel",
+    # Pipeline (combines detection + decoding)
+    "DetectionPipeline",
+    "PipelineResult",
     # Utilities
     "Rectifier",
 ]

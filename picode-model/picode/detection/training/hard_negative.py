@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision import transforms

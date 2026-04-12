@@ -13,7 +13,7 @@ from PIL import Image
 from torch import Tensor
 from torchvision import transforms
 
-from picode.detection.types import Detection, Point, Quadrilateral
+from picode.detection.types import Detection, Quadrilateral
 
 
 class FastDetectorModel(nn.Module):
@@ -156,7 +156,7 @@ class FastDetector:
         checkpoint_path: str | Path,
         device: str = "cpu",
         **kwargs,
-    ) -> "FastDetector":
+    ) -> FastDetector:
         """Load from saved checkpoint.
 
         Args:
