@@ -73,6 +73,7 @@ def train(
     config: str = "configs/stegastamp_baseline.yaml",
     override: str = "",
     resume: bool = False,
+    resume_from: str = "",
 ):
     """Run training on Modal GPU.
 
@@ -80,6 +81,7 @@ def train(
         config: Path to config file (relative to repo root)
         override: Comma-separated key=value overrides (e.g., "training.lr=0.0002,data.batch_size=8")
         resume: Whether to resume from latest checkpoint
+        resume_from: Specific checkpoint filename to resume from (e.g., "checkpoint_00020000.pt")
     """
     import os
     import sys
@@ -110,8 +112,18 @@ def train(
         print(f"GPU: {torch.cuda.get_device_name(0)}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
-    # Find latest checkpoint if resuming
-    if resume:
+    # Find checkpoint if resuming
+    if resume_from:
+        # Resume from specific checkpoint
+        import glob
+        matches = glob.glob(f"{CHECKPOINT_PATH}/*/{resume_from}")
+        if matches:
+            checkpoint_path = matches[0]
+            print(f"Resuming from specific checkpoint: {checkpoint_path}")
+            trainer = Trainer.from_checkpoint(checkpoint_path)
+        else:
+            raise FileNotFoundError(f"Checkpoint not found: {resume_from}")
+    elif resume:
         import glob
         checkpoints = sorted(glob.glob(f"{CHECKPOINT_PATH}/*/checkpoint_*.pt"))
         if checkpoints:
