@@ -24,8 +24,9 @@ final class CameraViewModel: ObservableObject {
 
     /// Create a view model with the specified decoder.
     ///
-    /// - Parameter decoder: The decoder to use. Defaults to StubDecoder.
-    init(decoder: PicodeDecoder = StubDecoder()) {
+    /// - Parameter decoder: The decoder to use. Defaults to FastDetector.
+    ///   Falls back gracefully if Core ML models are not bundled.
+    init(decoder: PicodeDecoder = FastDetector()) {
         self.decoder = decoder
     }
 
