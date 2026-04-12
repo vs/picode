@@ -34,8 +34,18 @@ kornia = [
 lpips = [
     "lpips>=0.1",
 ]
+export-ios = [
+    "coremltools>=7.0",
+]
+export-android = [
+    "ai-edge-torch>=0.1.0",
+    "tensorflow>=2.15.0",
+]
+export = [
+    "picode[export-ios,export-android]",
+]
 all = [
-    "picode[dev,lpips,kornia]",
+    "picode[dev,lpips,kornia,export]",
 ]
 
 [project.scripts]
@@ -43,6 +53,7 @@ picode = "picode.cli:main"
 distort = "picode.distortions.cli:main"
 picode-train = "picode.training.cli:main"
 detect = "picode.detection.cli:main"
+detect-export = "picode.detection.export.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
