@@ -61,6 +61,10 @@ class LossConfig:
     l2: LossRamp = field(default_factory=lambda: LossRamp(1.0, 20000))
     lpips: LossRamp = field(default_factory=lambda: LossRamp(1.5, 20000))
 
+    # Message loss type: "bce" (binary cross entropy) or "mse" (mean squared error)
+    # MSE avoids the trivial solution where decoder outputs 0.5 for all bits
+    message_loss_type: str = "bce"
+
     l2_edge_gain: float = 10.0
     l2_edge_ramp_steps: int = 20000
     l2_edge_delay_steps: int = 60000
@@ -108,6 +112,8 @@ class TrainingConfig:
     image_size: int = 400
     warmup_steps: int = 500
     residual_scale: float = 0.1  # picode_v2 encoder residual magnitude
+    encoder_lr_scale: float = 1.0  # Multiplier for encoder learning rate (decoder uses base lr)
+    no_im_loss_steps: int = 0  # Steps to train message loss only (no L2/LPIPS), like StegaStamp
 
 
 @dataclass

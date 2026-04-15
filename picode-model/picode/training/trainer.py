@@ -154,9 +154,14 @@ class Trainer:
             self.encoder = StegaEncoder(num_bits=num_bits).to(self.device)
             self.decoder = StegaDecoder(num_bits=num_bits).to(self.device)
 
-        # Create optimizer
-        params = list(self.encoder.parameters()) + list(self.decoder.parameters())
-        self.optimizer = torch.optim.Adam(params, lr=config.training.lr)
+        # Create optimizer with optional separate learning rates
+        encoder_lr = config.training.lr * config.training.encoder_lr_scale
+        decoder_lr = config.training.lr
+        param_groups = [
+            {"params": self.encoder.parameters(), "lr": encoder_lr},
+            {"params": self.decoder.parameters(), "lr": decoder_lr},
+        ]
+        self.optimizer = torch.optim.Adam(param_groups)
         self.scheduler = None  # No scheduler by default
 
         # Create dataloader
@@ -374,6 +379,11 @@ class Trainer:
         # Backward and optimize generator (encoder + decoder)
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
+
+        # Apply gradient clipping to prevent decoder from learning too fast
+        # Decoder has ~15x more gradient than encoder, causing training instability
+        torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=1.0)
+
         self.optimizer.step()
 
         # Convert to float metrics
@@ -441,16 +451,33 @@ class Trainer:
         """
         loss_cfg = self.config.loss
         step = self.global_step
+        no_im_loss_steps = self.config.training.no_im_loss_steps
 
-        # Message loss (BCE with logits for numerical stability)
+        # Message loss
         msg_scale = self._ramp(loss_cfg.message.scale, loss_cfg.message.ramp_steps, step)
-        loss_msg = F.binary_cross_entropy_with_logits(decoded_logits, messages)
+        if loss_cfg.message_loss_type == "mse":
+            # MSE loss: avoids trivial solution (predicting 0.5 for all bits)
+            # Apply sigmoid to get probabilities, then MSE against binary targets
+            decoded_probs = torch.sigmoid(decoded_logits)
+            loss_msg = F.mse_loss(decoded_probs, messages)
+        else:
+            # BCE loss (default): standard binary cross-entropy with logits
+            loss_msg = F.binary_cross_entropy_with_logits(decoded_logits, messages)
         weighted_msg = msg_scale * loss_msg
 
+        # During no_im_loss_steps phase, only train on message loss (like StegaStamp)
+        # This forces encoder-decoder to first learn message encoding before image quality
+        skip_image_loss = step < no_im_loss_steps
+        # Image loss ramps start AFTER no_im_loss_steps phase
+        effective_step = max(0, step - no_im_loss_steps)
+
         # L2 loss (MSE)
-        l2_scale = self._ramp(loss_cfg.l2.scale, loss_cfg.l2.ramp_steps, step)
         loss_l2 = F.mse_loss(encoded, original)
-        weighted_l2 = l2_scale * loss_l2
+        if skip_image_loss:
+            weighted_l2 = torch.tensor(0.0, device=loss_l2.device)
+        else:
+            l2_scale = self._ramp(loss_cfg.l2.scale, loss_cfg.l2.ramp_steps, effective_step)
+            weighted_l2 = l2_scale * loss_l2
 
         # Start with message and l2 loss
         total = weighted_msg + weighted_l2
@@ -460,26 +487,29 @@ class Trainer:
             "loss_l2": loss_l2,
         }
 
-        # LPIPS loss (optional)
-        lpips_scale = self._ramp(loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, step)
+        # LPIPS loss (optional) - also skipped during no_im_loss_steps
+        if skip_image_loss:
+            lpips_scale = 0.0
+        else:
+            lpips_scale = self._ramp(loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, effective_step)
         if lpips_scale > 0 and self._get_lpips_fn() is not None:
             loss_lpips = self._compute_lpips(original, encoded)
             weighted_lpips = lpips_scale * loss_lpips
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
 
-        # Focal Frequency Loss (after delay)
-        if loss_cfg.ffl is not None and self._ffl_fn is not None:
-            ffl_scale = self._delayed_ramp(loss_cfg.ffl, step)
+        # Focal Frequency Loss (after delay) - skip during no_im_loss_steps
+        if not skip_image_loss and loss_cfg.ffl is not None and self._ffl_fn is not None:
+            ffl_scale = self._delayed_ramp(loss_cfg.ffl, effective_step)
             if ffl_scale > 0:
                 loss_ffl = self._ffl_fn(encoded, original)
                 weighted_ffl = ffl_scale * loss_ffl
                 total = total + weighted_ffl
                 losses["loss_ffl"] = loss_ffl
 
-        # Generator adversarial loss (after delay)
-        if loss_cfg.gan is not None and self.discriminator is not None:
-            gan_scale = self._delayed_ramp(loss_cfg.gan, step)
+        # Generator adversarial loss (after delay) - skip during no_im_loss_steps
+        if not skip_image_loss and loss_cfg.gan is not None and self.discriminator is not None:
+            gan_scale = self._delayed_ramp(loss_cfg.gan, effective_step)
             if gan_scale > 0:
                 # Get discriminator prediction on encoded images
                 fake_pred = self.discriminator(encoded)
@@ -488,9 +518,9 @@ class Trainer:
                 total = total + weighted_gan
                 losses["loss_gan_g"] = loss_gan_g
 
-        # Edge loss (after delay)
-        if step >= loss_cfg.l2_edge_delay_steps:
-            edge_step = step - loss_cfg.l2_edge_delay_steps
+        # Edge loss (after delay) - skip during no_im_loss_steps
+        if not skip_image_loss and effective_step >= loss_cfg.l2_edge_delay_steps:
+            edge_step = effective_step - loss_cfg.l2_edge_delay_steps
             edge_scale = self._ramp(
                 loss_cfg.l2_edge_gain, loss_cfg.l2_edge_ramp_steps, edge_step
             )
