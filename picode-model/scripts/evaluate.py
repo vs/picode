@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from picode.models import stegastamp, picode as picode_model
+from picode.models import stegastamp, picode as picode_model, picode_v2
 from picode.training.evaluation import DEFAULT_ROBUSTNESS_SWEEP, Evaluator
 
 
@@ -16,7 +16,10 @@ def detect_model_type(encoder_state: dict) -> str:
     """Detect model type from state dict keys."""
     keys = list(encoder_state.keys())
     # Check for characteristic keys
-    if any("msg_fc" in k for k in keys):
+    if any("message_expander" in k for k in keys):
+        # picode_v2 uses MessageExpander
+        return "picode_v2"
+    elif any("msg_fc" in k for k in keys):
         # Old stegastamp with ConvBnRelu blocks
         return "stegastamp_legacy"
     elif any("secret_dense" in k for k in keys):
@@ -43,7 +46,12 @@ def load_checkpoint(path: Path, device: torch.device) -> tuple:
     print(f"Model type: {model_type}")
 
     # Create models based on type
-    if model_type == "picode":
+    if model_type == "picode_v2":
+        # Get residual_scale from config if available
+        residual_scale = config.get("training", {}).get("residual_scale", 0.1)
+        encoder = picode_v2.Encoder(num_bits=num_bits, residual_scale=residual_scale).to(device)
+        decoder = picode_v2.Decoder(num_bits=num_bits).to(device)
+    elif model_type == "picode":
         encoder = picode_model.Encoder(num_bits=num_bits).to(device)
         decoder = picode_model.Decoder(num_bits=num_bits).to(device)
     elif model_type == "stegastamp_legacy":

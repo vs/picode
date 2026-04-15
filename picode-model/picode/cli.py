@@ -8,17 +8,46 @@ from PIL import Image
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from picode.models.stegastamp import Decoder, Encoder
+from picode.models import stegastamp, picode as picode_model, picode_v2
 
 
-def load_model(checkpoint_path: Path, device: torch.device) -> tuple[Encoder, Decoder, int]:
+def detect_model_type(encoder_state: dict) -> str:
+    """Detect model type from state dict keys."""
+    keys = list(encoder_state.keys())
+    if any("message_expander" in k for k in keys):
+        return "picode_v2"
+    elif any("msg_fc" in k for k in keys):
+        return "stegastamp_legacy"
+    elif any("secret_dense" in k for k in keys):
+        if any("norm1" in k for k in keys):
+            return "picode"
+        else:
+            return "stegastamp"
+    return "stegastamp"
+
+
+def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
     """Load encoder and decoder from checkpoint."""
     data = torch.load(checkpoint_path, weights_only=False, map_location=device)
     config = data.get("config", {})
     num_bits = config.get("training", {}).get("num_bits", 100)
 
-    encoder = Encoder(num_bits=num_bits).to(device)
-    decoder = Decoder(num_bits=num_bits).to(device)
+    # Auto-detect model type from config or state dict
+    model_type = config.get("model")
+    if not model_type:
+        model_type = detect_model_type(data["encoder_state"])
+
+    # Create models based on type
+    if model_type == "picode_v2":
+        residual_scale = config.get("training", {}).get("residual_scale", 0.1)
+        encoder = picode_v2.Encoder(num_bits=num_bits, residual_scale=residual_scale).to(device)
+        decoder = picode_v2.Decoder(num_bits=num_bits).to(device)
+    elif model_type == "picode":
+        encoder = picode_model.Encoder(num_bits=num_bits).to(device)
+        decoder = picode_model.Decoder(num_bits=num_bits).to(device)
+    else:
+        encoder = stegastamp.Encoder(num_bits=num_bits).to(device)
+        decoder = stegastamp.Decoder(num_bits=num_bits).to(device)
 
     encoder.load_state_dict(data["encoder_state"])
     decoder.load_state_dict(data["decoder_state"])
@@ -110,6 +139,19 @@ def encode_command(args: argparse.Namespace) -> None:
     # Save encoded image
     save_image(encoded, args.output)
 
+    # Save original if requested
+    if args.save_original:
+        save_image(image_tensor, args.save_original)
+        print(f"Saved original to {args.save_original}")
+
+    # Save residual if requested (amplified for visibility)
+    if args.save_residual:
+        residual = encoded - image_tensor
+        # Amplify 10x and center at gray (0.5) for visibility
+        residual_vis = (residual * 10 + 0.5).clamp(0, 1)
+        save_image(residual_vis, args.save_residual)
+        print(f"Saved residual to {args.save_residual}")
+
     # Resize back to original if needed
     if original_size != (args.size, args.size):
         encoded_pil = Image.open(args.output)
@@ -198,6 +240,8 @@ Examples:
     encode_parser.add_argument("input", type=Path, help="Input image path")
     encode_parser.add_argument("output", type=Path, help="Output image path")
     encode_parser.add_argument("-m", "--message", required=True, help="Message to encode")
+    encode_parser.add_argument("--save-original", type=Path, help="Save original image to path")
+    encode_parser.add_argument("--save-residual", type=Path, help="Save residual (amplified) to path")
     encode_parser.set_defaults(func=encode_command)
 
     # Decode subcommand
