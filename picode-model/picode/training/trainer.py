@@ -17,17 +17,9 @@ from picode.models.stegastamp import Decoder as StegaDecoder
 from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
 from picode.training.config import (
-    CheckpointConfig,
     Config,
-    DataConfig,
     DelayedLossRamp,
-    DistortionConfig,
-    DistortionRamp,
-    GANConfig,
-    LoggingConfig,
-    LossConfig,
-    LossRamp,
-    TrainingConfig,
+    _dict_to_config,
     load_config,
 )
 from picode.training.data import create_dataloader
@@ -39,62 +31,6 @@ from picode.training.evaluation import (
     RobustnessResult,
 )
 from picode.training.logging import CompositeLogger, create_logger
-
-
-def _dict_to_config_full(data: dict[str, Any]) -> Config:
-    """Convert nested dict to Config for checkpoint restoration.
-
-    Args:
-        data: Dictionary representation of Config.
-
-    Returns:
-        Reconstructed Config object.
-    """
-    # Handle DataConfig (required)
-    data["data"] = DataConfig(**data["data"])
-
-    # Handle TrainingConfig
-    if "training" in data:
-        data["training"] = TrainingConfig(**data["training"])
-
-    # Handle LossConfig with nested LossRamps and DelayedLossRamps
-    if "loss" in data:
-        loss_data = data["loss"]
-        # Standard LossRamp fields
-        for key in ["message", "l2", "lpips"]:
-            if key in loss_data and isinstance(loss_data[key], dict):
-                loss_data[key] = LossRamp(**loss_data[key])
-        # DelayedLossRamp fields (ffl, gan)
-        for key in ["ffl", "gan"]:
-            if key in loss_data and loss_data[key] is not None:
-                if isinstance(loss_data[key], dict):
-                    loss_data[key] = DelayedLossRamp(**loss_data[key])
-        # GANConfig
-        if "gan_config" in loss_data and isinstance(loss_data["gan_config"], dict):
-            loss_data["gan_config"] = GANConfig(**loss_data["gan_config"])
-        if "yuv_weights" in loss_data:
-            loss_data["yuv_weights"] = tuple(loss_data["yuv_weights"])
-        data["loss"] = LossConfig(**loss_data)
-
-    # Handle DistortionConfig with nested DistortionRamps
-    if "distortion" in data:
-        dist_data = data["distortion"]
-        for key in ["perspective", "brightness", "saturation", "hue", "noise", "jpeg_quality"]:
-            if key in dist_data and isinstance(dist_data[key], dict):
-                dist_data[key] = DistortionRamp(**dist_data[key])
-        if "contrast" in dist_data:
-            dist_data["contrast"] = tuple(dist_data["contrast"])
-        data["distortion"] = DistortionConfig(**dist_data)
-
-    # Handle CheckpointConfig
-    if "checkpoint" in data:
-        data["checkpoint"] = CheckpointConfig(**data["checkpoint"])
-
-    # Handle LoggingConfig
-    if "logging" in data:
-        data["logging"] = LoggingConfig(**data["logging"])
-
-    return Config(**data)
 
 
 class Trainer:
@@ -121,8 +57,13 @@ class Trainer:
         """
         self.config = config
 
-        # Set up device
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Set up device (prefer CUDA > MPS > CPU)
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
 
         # Create StegaStamp models
         num_bits = config.training.num_bits
@@ -189,7 +130,7 @@ class Trainer:
         data = torch.load(checkpoint_path, weights_only=False)
 
         # Reconstruct config
-        config = _dict_to_config_full(data["config"])
+        config = _dict_to_config(data["config"])
 
         # Create trainer
         trainer = cls(config)
