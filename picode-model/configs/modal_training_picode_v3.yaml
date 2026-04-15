@@ -1,0 +1,58 @@
+# configs/modal_training_picode_v3.yaml
+# Configuration for Modal GPU training with picode_v3 model
+# GPU options: T4 ($0.59/hr), A10G ($1.10/hr), A100 ($3.50/hr)
+#
+# Picode v3: Imperceptibility-first steganography with BCH error correction
+# - 127-bit BCH codewords (50-bit payload, corrects up to 13 errors)
+# - Light distortions (print-scan scenario at mild intensities)
+# - Lower message loss weight (ECC handles imperfect recovery)
+# - 5k step message ramp (allows perceptual losses to establish clean baseline)
+
+experiment_name: picode_v3_modal
+
+model: picode_v3
+
+data:
+  source: folder
+  path: /data/train2017  # COCO train2017 images
+  batch_size: 4  # T4 (16GB) - increase to 8 for A10G, 16 for A100
+  num_workers: 4
+
+training:
+  num_steps: 100000
+  lr: 0.0001
+  num_bits: 127  # BCH codeword length (NOT payload size)
+  image_size: 400
+  warmup_steps: 500
+
+loss:
+  # Message loss: reduced weight since ECC handles imperfect recovery
+  # 5k step ramp allows L2/LPIPS to establish clean baseline first
+  message:
+    scale: 0.7
+    ramp_steps: 5000
+
+  # Pixel-level fidelity (StegaStamp default)
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+
+  # Perceptual similarity (StegaStamp default)
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+
+# Light distortions for print-scan at mild intensities
+# Applied probabilistically: Color -> Blur -> Noise -> Geometric -> JPEG
+distortion:
+  strategy: fixed_light
+
+checkpoint:
+  dir: /checkpoints  # Modal volume mount point
+  save_every_steps: 5000  # More frequent saves for cloud
+  keep_last: 5
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 50  # More frequent logging to observe progress
+  tensorboard_dir: /checkpoints/runs  # Persistent on Modal volume
