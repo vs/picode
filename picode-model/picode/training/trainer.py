@@ -23,6 +23,8 @@ from picode.models.picode_v2.loss import (
     discriminator_loss,
     generator_loss,
 )
+from picode.models.picode_v3 import Decoder as PicodeV3Decoder
+from picode.models.picode_v3 import Encoder as PicodeV3Encoder
 from picode.models.stegastamp import Decoder as StegaDecoder
 from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
@@ -145,6 +147,9 @@ class Trainer:
         elif config.model == "picode":
             self.encoder = PicodeEncoder(num_bits=num_bits).to(self.device)
             self.decoder = PicodeDecoder(num_bits=num_bits).to(self.device)
+        elif config.model == "picode_v3":
+            self.encoder = PicodeV3Encoder(num_bits=num_bits).to(self.device)
+            self.decoder = PicodeV3Decoder(num_bits=num_bits).to(self.device)
         else:  # default to stegastamp
             self.encoder = StegaEncoder(num_bits=num_bits).to(self.device)
             self.decoder = StegaDecoder(num_bits=num_bits).to(self.device)

@@ -17,6 +17,7 @@ from picode.training.data import FolderDataset, create_dataloader
 from picode.training.distortion_strategy import (
     CurriculumDistortion,
     FixedDistortion,
+    FixedLightDistortion,
     NoDistortion,
     RandomDistortion,
     create_distortion_strategy,
@@ -48,6 +49,7 @@ __all__ = [
     "create_distortion_strategy",
     "CurriculumDistortion",
     "FixedDistortion",
+    "FixedLightDistortion",
     "NoDistortion",
     "RandomDistortion",
     # Checkpointing

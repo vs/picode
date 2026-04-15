@@ -17,10 +17,13 @@ from picode.distortions.native import (
     BrightnessHue,
     Compose,
     Contrast,
+    GaussianBlur,
     GaussianNoise,
     JPEGCompression,
     PerspectiveWarp,
+    Rotation,
     Saturation,
+    Scale,
 )
 from picode.training.config import DistortionConfig, DistortionRamp
 
@@ -203,6 +206,121 @@ class CurriculumDistortion:
         return cast(Tensor, Compose(distortions)(image))
 
 
+class FixedLightDistortion:
+    """Light distortions for print-scan scenarios with probabilistic application.
+
+    Designed for imperceptibility-first training (picode_v3). Each distortion
+    is applied independently with its own probability, mimicking real-world
+    print-scan pipeline at mild intensities.
+
+    Application order: Color → Blur → Noise → Geometric → JPEG
+
+    Default parameters (from picode_v3 design):
+    - JPEG: quality 75-95, p=0.8
+    - Rotation: ±3°, p=0.5
+    - Rescale: 0.85-1.0x, p=0.4
+    - Gaussian Blur: σ 0.5-1.0, p=0.5
+    - Color Jitter: brightness ±0.05, contrast ±0.05, saturation ±0.1, p=0.6
+    - Gaussian Noise: σ 0.01-0.02, p=0.4
+    """
+
+    def __init__(
+        self,
+        jpeg_quality: tuple[int, int] = (75, 95),
+        jpeg_prob: float = 0.8,
+        rotation_angle: float = 3.0,
+        rotation_prob: float = 0.5,
+        scale_range: tuple[float, float] = (0.85, 1.0),
+        scale_prob: float = 0.4,
+        blur_sigma: tuple[float, float] = (0.5, 1.0),
+        blur_prob: float = 0.5,
+        brightness: float = 0.05,
+        contrast: float = 0.05,
+        saturation: float = 0.1,
+        color_prob: float = 0.6,
+        noise_sigma: tuple[float, float] = (0.01, 0.02),
+        noise_prob: float = 0.4,
+    ) -> None:
+        self.jpeg_quality = jpeg_quality
+        self.jpeg_prob = jpeg_prob
+        self.rotation_angle = rotation_angle
+        self.rotation_prob = rotation_prob
+        self.scale_range = scale_range
+        self.scale_prob = scale_prob
+        self.blur_sigma = blur_sigma
+        self.blur_prob = blur_prob
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+        self.color_prob = color_prob
+        self.noise_sigma = noise_sigma
+        self.noise_prob = noise_prob
+
+    def __call__(self, image: Tensor, step: int) -> Tensor:
+        """Apply light distortions with probabilities.
+
+        Args:
+            image: Input tensor (B, C, H, W) in [0, 1].
+            step: Current training step (unused, kept for interface compatibility).
+
+        Returns:
+            Distorted tensor.
+        """
+        x = image
+
+        # 1. Color jitter (brightness, contrast, saturation)
+        if random.random() < self.color_prob:
+            distortions: list[Distortion] = []
+            if self.brightness > 0:
+                distortions.append(
+                    BrightnessHue(intensity=1.0, rnd_bri=self.brightness, rnd_hue=0.0)
+                )
+            if self.contrast > 0:
+                # contrast ±0.05 means range [0.95, 1.05]
+                distortions.append(Contrast(
+                    intensity=1.0,
+                    contrast_low=1.0 - self.contrast,
+                    contrast_high=1.0 + self.contrast,
+                ))
+            if self.saturation > 0:
+                distortions.append(Saturation(intensity=1.0, rnd_sat=self.saturation))
+            if distortions:
+                x = cast(Tensor, Compose(distortions)(x))
+
+        # 2. Gaussian blur
+        if random.random() < self.blur_prob:
+            # Sample sigma from range
+            sigma = self.blur_sigma[0] + random.random() * (self.blur_sigma[1] - self.blur_sigma[0])
+            x = cast(Tensor, GaussianBlur(intensity=1.0, sigma=sigma)(x))
+
+        # 3. Gaussian noise
+        if random.random() < self.noise_prob:
+            # Sample sigma from range
+            noise_range = self.noise_sigma[1] - self.noise_sigma[0]
+            std = self.noise_sigma[0] + random.random() * noise_range
+            x = cast(Tensor, GaussianNoise(intensity=1.0, std=std)(x))
+
+        # 4. Geometric: Rotation
+        if random.random() < self.rotation_prob:
+            x = cast(Tensor, Rotation(intensity=1.0, max_angle=self.rotation_angle)(x))
+
+        # 5. Geometric: Scale (rescale)
+        if random.random() < self.scale_prob:
+            x = cast(Tensor, Scale(
+                intensity=1.0,
+                min_scale=self.scale_range[0],
+                max_scale=self.scale_range[1],
+            )(x))
+
+        # 6. JPEG compression
+        if random.random() < self.jpeg_prob:
+            # Sample quality from range
+            quality = random.randint(self.jpeg_quality[0], self.jpeg_quality[1])
+            x = cast(Tensor, JPEGCompression(intensity=1.0, quality=quality)(x))
+
+        return x
+
+
 def create_distortion_strategy(config: DistortionConfig) -> DistortionStrategy:
     """Factory function to create strategy from config.
 
@@ -219,6 +337,9 @@ def create_distortion_strategy(config: DistortionConfig) -> DistortionStrategy:
         return NoDistortion()
     elif config.strategy == "curriculum":
         return CurriculumDistortion(config)
+    elif config.strategy == "fixed_light":
+        # Light distortions for picode_v3 / imperceptibility-first training
+        return FixedLightDistortion()
     elif config.strategy == "fixed":
         # Build fixed distortions from config
         distortions: list[Distortion] = []
