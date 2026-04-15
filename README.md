@@ -12,7 +12,7 @@ This monorepo contains multiple sub-projects:
 
 ## Features
 
-- **Multiple Model Architectures**: StegaStamp (original), Picode (improved gradient flow), and Picode v2 (mobile-optimized with GAN training)
+- **StegaStamp Architecture**: Proven encoder/decoder based on Tancik et al., CVPR 2020
 - **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
 - **CNN Decoder**: Extracts hidden messages even from distorted images
 - **Blind Detection**: Multi-scale sliding window detector for finding steganographic images in photos/videos
@@ -33,7 +33,7 @@ This monorepo contains multiple sub-projects:
 │   ├── picode/              # Python package
 │   │   ├── distortions/     # Differentiable image distortions
 │   │   ├── ecc/             # Error correction codes (BCH, LDPC)
-│   │   ├── models/          # Encoder/decoder models (stegastamp, picode, picode_v2)
+│   │   ├── models/          # Encoder/decoder models (stegastamp)
 │   │   ├── detection/       # Blind steganographic image detection
 │   │   ├── training/        # Training infrastructure
 │   │   └── tests/           # Test suite
@@ -84,18 +84,6 @@ message = torch.randint(0, 2, (1, 100)).float()  # Binary message
 encoded_image = encoder(image, message)
 logits = decoder(encoded_image)  # Returns logits (pre-sigmoid)
 binary_message = (torch.sigmoid(logits) > 0.5).float()
-
-# Alternative: Use the Picode model (improved gradient flow)
-from picode.models.picode import Encoder as PicodeEncoder, Decoder as PicodeDecoder
-
-encoder = PicodeEncoder(num_bits=100)  # Uses GroupNorm + LeakyReLU
-decoder = PicodeDecoder(num_bits=100)  # Uses ResBlocks
-
-# Alternative: Use Picode v2 (mobile-optimized with GAN training)
-from picode.models.picode_v2 import Encoder as V2Encoder, Decoder as V2Decoder
-
-encoder = V2Encoder(num_bits=100)  # Artifact-reducing encoder
-decoder = V2Decoder(num_bits=100)  # Lightweight mobile decoder
 ```
 
 ### Training with Distortions
@@ -331,30 +319,13 @@ The upload command automatically handles large datasets (like COCO with 118K ima
 3. Extracting on Modal's infrastructure
 4. Cleaning up the tarball
 
-## Model Architectures
+## Model Architecture
 
-### StegaStamp (Original)
+### StegaStamp
 - U-Net encoder with BatchNorm and ReLU
 - CNN decoder with 7 conv layers
-- Based on the CVPR 2020 paper
-
-### Picode (Improved)
-- U-Net encoder with **GroupNorm** and **LeakyReLU** for better gradient flow
-- CNN decoder with **ResBlocks** for improved feature extraction
-- Designed to address gradient vanishing issues observed in deep training
-
-### Picode v2 (Mobile-Optimized)
-- Artifact-reducing encoder with **InvertedResidual** blocks
-- Lightweight **MobileDecoder** optimized for mobile inference
-- **GAN training** with PatchDiscriminator for improved visual quality
-- **FocalFrequencyLoss** to reduce frequency-domain artifacts
-
-Select the model in your config:
-
-```yaml
-training:
-  model: picode_v2  # or 'picode' or 'stegastamp'
-```
+- Based on the CVPR 2020 paper by Tancik et al.
+- Proven architecture with excellent gradient flow and training stability
 
 ## Documentation
 

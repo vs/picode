@@ -13,18 +13,6 @@ from torch.utils.data import DataLoader
 
 from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
-from picode.models.picode import Decoder as PicodeDecoder
-from picode.models.picode import Encoder as PicodeEncoder
-from picode.models.picode_v2 import Decoder as PicodeV2Decoder
-from picode.models.picode_v2 import Encoder as PicodeV2Encoder
-from picode.models.picode_v2 import PatchDiscriminator
-from picode.models.picode_v2.loss import (
-    FocalFrequencyLoss,
-    discriminator_loss,
-    generator_loss,
-)
-from picode.models.picode_v3 import Decoder as PicodeV3Decoder
-from picode.models.picode_v3 import Encoder as PicodeV3Encoder
 from picode.models.stegastamp import Decoder as StegaDecoder
 from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
@@ -136,23 +124,10 @@ class Trainer:
         # Set up device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Create models based on config
+        # Create StegaStamp models
         num_bits = config.training.num_bits
-        if config.model == "picode_v2":
-            residual_scale = config.training.residual_scale
-            self.encoder: BaseEncoder = PicodeV2Encoder(
-                num_bits=num_bits, residual_scale=residual_scale
-            ).to(self.device)
-            self.decoder: BaseDecoder = PicodeV2Decoder(num_bits=num_bits).to(self.device)
-        elif config.model == "picode":
-            self.encoder = PicodeEncoder(num_bits=num_bits).to(self.device)
-            self.decoder = PicodeDecoder(num_bits=num_bits).to(self.device)
-        elif config.model == "picode_v3":
-            self.encoder = PicodeV3Encoder(num_bits=num_bits).to(self.device)
-            self.decoder = PicodeV3Decoder(num_bits=num_bits).to(self.device)
-        else:  # default to stegastamp
-            self.encoder = StegaEncoder(num_bits=num_bits).to(self.device)
-            self.decoder = StegaDecoder(num_bits=num_bits).to(self.device)
+        self.encoder: BaseEncoder = StegaEncoder(num_bits=num_bits).to(self.device)
+        self.decoder: BaseDecoder = StegaDecoder(num_bits=num_bits).to(self.device)
 
         # Create optimizer with optional separate learning rates
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
@@ -186,21 +161,6 @@ class Trainer:
 
         # Optional LPIPS loss (lazy loaded)
         self._lpips_fn: nn.Module | None = None
-
-        # GAN components (only for picode_v2 with GAN enabled)
-        self.discriminator: PatchDiscriminator | None = None
-        self.optimizer_d: torch.optim.Adam | None = None
-        self._ffl_fn: FocalFrequencyLoss | None = None
-
-        if config.loss.gan_config.enabled and config.model == "picode_v2":
-            self.discriminator = PatchDiscriminator().to(self.device)
-            self.optimizer_d = torch.optim.Adam(
-                self.discriminator.parameters(),
-                lr=config.loss.gan_config.discriminator_lr,
-            )
-            # FFL is typically used with GAN training
-            if config.loss.ffl is not None:
-                self._ffl_fn = FocalFrequencyLoss().to(self.device)
 
     @classmethod
     def from_config(cls, path: str, overrides: dict[str, Any] | None = None) -> Trainer:
@@ -239,15 +199,6 @@ class Trainer:
         trainer.decoder.load_state_dict(data["decoder_state"])
         trainer.optimizer.load_state_dict(data["optimizer_state"])
 
-        # Restore discriminator state if present
-        if (
-            trainer.discriminator is not None
-            and trainer.optimizer_d is not None
-            and "discriminator_state" in data
-        ):
-            trainer.discriminator.load_state_dict(data["discriminator_state"])
-            trainer.optimizer_d.load_state_dict(data["optimizer_d_state"])
-
         # Restore training state
         trainer.global_step = data["step"]
         trainer.best_metric = data["best_metric"]
@@ -265,8 +216,6 @@ class Trainer:
         """
         self.encoder.train()
         self.decoder.train()
-        if self.discriminator is not None:
-            self.discriminator.train()
 
         num_steps = self.config.training.num_steps
         log_every = self.config.logging.log_every_steps
@@ -292,8 +241,6 @@ class Trainer:
                     scheduler=None,
                     config=self.config,
                     metrics=metrics,
-                    discriminator=self.discriminator,
-                    optimizer_d=self.optimizer_d,
                 )
 
             self.global_step += 1
@@ -308,8 +255,6 @@ class Trainer:
             scheduler=None,
             config=self.config,
             metrics=final_metrics,
-            discriminator=self.discriminator,
-            optimizer_d=self.optimizer_d,
         )
 
         self.logger.close()
@@ -334,10 +279,6 @@ class Trainer:
     def _train_step(self, images: Tensor) -> dict[str, float]:
         """Execute a single training step.
 
-        For GAN training, this includes:
-        1. Discriminator update (if GAN enabled and past delay)
-        2. Generator (encoder/decoder) update
-
         Args:
             images: Batch of images (B, C, H, W) in [0, 1].
 
@@ -357,16 +298,6 @@ class Trainer:
 
         metrics: dict[str, float] = {}
 
-        # =====================
-        # Discriminator update
-        # =====================
-        if self._should_train_discriminator():
-            d_loss = self._train_discriminator_step(images, encoded)
-            metrics["loss_d"] = d_loss
-
-        # =====================
-        # Generator update
-        # =====================
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
         losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
 
@@ -376,7 +307,7 @@ class Trainer:
         else:
             total_loss = losses["loss"]
 
-        # Backward and optimize generator (encoder + decoder)
+        # Backward and optimize
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
@@ -389,40 +320,6 @@ class Trainer:
         # Convert to float metrics
         metrics.update({k: v.item() for k, v in losses.items()})
         return metrics
-
-    def _should_train_discriminator(self) -> bool:
-        """Check if discriminator should be trained at current step."""
-        if self.discriminator is None or self.optimizer_d is None:
-            return False
-
-        loss_cfg = self.config.loss
-        if loss_cfg.gan is None:
-            return False
-
-        # Only train discriminator after GAN delay
-        return self.global_step >= loss_cfg.gan.delay_steps
-
-    def _train_discriminator_step(self, real: Tensor, fake: Tensor) -> float:
-        """Execute discriminator training step.
-
-        Args:
-            real: Real images (B, C, H, W).
-            fake: Fake/encoded images (B, C, H, W).
-
-        Returns:
-            Discriminator loss value.
-        """
-        assert self.discriminator is not None
-        assert self.optimizer_d is not None
-
-        lambda_gp = self.config.loss.gan_config.lambda_gp
-
-        self.optimizer_d.zero_grad()
-        d_loss = discriminator_loss(self.discriminator, real, fake, lambda_gp)
-        d_loss.backward()  # type: ignore[no-untyped-call]
-        self.optimizer_d.step()
-
-        return d_loss.item()
 
     def _compute_ramped_losses(
         self,
@@ -445,8 +342,6 @@ class Trainer:
             - loss_msg: Message BCE loss
             - loss_l2: Image L2 loss
             - loss_lpips: LPIPS loss (if available)
-            - loss_ffl: Focal Frequency Loss (if configured)
-            - loss_gan_g: Generator adversarial loss (if configured)
             - loss_edge: Edge-weighted loss (after delay)
         """
         loss_cfg = self.config.loss
@@ -491,32 +386,14 @@ class Trainer:
         if skip_image_loss:
             lpips_scale = 0.0
         else:
-            lpips_scale = self._ramp(loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, effective_step)
+            lpips_scale = self._ramp(
+                loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, effective_step
+            )
         if lpips_scale > 0 and self._get_lpips_fn() is not None:
             loss_lpips = self._compute_lpips(original, encoded)
             weighted_lpips = lpips_scale * loss_lpips
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
-
-        # Focal Frequency Loss (after delay) - skip during no_im_loss_steps
-        if not skip_image_loss and loss_cfg.ffl is not None and self._ffl_fn is not None:
-            ffl_scale = self._delayed_ramp(loss_cfg.ffl, effective_step)
-            if ffl_scale > 0:
-                loss_ffl = self._ffl_fn(encoded, original)
-                weighted_ffl = ffl_scale * loss_ffl
-                total = total + weighted_ffl
-                losses["loss_ffl"] = loss_ffl
-
-        # Generator adversarial loss (after delay) - skip during no_im_loss_steps
-        if not skip_image_loss and loss_cfg.gan is not None and self.discriminator is not None:
-            gan_scale = self._delayed_ramp(loss_cfg.gan, effective_step)
-            if gan_scale > 0:
-                # Get discriminator prediction on encoded images
-                fake_pred = self.discriminator(encoded)
-                loss_gan_g = generator_loss(fake_pred)
-                weighted_gan = gan_scale * loss_gan_g
-                total = total + weighted_gan
-                losses["loss_gan_g"] = loss_gan_g
 
         # Edge loss (after delay) - skip during no_im_loss_steps
         if not skip_image_loss and effective_step >= loss_cfg.l2_edge_delay_steps:

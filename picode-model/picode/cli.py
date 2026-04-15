@@ -8,22 +8,7 @@ from PIL import Image
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from picode.models import stegastamp, picode as picode_model, picode_v2
-
-
-def detect_model_type(encoder_state: dict) -> str:
-    """Detect model type from state dict keys."""
-    keys = list(encoder_state.keys())
-    if any("message_expander" in k for k in keys):
-        return "picode_v2"
-    elif any("msg_fc" in k for k in keys):
-        return "stegastamp_legacy"
-    elif any("secret_dense" in k for k in keys):
-        if any("norm1" in k for k in keys):
-            return "picode"
-        else:
-            return "stegastamp"
-    return "stegastamp"
+from picode.models import stegastamp
 
 
 def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
@@ -32,22 +17,9 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
     config = data.get("config", {})
     num_bits = config.get("training", {}).get("num_bits", 100)
 
-    # Auto-detect model type from config or state dict
-    model_type = config.get("model")
-    if not model_type:
-        model_type = detect_model_type(data["encoder_state"])
-
-    # Create models based on type
-    if model_type == "picode_v2":
-        residual_scale = config.get("training", {}).get("residual_scale", 0.1)
-        encoder = picode_v2.Encoder(num_bits=num_bits, residual_scale=residual_scale).to(device)
-        decoder = picode_v2.Decoder(num_bits=num_bits).to(device)
-    elif model_type == "picode":
-        encoder = picode_model.Encoder(num_bits=num_bits).to(device)
-        decoder = picode_model.Decoder(num_bits=num_bits).to(device)
-    else:
-        encoder = stegastamp.Encoder(num_bits=num_bits).to(device)
-        decoder = stegastamp.Decoder(num_bits=num_bits).to(device)
+    # Create StegaStamp models
+    encoder = stegastamp.Encoder(num_bits=num_bits).to(device)
+    decoder = stegastamp.Decoder(num_bits=num_bits).to(device)
 
     encoder.load_state_dict(data["encoder_state"])
     decoder.load_state_dict(data["decoder_state"])
@@ -241,7 +213,9 @@ Examples:
     encode_parser.add_argument("output", type=Path, help="Output image path")
     encode_parser.add_argument("-m", "--message", required=True, help="Message to encode")
     encode_parser.add_argument("--save-original", type=Path, help="Save original image to path")
-    encode_parser.add_argument("--save-residual", type=Path, help="Save residual (amplified) to path")
+    encode_parser.add_argument(
+        "--save-residual", type=Path, help="Save residual (amplified) to path"
+    )
     encode_parser.set_defaults(func=encode_command)
 
     # Decode subcommand

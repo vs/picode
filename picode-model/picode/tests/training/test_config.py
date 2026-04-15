@@ -206,7 +206,6 @@ loss:
     def test_load_ffl_and_gan_config(self, tmp_path: Path) -> None:
         yaml_content = """
 experiment_name: test_gan_exp
-model: picode_v2
 data:
   source: folder
   path: /data
@@ -228,7 +227,7 @@ loss:
         config_file.write_text(yaml_content)
 
         cfg = load_config(str(config_file))
-        assert cfg.model == "picode_v2"
+        assert cfg.model == "stegastamp"  # Default model
         assert cfg.loss.ffl is not None
         assert cfg.loss.ffl.scale == 0.1
         assert cfg.loss.ffl.ramp_steps == 40000
