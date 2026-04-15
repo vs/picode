@@ -16,11 +16,36 @@ class LossRamp:
 
 
 @dataclass
+class DelayedLossRamp:
+    """A loss weight that starts after a delay and ramps up.
+
+    Timeline: [0, delay_steps) -> 0, [delay_steps, delay_steps + ramp_steps) -> ramps to scale
+    """
+
+    scale: float
+    ramp_steps: int = 40000
+    delay_steps: int = 20000
+
+
+@dataclass
 class DistortionRamp:
     """A distortion strength that ramps up over training steps."""
 
     strength: float
     ramp_steps: int = 1000
+
+
+@dataclass
+class GANConfig:
+    """GAN training configuration.
+
+    Controls discriminator training and generator adversarial loss.
+    """
+
+    enabled: bool = False
+    discriminator_lr: float = 4e-4  # Typically higher than generator LR
+    lambda_gp: float = 10.0  # Gradient penalty weight for WGAN-GP
+    n_critic: int = 1  # Discriminator updates per generator update
 
 
 @dataclass
@@ -42,7 +67,16 @@ class LossConfig:
 
     yuv_weights: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
-    gan: LossRamp | None = None
+    # Focal Frequency Loss (FFL) - reduces frequency-domain artifacts
+    # delay 20k, ramp 20k→60k
+    ffl: DelayedLossRamp | None = None
+
+    # GAN loss weight (for generator adversarial loss)
+    # delay 30k, ramp 30k→80k
+    gan: DelayedLossRamp | None = None
+
+    # GAN training settings
+    gan_config: GANConfig = field(default_factory=GANConfig)
 
 
 @dataclass
@@ -73,7 +107,7 @@ class TrainingConfig:
     num_bits: int = 100
     image_size: int = 400
     warmup_steps: int = 500
-    residual_scale: float = 0.1  # picode_v2 encoder residual magnitude (0.1 default, try 0.3 for training)
+    residual_scale: float = 0.1  # picode_v2 encoder residual magnitude
 
 
 @dataclass
@@ -138,14 +172,21 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     if "training" in data:
         data["training"] = TrainingConfig(**data["training"])
 
-    # Handle LossConfig with nested LossRamps
+    # Handle LossConfig with nested LossRamps and DelayedLossRamps
     if "loss" in data:
         loss_data = data["loss"]
+        # Standard LossRamp fields
         for key in ["message", "l2", "lpips"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
-        if "gan" in loss_data and loss_data["gan"] is not None:
-            loss_data["gan"] = LossRamp(**loss_data["gan"])
+        # DelayedLossRamp fields (ffl, gan)
+        for key in ["ffl", "gan"]:
+            if key in loss_data and loss_data[key] is not None:
+                if isinstance(loss_data[key], dict):
+                    loss_data[key] = DelayedLossRamp(**loss_data[key])
+        # GANConfig
+        if "gan_config" in loss_data and isinstance(loss_data["gan_config"], dict):
+            loss_data["gan_config"] = GANConfig(**loss_data["gan_config"])
         if "yuv_weights" in loss_data:
             loss_data["yuv_weights"] = tuple(loss_data["yuv_weights"])
         data["loss"] = LossConfig(**loss_data)

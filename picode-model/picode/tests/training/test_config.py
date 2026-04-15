@@ -6,8 +6,10 @@ from picode.training.config import (
     CheckpointConfig,
     Config,
     DataConfig,
+    DelayedLossRamp,
     DistortionConfig,
     DistortionRamp,
+    GANConfig,
     LoggingConfig,
     LossConfig,
     LossRamp,
@@ -26,6 +28,35 @@ class TestLossRamp:
         ramp = LossRamp(scale=2.0, ramp_steps=10000)
         assert ramp.scale == 2.0
         assert ramp.ramp_steps == 10000
+
+
+class TestDelayedLossRamp:
+    def test_defaults(self) -> None:
+        ramp = DelayedLossRamp(scale=1.0)
+        assert ramp.scale == 1.0
+        assert ramp.ramp_steps == 40000
+        assert ramp.delay_steps == 20000
+
+    def test_custom_values(self) -> None:
+        ramp = DelayedLossRamp(scale=0.1, ramp_steps=50000, delay_steps=30000)
+        assert ramp.scale == 0.1
+        assert ramp.ramp_steps == 50000
+        assert ramp.delay_steps == 30000
+
+
+class TestGANConfig:
+    def test_defaults(self) -> None:
+        cfg = GANConfig()
+        assert cfg.enabled is False
+        assert cfg.discriminator_lr == 4e-4
+        assert cfg.lambda_gp == 10.0
+        assert cfg.n_critic == 1
+
+    def test_enabled(self) -> None:
+        cfg = GANConfig(enabled=True, discriminator_lr=1e-4, lambda_gp=5.0)
+        assert cfg.enabled is True
+        assert cfg.discriminator_lr == 1e-4
+        assert cfg.lambda_gp == 5.0
 
 
 class TestDistortionRamp:
@@ -49,7 +80,23 @@ class TestLossConfig:
         assert cfg.l2_edge_gain == 10.0
         assert cfg.l2_edge_delay_steps == 60000
         assert cfg.yuv_weights == (1.0, 1.0, 1.0)
+        assert cfg.ffl is None
         assert cfg.gan is None
+        assert cfg.gan_config.enabled is False
+
+    def test_with_ffl_and_gan(self) -> None:
+        cfg = LossConfig(
+            ffl=DelayedLossRamp(scale=0.1, ramp_steps=40000, delay_steps=20000),
+            gan=DelayedLossRamp(scale=0.01, ramp_steps=50000, delay_steps=30000),
+            gan_config=GANConfig(enabled=True),
+        )
+        assert cfg.ffl is not None
+        assert cfg.ffl.scale == 0.1
+        assert cfg.ffl.delay_steps == 20000
+        assert cfg.gan is not None
+        assert cfg.gan.scale == 0.01
+        assert cfg.gan.delay_steps == 30000
+        assert cfg.gan_config.enabled is True
 
 
 class TestDistortionConfig:
@@ -155,3 +202,39 @@ loss:
         cfg = load_config(str(config_file))
         assert cfg.loss.l2.scale == 1.5
         assert cfg.loss.l2.ramp_steps == 10000
+
+    def test_load_ffl_and_gan_config(self, tmp_path: Path) -> None:
+        yaml_content = """
+experiment_name: test_gan_exp
+model: picode_v2
+data:
+  source: folder
+  path: /data
+loss:
+  ffl:
+    scale: 0.1
+    ramp_steps: 40000
+    delay_steps: 20000
+  gan:
+    scale: 0.01
+    ramp_steps: 50000
+    delay_steps: 30000
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.0004
+    lambda_gp: 10.0
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        cfg = load_config(str(config_file))
+        assert cfg.model == "picode_v2"
+        assert cfg.loss.ffl is not None
+        assert cfg.loss.ffl.scale == 0.1
+        assert cfg.loss.ffl.ramp_steps == 40000
+        assert cfg.loss.ffl.delay_steps == 20000
+        assert cfg.loss.gan is not None
+        assert cfg.loss.gan.scale == 0.01
+        assert cfg.loss.gan.delay_steps == 30000
+        assert cfg.loss.gan_config.enabled is True
+        assert cfg.loss.gan_config.discriminator_lr == 0.0004

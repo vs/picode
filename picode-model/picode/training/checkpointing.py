@@ -23,6 +23,9 @@ class CheckpointState:
     scheduler_state: dict[str, Any] | None
     best_metric: float
     config: dict[str, Any]
+    # GAN components (optional)
+    discriminator_state: dict[str, Any] | None = None
+    optimizer_d_state: dict[str, Any] | None = None
 
 
 class Checkpointer:
@@ -65,6 +68,8 @@ class Checkpointer:
         scheduler: LRScheduler | None,
         config: Config,
         metrics: dict[str, float],
+        discriminator: nn.Module | None = None,
+        optimizer_d: Optimizer | None = None,
     ) -> None:
         """Save periodic checkpoint and update best if needed."""
         state = CheckpointState(
@@ -75,6 +80,8 @@ class Checkpointer:
             scheduler_state=scheduler.state_dict() if scheduler else None,
             best_metric=self.best_metric,
             config=asdict(config),
+            discriminator_state=discriminator.state_dict() if discriminator else None,
+            optimizer_d_state=optimizer_d.state_dict() if optimizer_d else None,
         )
 
         # Save periodic checkpoint

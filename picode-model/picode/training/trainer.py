@@ -17,6 +17,12 @@ from picode.models.picode import Decoder as PicodeDecoder
 from picode.models.picode import Encoder as PicodeEncoder
 from picode.models.picode_v2 import Decoder as PicodeV2Decoder
 from picode.models.picode_v2 import Encoder as PicodeV2Encoder
+from picode.models.picode_v2 import PatchDiscriminator
+from picode.models.picode_v2.loss import (
+    FocalFrequencyLoss,
+    discriminator_loss,
+    generator_loss,
+)
 from picode.models.stegastamp import Decoder as StegaDecoder
 from picode.models.stegastamp import Encoder as StegaEncoder
 from picode.training.checkpointing import Checkpointer
@@ -24,8 +30,10 @@ from picode.training.config import (
     CheckpointConfig,
     Config,
     DataConfig,
+    DelayedLossRamp,
     DistortionConfig,
     DistortionRamp,
+    GANConfig,
     LoggingConfig,
     LossConfig,
     LossRamp,
@@ -59,14 +67,21 @@ def _dict_to_config_full(data: dict[str, Any]) -> Config:
     if "training" in data:
         data["training"] = TrainingConfig(**data["training"])
 
-    # Handle LossConfig with nested LossRamps
+    # Handle LossConfig with nested LossRamps and DelayedLossRamps
     if "loss" in data:
         loss_data = data["loss"]
+        # Standard LossRamp fields
         for key in ["message", "l2", "lpips"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
-        if "gan" in loss_data and loss_data["gan"] is not None:
-            loss_data["gan"] = LossRamp(**loss_data["gan"])
+        # DelayedLossRamp fields (ffl, gan)
+        for key in ["ffl", "gan"]:
+            if key in loss_data and loss_data[key] is not None:
+                if isinstance(loss_data[key], dict):
+                    loss_data[key] = DelayedLossRamp(**loss_data[key])
+        # GANConfig
+        if "gan_config" in loss_data and isinstance(loss_data["gan_config"], dict):
+            loss_data["gan_config"] = GANConfig(**loss_data["gan_config"])
         if "yuv_weights" in loss_data:
             loss_data["yuv_weights"] = tuple(loss_data["yuv_weights"])
         data["loss"] = LossConfig(**loss_data)
@@ -162,6 +177,21 @@ class Trainer:
         # Optional LPIPS loss (lazy loaded)
         self._lpips_fn: nn.Module | None = None
 
+        # GAN components (only for picode_v2 with GAN enabled)
+        self.discriminator: PatchDiscriminator | None = None
+        self.optimizer_d: torch.optim.Adam | None = None
+        self._ffl_fn: FocalFrequencyLoss | None = None
+
+        if config.loss.gan_config.enabled and config.model == "picode_v2":
+            self.discriminator = PatchDiscriminator().to(self.device)
+            self.optimizer_d = torch.optim.Adam(
+                self.discriminator.parameters(),
+                lr=config.loss.gan_config.discriminator_lr,
+            )
+            # FFL is typically used with GAN training
+            if config.loss.ffl is not None:
+                self._ffl_fn = FocalFrequencyLoss().to(self.device)
+
     @classmethod
     def from_config(cls, path: str, overrides: dict[str, Any] | None = None) -> Trainer:
         """Create trainer from YAML config file.
@@ -199,6 +229,15 @@ class Trainer:
         trainer.decoder.load_state_dict(data["decoder_state"])
         trainer.optimizer.load_state_dict(data["optimizer_state"])
 
+        # Restore discriminator state if present
+        if (
+            trainer.discriminator is not None
+            and trainer.optimizer_d is not None
+            and "discriminator_state" in data
+        ):
+            trainer.discriminator.load_state_dict(data["discriminator_state"])
+            trainer.optimizer_d.load_state_dict(data["optimizer_d_state"])
+
         # Restore training state
         trainer.global_step = data["step"]
         trainer.best_metric = data["best_metric"]
@@ -216,6 +255,8 @@ class Trainer:
         """
         self.encoder.train()
         self.decoder.train()
+        if self.discriminator is not None:
+            self.discriminator.train()
 
         num_steps = self.config.training.num_steps
         log_every = self.config.logging.log_every_steps
@@ -241,6 +282,8 @@ class Trainer:
                     scheduler=None,
                     config=self.config,
                     metrics=metrics,
+                    discriminator=self.discriminator,
+                    optimizer_d=self.optimizer_d,
                 )
 
             self.global_step += 1
@@ -255,6 +298,8 @@ class Trainer:
             scheduler=None,
             config=self.config,
             metrics=final_metrics,
+            discriminator=self.discriminator,
+            optimizer_d=self.optimizer_d,
         )
 
         self.logger.close()
@@ -279,6 +324,10 @@ class Trainer:
     def _train_step(self, images: Tensor) -> dict[str, float]:
         """Execute a single training step.
 
+        For GAN training, this includes:
+        1. Discriminator update (if GAN enabled and past delay)
+        2. Generator (encoder/decoder) update
+
         Args:
             images: Batch of images (B, C, H, W) in [0, 1].
 
@@ -296,6 +345,18 @@ class Trainer:
         distorted = self.distortion(encoded, self.global_step)
         decoded_logits = self.decoder(distorted)
 
+        metrics: dict[str, float] = {}
+
+        # =====================
+        # Discriminator update
+        # =====================
+        if self._should_train_discriminator():
+            d_loss = self._train_discriminator_step(images, encoded)
+            metrics["loss_d"] = d_loss
+
+        # =====================
+        # Generator update
+        # =====================
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
         losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
 
@@ -305,14 +366,48 @@ class Trainer:
         else:
             total_loss = losses["loss"]
 
-        # Backward and optimize
+        # Backward and optimize generator (encoder + decoder)
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
         self.optimizer.step()
 
         # Convert to float metrics
-        metrics = {k: v.item() for k, v in losses.items()}
+        metrics.update({k: v.item() for k, v in losses.items()})
         return metrics
+
+    def _should_train_discriminator(self) -> bool:
+        """Check if discriminator should be trained at current step."""
+        if self.discriminator is None or self.optimizer_d is None:
+            return False
+
+        loss_cfg = self.config.loss
+        if loss_cfg.gan is None:
+            return False
+
+        # Only train discriminator after GAN delay
+        return self.global_step >= loss_cfg.gan.delay_steps
+
+    def _train_discriminator_step(self, real: Tensor, fake: Tensor) -> float:
+        """Execute discriminator training step.
+
+        Args:
+            real: Real images (B, C, H, W).
+            fake: Fake/encoded images (B, C, H, W).
+
+        Returns:
+            Discriminator loss value.
+        """
+        assert self.discriminator is not None
+        assert self.optimizer_d is not None
+
+        lambda_gp = self.config.loss.gan_config.lambda_gp
+
+        self.optimizer_d.zero_grad()
+        d_loss = discriminator_loss(self.discriminator, real, fake, lambda_gp)
+        d_loss.backward()  # type: ignore[no-untyped-call]
+        self.optimizer_d.step()
+
+        return d_loss.item()
 
     def _compute_ramped_losses(
         self,
@@ -335,6 +430,8 @@ class Trainer:
             - loss_msg: Message BCE loss
             - loss_l2: Image L2 loss
             - loss_lpips: LPIPS loss (if available)
+            - loss_ffl: Focal Frequency Loss (if configured)
+            - loss_gan_g: Generator adversarial loss (if configured)
             - loss_edge: Edge-weighted loss (after delay)
         """
         loss_cfg = self.config.loss
@@ -365,6 +462,26 @@ class Trainer:
             weighted_lpips = lpips_scale * loss_lpips
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
+
+        # Focal Frequency Loss (after delay)
+        if loss_cfg.ffl is not None and self._ffl_fn is not None:
+            ffl_scale = self._delayed_ramp(loss_cfg.ffl, step)
+            if ffl_scale > 0:
+                loss_ffl = self._ffl_fn(encoded, original)
+                weighted_ffl = ffl_scale * loss_ffl
+                total = total + weighted_ffl
+                losses["loss_ffl"] = loss_ffl
+
+        # Generator adversarial loss (after delay)
+        if loss_cfg.gan is not None and self.discriminator is not None:
+            gan_scale = self._delayed_ramp(loss_cfg.gan, step)
+            if gan_scale > 0:
+                # Get discriminator prediction on encoded images
+                fake_pred = self.discriminator(encoded)
+                loss_gan_g = generator_loss(fake_pred)
+                weighted_gan = gan_scale * loss_gan_g
+                total = total + weighted_gan
+                losses["loss_gan_g"] = loss_gan_g
 
         # Edge loss (after delay)
         if step >= loss_cfg.l2_edge_delay_steps:
@@ -398,6 +515,26 @@ class Trainer:
         if ramp_steps <= 0:
             return scale
         return min(scale * step / ramp_steps, scale)
+
+    @staticmethod
+    def _delayed_ramp(config: DelayedLossRamp, step: int) -> float:
+        """Compute ramped scale with delay.
+
+        Timeline: [0, delay) -> 0, [delay, delay + ramp) -> ramps to scale
+
+        Args:
+            config: DelayedLossRamp configuration.
+            step: Current step.
+
+        Returns:
+            Ramped scale value (0 before delay).
+        """
+        if step < config.delay_steps:
+            return 0.0
+        adjusted_step = step - config.delay_steps
+        if config.ramp_steps <= 0:
+            return config.scale
+        return min(config.scale * adjusted_step / config.ramp_steps, config.scale)
 
     def _compute_edge_loss(self, original: Tensor, encoded: Tensor) -> Tensor:
         """Compute edge-weighted L2 loss using Sobel edge detection.

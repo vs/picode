@@ -1,5 +1,6 @@
 # picode_v2 training configuration
 # Mobile-optimized decoder with artifact-reducing encoder
+# Includes FFL and GAN training for reduced visual artifacts
 
 experiment_name: picode_v2_baseline
 
@@ -29,15 +30,27 @@ loss:
   lpips:
     scale: 1.0
     ramp_steps: 20000
-  # FFL and GAN losses require trainer modifications (future work)
-  # ffl:
-  #   scale: 0.1
-  #   ramp_steps: 40000
-  #   delay_steps: 20000
-  # gan:
-  #   scale: 0.01
-  #   ramp_steps: 50000
-  #   delay_steps: 30000
+
+  # Focal Frequency Loss - reduces frequency-domain artifacts
+  # Timeline: delay 20k steps, then ramp 20k→60k steps
+  ffl:
+    scale: 0.1
+    ramp_steps: 40000
+    delay_steps: 20000
+
+  # GAN generator loss weight
+  # Timeline: delay 30k steps, then ramp 30k→80k steps
+  gan:
+    scale: 0.01
+    ramp_steps: 50000
+    delay_steps: 30000
+
+  # GAN training configuration
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.0004  # 4x higher than generator LR
+    lambda_gp: 10.0           # Gradient penalty weight for WGAN-GP
+    n_critic: 1               # Discriminator updates per generator update
 
 distortion:
   strategy: curriculum
