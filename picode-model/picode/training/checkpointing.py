@@ -1,5 +1,6 @@
 """Checkpoint management for training."""
 
+import pickle
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -102,14 +103,26 @@ class Checkpointer:
             torch.save(asdict(state), best_path)
 
     def load(self, path: str | Path | None = None) -> CheckpointState | None:
-        """Load checkpoint. If path is None, try to load latest."""
+        """Load checkpoint. If path is None, try to load latest.
+
+        Raises:
+            RuntimeError: If checkpoint file is corrupted or incompatible.
+        """
         if path is None:
             path = self._find_latest()
         if path is None:
             return None
 
-        data = torch.load(path, weights_only=False)
-        return CheckpointState(**data)
+        try:
+            data = torch.load(path, weights_only=False)
+            return CheckpointState(**data)
+        except (RuntimeError, pickle.UnpicklingError, EOFError) as e:
+            raise RuntimeError(f"Failed to load checkpoint from {path}: {e}") from e
+        except TypeError as e:
+            raise RuntimeError(
+                f"Checkpoint {path} has incompatible format: {e}. "
+                "This may be due to a config schema change."
+            ) from e
 
     def _find_latest(self) -> Path | None:
         """Find most recent checkpoint."""

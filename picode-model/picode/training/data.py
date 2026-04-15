@@ -1,15 +1,19 @@
 """Data loading utilities for training."""
 
+import logging
+import random
 from pathlib import Path
 from typing import Protocol
 
 import torch
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
 from picode.training.config import DataConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ImageDataset(Protocol):
@@ -51,9 +55,17 @@ class FolderDataset(Dataset[Tensor]):
         return len(self.files)
 
     def __getitem__(self, idx: int) -> Tensor:
-        img = Image.open(self.files[idx]).convert("RGB")
-        result: Tensor = self.transform(img)
-        return result
+        try:
+            img = Image.open(self.files[idx]).convert("RGB")
+            result: Tensor = self.transform(img)
+            return result
+        except (OSError, UnidentifiedImageError) as e:
+            # Handle corrupted or unreadable images by returning a random other image
+            logger.warning(f"Failed to load image {self.files[idx]}: {e}. Using fallback.")
+            fallback_idx = random.randint(0, len(self.files) - 1)
+            if fallback_idx == idx:
+                fallback_idx = (idx + 1) % len(self.files)
+            return self.__getitem__(fallback_idx)
 
 
 def create_dataloader(config: DataConfig, image_size: int) -> DataLoader[Tensor]:

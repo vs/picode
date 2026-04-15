@@ -29,7 +29,10 @@ final class PreviewView: UIView {
     }
 
     var previewLayer: AVCaptureVideoPreviewLayer {
-        layer as! AVCaptureVideoPreviewLayer
+        guard let previewLayer = layer as? AVCaptureVideoPreviewLayer else {
+            fatalError("Expected AVCaptureVideoPreviewLayer but got \(type(of: layer))")
+        }
+        return previewLayer
     }
 
     override func layoutSubviews() {

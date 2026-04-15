@@ -103,22 +103,15 @@ final class FastDetectorTests: XCTestCase {
 
 final class BitConversionTests: XCTestCase {
 
-    func testBitsToMessageWithPrintableCharacters() {
+    func testBitsToMessageWithPrintableCharacters() async throws {
         // Test that high-confidence bits produce readable output
         // Note: This tests the internal logic indirectly through decode result
         let detector = FastDetector()
+        let image = UIImage()
 
-        // Create a test image and decode
-        Task {
-            let image = UIImage()
-            do {
-                let result = try await detector.decode(image: image)
-                // Message should be non-empty
-                XCTAssertFalse(result.message.isEmpty)
-            } catch {
-                // Acceptable if models aren't loaded
-            }
-        }
+        let result = try await detector.decode(image: image)
+        // Message should be non-empty
+        XCTAssertFalse(result.message.isEmpty)
     }
 }
 

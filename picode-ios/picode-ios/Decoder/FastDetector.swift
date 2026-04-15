@@ -201,7 +201,7 @@ final class FastDetector: PicodeDecoder {
 
             if name == "is_watermark" || name.contains("watermark") {
                 isWatermark = pointer[0]
-            } else if name == "corners" || name.contains("corner") && multiArray.count == 8 {
+            } else if (name == "corners" || name.contains("corner")) && multiArray.count == 8 {
                 // Parse 8 values as 4 corners: [x1, y1, x2, y2, x3, y3, x4, y4]
                 corners = [
                     CGPoint(x: CGFloat(pointer[0]), y: CGFloat(pointer[1])),
