@@ -242,9 +242,14 @@ class Trainer:
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
         losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
 
-        # Warmup phase: only use message loss
+        # Warmup phase: only use scaled message loss
         if self.global_step < self.config.training.warmup_steps:
-            total_loss = losses["loss_msg"]
+            msg_scale = self._ramp(
+                self.config.loss.message.scale,
+                self.config.loss.message.ramp_steps,
+                self.global_step,
+            )
+            total_loss = msg_scale * losses["loss_msg"]
         else:
             total_loss = losses["loss"]
 
@@ -252,9 +257,9 @@ class Trainer:
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
-        # Apply gradient clipping to prevent decoder from learning too fast
-        # Decoder has ~15x more gradient than encoder, causing training instability
-        torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=1.0)
+        # Apply gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=10.0)
 
         self.optimizer.step()
 
@@ -464,9 +469,9 @@ class Trainer:
         orig_scaled = original * 2 - 1
         enc_scaled = encoded * 2 - 1
 
-        with torch.no_grad():
-            # Detach to avoid tracking LPIPS gradients
-            loss = lpips_fn(orig_scaled, enc_scaled)
+        # LPIPS network is in eval mode and not in optimizer, so its weights won't update.
+        # Gradients flow through to the encoder, which is what we want.
+        loss = lpips_fn(orig_scaled, enc_scaled)
 
         return cast(Tensor, loss.mean())
 
