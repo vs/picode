@@ -12,7 +12,7 @@ data:
 training:
   num_steps: 140000
   lr: 0.0001
-  num_bits: 100
+  num_bits: 20  # Original StegaStamp uses 20 bits; decoder can't handle 100
   image_size: 400
   warmup_steps: 500
   no_im_loss_steps: 1000  # Train message loss only first, then add image losses
@@ -21,7 +21,7 @@ loss:
   message:
     scale: 7.0  # Must be higher than image losses to force message encoding
     ramp_steps: 1
-  message_loss_type: mse  # MSE avoids trivial solution (predicting 0.5 for all bits)
+  message_loss_type: bce  # BCE has stronger gradients than MSE at trivial solution
   l2:
     scale: 1.0
     ramp_steps: 20000
