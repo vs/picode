@@ -182,6 +182,90 @@ Not on changing the fundamental encoder/decoder signal path.
 
 ---
 
+## Training Bugs and Pitfalls (January 2026)
+
+### LPIPS Loss Gradient Bug
+
+The LPIPS loss was wrapped in `torch.no_grad()`:
+
+```python
+# BROKEN - no gradients flow through LPIPS
+with torch.no_grad():
+    loss = lpips_fn(orig_scaled, enc_scaled)
+```
+
+This completely blocked gradients from flowing back to the encoder through the perceptual loss. The LPIPS value was added to `total_loss`, but during backpropagation, the encoder received zero gradient signal from LPIPS.
+
+**The fix:** Remove `torch.no_grad()`. The LPIPS network weights won't update anyway (it's in eval mode and not in the optimizer) - only the encoder receives gradients, which is what we want.
+
+### Bit Capacity Limitation
+
+The StegaStamp decoder architecture has a fundamental limitation: **it can reliably learn ~10-20 bits, but fails at 100 bits**.
+
+**Why:** The decoder compresses 400×400 input to 13×13 feature maps before the final linear layer. With 100 bits in a 10×10 spatial grid, each bit region becomes ~1 pixel at the final conv layer - not enough spatial resolution to distinguish patterns.
+
+| Bits | Spatial Grid | Patch Size | Final Feature Size | Result |
+|------|-------------|------------|-------------------|--------|
+| 10 | ~3×3 | ~130×130 | ~4×4 per patch | Works |
+| 20 | ~5×4 | ~80×100 | ~2.5×3 per patch | Marginal |
+| 100 | 10×10 | 40×40 | ~1×1 per patch | Fails |
+
+**The original StegaStamp uses only 20 bits**, not 100. This is why their architecture works.
+
+**Solutions:**
+1. Reduce `num_bits` to 20-30 (like original)
+2. Use error correction (BCH/LDPC) to encode fewer robust bits
+3. Modify decoder to preserve more spatial resolution
+
+### Encoder Learns Degenerate Solutions
+
+Without proper loss balance, the encoder learns global shortcuts instead of spatially structured patterns:
+
+```
+Step 0:   residual_mean = 0.008  (random initialization)
+Step 100: residual_mean = 0.432  (encoder brightens everything)
+Step 200: residual_mean = -0.171 (encoder darkens everything)
+```
+
+The encoder discovers it can change global brightness, which the decoder learns to detect. This achieves ~65% accuracy but destroys the image.
+
+**The tension:**
+- Without L2 loss: Encoder produces degenerate patterns (global brightness)
+- With L2 loss: Encoder produces near-zero residuals (nothing to decode)
+
+The original StegaStamp balances this with a specific training schedule:
+1. First 500 steps: message loss only (encoder learns to embed)
+2. After 500 steps: add L2 loss with slow ramp (encoder refines while preserving image)
+
+### Trivial Solution Detection
+
+Watch for `loss_msg` stuck at these values:
+
+| Loss Type | Trivial Value | Meaning |
+|-----------|---------------|---------|
+| BCE | 0.693 (log 2) | Decoder outputs 0.5 for all bits |
+| MSE | 0.250 | Decoder outputs 0.5 for all bits |
+
+If `loss_msg` plateaus at these values early in training and doesn't decrease, the encoder-decoder pair has collapsed to the trivial solution.
+
+### Gradient Imbalance
+
+The encoder receives ~70× weaker gradients than the decoder because it's farther from the loss in the computational graph:
+
+```
+Encoder mean gradient: 0.0016
+Decoder mean gradient: 0.1087
+```
+
+This can cause the decoder to learn faster than the encoder can adapt, leading to unstable training.
+
+**Potential fixes:**
+- Use `encoder_lr_scale` to give encoder higher learning rate
+- Use gradient clipping with different thresholds per network
+- Detach encoder output periodically to let decoder "catch up"
+
+---
+
 ## Summary
 
 **Why StegaStamp works:** Simple architecture with unobstructed signal flow from encoder to decoder.
@@ -189,3 +273,9 @@ Not on changing the fundamental encoder/decoder signal path.
 **Why Picode failed:** "Improvements" (GroupNorm, ResBlocks, learned expansion, bounded outputs) all dampened or destroyed the message signal the decoder needs to learn.
 
 **The lesson:** In steganography, simplicity wins. The message must flow from encoder to decoder without normalization, shortcuts, or constraints. Trust the proven architecture.
+
+**Additional lessons (2026):**
+- LPIPS must allow gradients through (no `torch.no_grad()`)
+- Bit capacity is limited by decoder spatial resolution (~20 bits for 400×400 images)
+- Watch for trivial solutions (loss_msg stuck at 0.693 for BCE or 0.25 for MSE)
+- Balance message and image losses carefully to avoid degenerate encoder solutions
