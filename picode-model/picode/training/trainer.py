@@ -33,6 +33,59 @@ from picode.training.evaluation import (
 from picode.training.logging import CompositeLogger, create_logger
 
 
+def rgb_to_yuv(rgb: Tensor) -> Tensor:
+    """Convert RGB tensor to YUV color space.
+
+    Uses BT.601 conversion matrix (same as tf.image.rgb_to_yuv).
+
+    Args:
+        rgb: (B, 3, H, W) tensor in [0, 1] with channels R, G, B.
+
+    Returns:
+        (B, 3, H, W) tensor with channels Y, U, V.
+    """
+    # BT.601 conversion matrix
+    # Y =  0.299*R + 0.587*G + 0.114*B
+    # U = -0.147*R - 0.289*G + 0.436*B (Cb)
+    # V =  0.615*R - 0.515*G - 0.100*B (Cr)
+    r, g, b = rgb[:, 0:1], rgb[:, 1:2], rgb[:, 2:3]
+
+    y = 0.299 * r + 0.587 * g + 0.114 * b
+    u = -0.147 * r - 0.289 * g + 0.436 * b
+    v = 0.615 * r - 0.515 * g - 0.100 * b
+
+    return torch.cat([y, u, v], dim=1)
+
+
+def compute_yuv_l2_loss(
+    original: Tensor, encoded: Tensor, yuv_weights: list[float] | tuple[float, float, float]
+) -> Tensor:
+    """Compute YUV-weighted L2 loss.
+
+    Converts images to YUV and computes weighted MSE per channel.
+    Original StegaStamp uses Y=1, U=100, V=100 to heavily penalize
+    color shifts while allowing more luma changes.
+
+    Args:
+        original: (B, 3, H, W) original image in [0, 1].
+        encoded: (B, 3, H, W) encoded image in [0, 1].
+        yuv_weights: [Y_weight, U_weight, V_weight].
+
+    Returns:
+        Scalar loss tensor.
+    """
+    original_yuv = rgb_to_yuv(original)
+    encoded_yuv = rgb_to_yuv(encoded)
+
+    diff = encoded_yuv - original_yuv
+    mse_per_channel = (diff ** 2).mean(dim=(0, 2, 3))  # (3,)
+
+    weights = torch.tensor(list(yuv_weights), device=original.device, dtype=original.dtype)
+    weighted_loss = (mse_per_channel * weights).sum() / weights.sum()
+
+    return weighted_loss
+
+
 class Trainer:
     """Main trainer class that orchestrates training.
 
@@ -237,6 +290,9 @@ class Trainer:
         distorted = self.distortion(encoded, self.global_step)
         decoded_logits = self.decoder(distorted)
 
+        # Compute residual for diagnostics (encoded - original)
+        residual = encoded - images
+
         metrics: dict[str, float] = {}
 
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
@@ -265,6 +321,24 @@ class Trainer:
 
         # Convert to float metrics
         metrics.update({k: v.item() for k, v in losses.items()})
+
+        # Diagnostic metrics for debugging training issues
+        # Residual statistics (encoder output - original image)
+        metrics["residual_mean"] = residual.mean().item()
+        metrics["residual_std"] = residual.std().item()
+        metrics["residual_abs_max"] = residual.abs().max().item()
+
+        # Decoder output distribution (check for trivial solution)
+        with torch.no_grad():
+            decoded_probs = torch.sigmoid(decoded_logits)
+            metrics["decoder_prob_mean"] = decoded_probs.mean().item()
+            metrics["decoder_prob_std"] = decoded_probs.std().item()
+
+            # Bit accuracy (how many bits are correct)
+            predicted_bits = (decoded_probs > 0.5).float()
+            bit_accuracy = (predicted_bits == messages).float().mean().item()
+            metrics["bit_accuracy"] = bit_accuracy
+
         return metrics
 
     def _compute_ramped_losses(
@@ -312,8 +386,12 @@ class Trainer:
         # Image loss ramps start AFTER no_im_loss_steps phase
         effective_step = max(0, step - no_im_loss_steps)
 
-        # L2 loss (MSE)
-        loss_l2 = F.mse_loss(encoded, original)
+        # L2 loss with YUV weighting (matches original StegaStamp)
+        yuv_weights = loss_cfg.yuv_weights
+        if yuv_weights != (1.0, 1.0, 1.0):
+            loss_l2 = compute_yuv_l2_loss(original, encoded, yuv_weights)
+        else:
+            loss_l2 = F.mse_loss(encoded, original)
         if skip_image_loss:
             weighted_l2 = torch.tensor(0.0, device=loss_l2.device)
         else:
