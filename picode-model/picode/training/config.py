@@ -46,6 +46,7 @@ class GANConfig:
     discriminator_lr: float = 4e-4  # Typically higher than generator LR
     lambda_gp: float = 10.0  # Gradient penalty weight for WGAN-GP
     n_critic: int = 1  # Discriminator updates per generator update
+    clip_weights: float = 0.01  # WGAN weight clipping bound
 
 
 @dataclass

@@ -149,6 +149,18 @@ class Trainer:
         # Create evaluator
         self.evaluator = Evaluator(self.encoder, self.decoder, self.device)
 
+        # Create discriminator if GAN training enabled
+        self.discriminator: nn.Module | None = None
+        self.d_optimizer: torch.optim.RMSprop | None = None
+
+        if config.loss.gan_config.enabled:
+            from picode.models.stegastamp.discriminator import Discriminator
+
+            self.discriminator = Discriminator().to(self.device)
+            self.d_optimizer = torch.optim.RMSprop(
+                self.discriminator.parameters(), lr=config.loss.gan_config.discriminator_lr
+            )
+
         # Training state
         self.global_step = 0
         self.best_metric = float("inf")
@@ -318,6 +330,39 @@ class Trainer:
         torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=10.0)
 
         self.optimizer.step()
+
+        # GAN training step (if enabled)
+        loss_D = torch.tensor(0.0, device=self.device)
+
+        if (
+            self.discriminator is not None
+            and self.d_optimizer is not None
+            and self.config.loss.gan_config.enabled
+        ):
+            # Discriminator step
+            self.d_optimizer.zero_grad()
+
+            # Real images
+            d_real = self.discriminator(images)
+            # Fake (encoded) images - detach to not backprop through encoder
+            d_fake = self.discriminator(encoded.detach())
+
+            # WGAN loss: maximize D(real) - D(fake)
+            # Discriminator wants: D(real) high, D(fake) low
+            # So minimize: D(fake) - D(real)
+            loss_D = d_fake.mean() - d_real.mean()
+            loss_D.backward()
+
+            self.d_optimizer.step()
+
+            # Clip discriminator weights (WGAN)
+            clip_val = self.config.loss.gan_config.clip_weights
+            for p in self.discriminator.parameters():
+                p.data.clamp_(-clip_val, clip_val)
+
+        # Add GAN metrics
+        if self.discriminator is not None:
+            metrics["loss_D"] = loss_D.item() if isinstance(loss_D, Tensor) else loss_D
 
         # Convert to float metrics
         metrics.update({k: v.item() for k, v in losses.items()})

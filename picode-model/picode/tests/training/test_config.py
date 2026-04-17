@@ -51,12 +51,17 @@ class TestGANConfig:
         assert cfg.discriminator_lr == 4e-4
         assert cfg.lambda_gp == 10.0
         assert cfg.n_critic == 1
+        assert cfg.clip_weights == 0.01
 
     def test_enabled(self) -> None:
         cfg = GANConfig(enabled=True, discriminator_lr=1e-4, lambda_gp=5.0)
         assert cfg.enabled is True
         assert cfg.discriminator_lr == 1e-4
         assert cfg.lambda_gp == 5.0
+
+    def test_clip_weights(self) -> None:
+        cfg = GANConfig(enabled=True, clip_weights=0.05)
+        assert cfg.clip_weights == 0.05
 
 
 class TestDistortionRamp:
