@@ -464,6 +464,24 @@ class Trainer:
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
 
+        # GAN generator loss (if enabled)
+        if (
+            not skip_image_loss
+            and hasattr(self, "discriminator")
+            and self.discriminator is not None
+        ):
+            g_scale = self._ramp(
+                self.config.loss.gan_config.g_loss_scale,
+                self.config.loss.gan_config.g_loss_ramp_steps,
+                effective_step,
+            )
+            if g_scale > 0:
+                d_fake = self.discriminator(encoded)
+                loss_G = -d_fake.mean()  # Maximize D(fake) = minimize -D(fake)
+                weighted_G = g_scale * loss_G
+                total = total + weighted_G
+                losses["loss_G"] = loss_G
+
         # Edge loss (after delay) - skip during no_im_loss_steps
         if not skip_image_loss and effective_step >= loss_cfg.l2_edge_delay_steps:
             edge_step = effective_step - loss_cfg.l2_edge_delay_steps

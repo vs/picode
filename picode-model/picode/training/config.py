@@ -47,6 +47,8 @@ class GANConfig:
     lambda_gp: float = 10.0  # Gradient penalty weight for WGAN-GP
     n_critic: int = 1  # Discriminator updates per generator update
     clip_weights: float = 0.01  # WGAN weight clipping bound
+    g_loss_scale: float = 0.001  # Generator adversarial loss weight
+    g_loss_ramp_steps: int = 20000  # Steps to ramp up generator loss
 
 
 @dataclass
