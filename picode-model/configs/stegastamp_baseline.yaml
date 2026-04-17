@@ -32,6 +32,12 @@ loss:
   l2_edge_ramp_steps: 10000  # Original: 10000
   l2_edge_delay_steps: 80000  # Original: 80000
   yuv_weights: [1.0, 100.0, 100.0]  # Original: Y=1, U=100, V=100
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001  # Original: 1e-5
+    g_loss_scale: 0.5  # Original: 0.5
+    g_loss_ramp_steps: 15000  # Original: 15000
+    clip_weights: 0.01  # Original: 0.01
 
 distortion:
   strategy: curriculum
