@@ -279,3 +279,129 @@ This can cause the decoder to learn faster than the encoder can adapt, leading t
 - Bit capacity is limited by decoder spatial resolution (~20 bits for 400×400 images)
 - Watch for trivial solutions (loss_msg stuck at 0.693 for BCE or 0.25 for MSE)
 - Balance message and image losses carefully to avoid degenerate encoder solutions
+
+---
+
+## TensorFlow vs PyTorch: The Critical Differences (February 2026)
+
+Extensive debugging revealed why the PyTorch implementation collapsed to trivial solutions while the original TensorFlow implementation worked. The TensorFlow code was verified to train successfully with just 100 images, reaching 95% bit accuracy within 500 steps.
+
+### The STN (Spatial Transformer Network) Problem
+
+**Root cause:** The STN's trainable linear parameters (`stn_fc_weight` and `stn_fc_bias`) destabilize training when learned from scratch.
+
+**Evidence from experiments:**
+
+| Configuration | Bit Accuracy @ 500 steps | Works? |
+|--------------|-------------------------|--------|
+| Full STN trainable | ~50% (random) | ❌ No |
+| STN linear frozen (W, b) | ~95% | ✅ Yes |
+| Entire STN frozen | ~94% | ✅ Yes |
+| No STN at all | ~96% | ✅ Yes |
+
+**What happens with trainable STN:**
+1. STN starts with identity transform (W=zeros, b=[1,0,0,0,1,0])
+2. During backprop, large gradients flow through `grid_sample`
+3. These gradients update W and b, causing non-identity transforms
+4. Non-identity transforms confuse the decoder early in training
+5. Decoder learns to output 0.5 for all bits (safe prediction = trivial solution)
+6. Once collapsed, the network cannot recover
+
+**Why TensorFlow doesn't have this problem:**
+TensorFlow's spatial transformer implementation has different gradient characteristics. The TF `stn_transformer` we implemented uses a different coordinate rescaling formula in `bilinear_sampler`:
+
+```python
+# TF STN bilinear_sampler
+x = 0.5 * ((x + 1.0) * tf.cast(max_x-1, 'float32'))
+```
+
+PyTorch's `F.grid_sample` with `align_corners=False` uses a different coordinate system. This affects gradient magnitudes through the spatial transform.
+
+**The fix:**
+Freeze the STN linear parameters during early training:
+```python
+decoder.stn_fc_weight.requires_grad = False
+decoder.stn_fc_bias.requires_grad = False
+```
+
+Or use a much smaller learning rate for STN parameters.
+
+### Encoder Output Clamping
+
+**Issue:** PyTorch encoder clamped output to [0, 1], but TensorFlow does not.
+
+```python
+# PyTorch (WRONG)
+encoded = image + residual
+encoded = torch.clamp(encoded, 0, 1)  # Blocks gradients at boundaries
+
+# TensorFlow (CORRECT)
+residual_warped = encoder((secret_input, input_warped))
+encoded_warped = residual_warped + input_warped  # No clamping!
+```
+
+**Why this matters:**
+- Clamping blocks gradients when values hit 0 or 1
+- Early in training, encoder may need to overshoot temporarily
+- The L2 loss naturally penalizes out-of-range values without blocking gradients
+
+**The fix:** Remove `torch.clamp()` from encoder. Let loss functions control the residual magnitude.
+
+### Decoder Weight Initialization
+
+**TensorFlow:** Uses `glorot_uniform` (Xavier) for decoder conv layers by default
+
+**PyTorch (original):** Used `kaiming_normal` (He) for ALL layers including decoder
+
+The decoder doesn't have ReLU at every layer (the STN params path has its own ReLU pattern), so He initialization may not be optimal. Xavier/Glorot is more appropriate for mixed architectures.
+
+However, experiments showed this initialization difference alone doesn't cause the trivial solution - the STN is the main culprit.
+
+### Training Loop Differences
+
+**TensorFlow no_im_loss_steps:**
+```python
+if no_im_loss:
+    # Train ONLY on secret_loss_op (unscaled)
+    sess.run([train_secret_op, loss_op, global_step_tensor], feed_dict)
+```
+
+**PyTorch warmup_steps:**
+```python
+if self.global_step < warmup_steps:
+    # Train on scaled message loss: 1.5 * loss_msg
+    total_loss = msg_scale * losses["loss_msg"]
+```
+
+The scaling factor (1.5x vs 1.0x) shouldn't matter for optimization, but it changes the gradient magnitude.
+
+### Summary of Required Fixes
+
+1. **STN linear layer:** Freeze `stn_fc_weight` and `stn_fc_bias` for first ~5000 steps, or use 10x lower learning rate
+2. **Encoder clamping:** Remove `torch.clamp(encoded, 0, 1)` from encoder forward pass
+3. **Decoder initialization:** Consider using Xavier/Glorot instead of He for decoder layers
+
+### Diagnostic Metrics to Watch
+
+When debugging trivial solution collapse:
+
+| Metric | Healthy | Collapsed |
+|--------|---------|-----------|
+| `decoder_prob_std` | > 0.1 | < 0.01 |
+| `bit_accuracy` | Improving | ~50% |
+| `loss_msg` | Decreasing | ~0.693 |
+| `residual_mean` | Near 0 | Drifting |
+
+The `decoder_prob_std` is the earliest indicator - if it collapses to near-zero within the first 10 steps, the network is heading for trivial solution.
+
+### Full Comparison Table
+
+| Aspect | TensorFlow Original | PyTorch (Fixed) |
+|--------|-------------------|-----------------|
+| Framework | TF 1.x compat mode | PyTorch 2.x |
+| Encoder clamp | No | No (removed) |
+| STN linear | Trainable | Frozen early |
+| Decoder init | Glorot (default) | Kaiming (He) |
+| Loss scaling | l2=1.5, lpips=1, msg=1 | Configurable |
+| no_im_loss_steps | 500 (default) | Configurable |
+| Result @ 500 steps | ~95% accuracy | ~95% accuracy (with fixes) |

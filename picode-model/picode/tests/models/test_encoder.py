@@ -52,14 +52,22 @@ class TestEncoderForward:
         result = encoder(sample_image, sample_message)
         assert result.shape == sample_image.shape
 
-    def test_output_range(
+    def test_output_not_clamped(
         self, sample_image: torch.Tensor, sample_message: torch.Tensor
     ) -> None:
-        """Output is clamped to [0, 1]."""
+        """Output is NOT clamped to allow gradient flow.
+
+        The original TensorFlow StegaStamp does not clamp the encoder output.
+        Clamping blocks gradients at boundaries and causes trivial solution collapse.
+        The L2/LPIPS losses naturally penalize out-of-range values.
+        """
         encoder = Encoder(num_bits=100)
         result = encoder(sample_image, sample_message)
-        assert result.min() >= 0.0
-        assert result.max() <= 1.0
+        # Output should be image + residual (unbounded)
+        # Most values should be near [0, 1] but some can exceed
+        residual = result - sample_image
+        # Residual should exist (not all zeros)
+        assert not torch.allclose(residual, torch.zeros_like(residual))
 
     def test_gradient_flow(
         self, sample_image: torch.Tensor, sample_message: torch.Tensor

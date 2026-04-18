@@ -25,10 +25,14 @@ class Decoder(BaseDecoder):
         num_bits: Number of bits in the message (default: 100).
         height: Image height for STN output (default: 400).
         width: Image width for STN output (default: 400).
+        freeze_stn_linear: If True, freeze the STN linear transformation parameters
+            (stn_fc_weight and stn_fc_bias). This prevents the trivial solution
+            collapse during early training. Default: True for stability.
     """
 
     def __init__(
-        self, num_bits: int = 100, height: int = 400, width: int = 400
+        self, num_bits: int = 100, height: int = 400, width: int = 400,
+        freeze_stn_linear: bool = True,
     ) -> None:
         super().__init__()
         self.num_bits = num_bits
@@ -52,6 +56,13 @@ class Decoder(BaseDecoder):
         # Initialized to identity transform: [[1, 0, 0], [0, 1, 0]]
         self.stn_fc_weight = nn.Parameter(torch.zeros(128, 6))
         self.stn_fc_bias = nn.Parameter(torch.tensor([1., 0., 0., 0., 1., 0.]))
+
+        # Optionally freeze STN linear parameters to prevent trivial solution collapse
+        # This is crucial for training stability - the STN gradients can destabilize
+        # the entire network during early training if allowed to update
+        if freeze_stn_linear:
+            self.stn_fc_weight.requires_grad = False
+            self.stn_fc_bias.requires_grad = False
 
         # Main decoder CNN - no BatchNorm
         self.decoder = nn.Sequential(
@@ -129,3 +140,22 @@ class Decoder(BaseDecoder):
         logits = self.forward(image)
         probs = torch.sigmoid(logits)
         return (probs > 0.5).float()
+
+    def unfreeze_stn_linear(self) -> None:
+        """Unfreeze the STN linear parameters.
+
+        Call this after early training (e.g., after 5000 steps) to allow
+        the STN to learn geometric corrections. This should only be done
+        after the encoder-decoder pair has learned basic message encoding.
+        """
+        self.stn_fc_weight.requires_grad = True
+        self.stn_fc_bias.requires_grad = True
+
+    def freeze_stn_linear(self) -> None:
+        """Freeze the STN linear parameters.
+
+        This prevents the STN from learning, keeping it at identity transform.
+        Useful for debugging or when geometric correction is not needed.
+        """
+        self.stn_fc_weight.requires_grad = False
+        self.stn_fc_bias.requires_grad = False

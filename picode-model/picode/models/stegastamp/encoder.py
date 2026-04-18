@@ -137,7 +137,9 @@ class Encoder(BaseEncoder):
         _ = F.relu(self.conv10(x))  # Computed but not used (matches original)
         residual = self.residual(x)  # (B, 3, 400, 400) - from conv9, not conv10
 
-        # Add residual to original image and clamp to valid range
+        # Add residual to original image
+        # IMPORTANT: Original TF does NOT clamp encoded image - this allows gradients
+        # to flow freely and the encoder can temporarily overshoot during training.
+        # Clamping blocks gradients at boundaries and causes trivial solution collapse.
         encoded = image + residual
-        encoded = torch.clamp(encoded, 0, 1)
         return encoded
