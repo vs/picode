@@ -32,25 +32,6 @@ This completely blocked gradients from flowing back to the encoder through the p
 
 **The fix:** Remove `torch.no_grad()`. The LPIPS network weights won't update anyway (it's in eval mode and not in the optimizer) - only the encoder receives gradients, which is what we want.
 
-### Bit Capacity Limitation
-
-The StegaStamp decoder architecture has a fundamental limitation: **it can reliably learn ~10-20 bits, but fails at 100 bits**.
-
-**Why:** The decoder compresses 400×400 input to 13×13 feature maps before the final linear layer. With 100 bits in a 10×10 spatial grid, each bit region becomes ~1 pixel at the final conv layer - not enough spatial resolution to distinguish patterns.
-
-| Bits | Spatial Grid | Patch Size | Final Feature Size | Result |
-|------|-------------|------------|-------------------|--------|
-| 10 | ~3×3 | ~130×130 | ~4×4 per patch | Works |
-| 20 | ~5×4 | ~80×100 | ~2.5×3 per patch | Marginal |
-| 100 | 10×10 | 40×40 | ~1×1 per patch | Fails |
-
-**The original StegaStamp uses only 20 bits**, not 100. This is why their architecture works.
-
-**Solutions:**
-1. Reduce `num_bits` to 20-30 (like original)
-2. Use error correction (BCH/LDPC) to encode fewer robust bits
-3. Modify decoder to preserve more spatial resolution
-
 ### Encoder Learns Degenerate Solutions
 
 Without proper loss balance, the encoder learns global shortcuts instead of spatially structured patterns:
@@ -106,7 +87,6 @@ This can cause the decoder to learn faster than the encoder can adapt, leading t
 - The STN with trainable linear parameters causes trivial solution collapse in PyTorch - freeze STN parameters early in training
 - LPIPS must allow gradients through (no `torch.no_grad()`)
 - Don't clamp encoder output - let loss functions control residual magnitude
-- Bit capacity is limited by decoder spatial resolution (~20 bits for 400×400 images)
 - Watch for trivial solutions (loss_msg stuck at 0.693 for BCE or 0.25 for MSE)
 - Balance message and image losses carefully to avoid degenerate encoder solutions
 
