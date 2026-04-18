@@ -80,8 +80,9 @@ def compute_yuv_l2_loss(
     diff = encoded_yuv - original_yuv
     mse_per_channel = (diff ** 2).mean(dim=(0, 2, 3))  # (3,)
 
+    # Original StegaStamp uses dot product without normalization
     weights = torch.tensor(list(yuv_weights), device=original.device, dtype=original.dtype)
-    weighted_loss = (mse_per_channel * weights).sum() / weights.sum()
+    weighted_loss = (mse_per_channel * weights).sum()  # No normalization to match original
 
     return weighted_loss
 
@@ -325,9 +326,8 @@ class Trainer:
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
-        # Apply gradient clipping to prevent exploding gradients
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=10.0)
-        torch.nn.utils.clip_grad_norm_(self.decoder.parameters(), max_norm=10.0)
+        # Note: Original StegaStamp does NOT clip generator/decoder gradients
+        # Removing gradient clipping to match original behavior
 
         self.optimizer.step()
 
@@ -352,6 +352,11 @@ class Trainer:
             # So minimize: D(fake) - D(real)
             loss_D = d_fake.mean() - d_real.mean()
             loss_D.backward()
+
+            # Clip discriminator gradients by value (original uses [-0.25, 0.25])
+            for p in self.discriminator.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-0.25, 0.25)
 
             self.d_optimizer.step()
 

@@ -132,8 +132,10 @@ class Encoder(BaseEncoder):
         x = F.relu(self.conv9(x))  # (B, 32, 400, 400)
 
         # Output layers - raw residual (no activation on final layer)
-        x = F.relu(self.conv10(x))
-        residual = self.residual(x)  # (B, 3, 400, 400)
+        # Note: Original TF implementation has a quirk where conv10 output is computed
+        # but residual comes directly from conv9. We match this behavior.
+        _ = F.relu(self.conv10(x))  # Computed but not used (matches original)
+        residual = self.residual(x)  # (B, 3, 400, 400) - from conv9, not conv10
 
         # Add residual to original image and clamp to valid range
         encoded = image + residual
