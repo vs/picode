@@ -16,6 +16,7 @@ training:
   image_size: 400
   warmup_steps: 500
   no_im_loss_steps: 1500  # Original: 1500
+  generator_grad_clip: 0.25  # Original: clips to [-0.25, 0.25]
 
 loss:
   message:
@@ -28,9 +29,14 @@ loss:
   lpips:
     scale: 1.5  # Original: 1.5
     ramp_steps: 15000  # Original: 15000
+
+  # Border falloff (original StegaStamp approach)
+  use_border_falloff: true
+  border_falloff_speed: 4
   l2_edge_gain: 10.0
   l2_edge_ramp_steps: 10000  # Original: 10000
   l2_edge_delay_steps: 80000  # Original: 80000
+
   yuv_weights: [1.0, 100.0, 100.0]  # Original: Y=1, U=100, V=100
   gan_config:
     enabled: true

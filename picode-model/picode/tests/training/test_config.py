@@ -47,11 +47,12 @@ class TestDelayedLossRamp:
 class TestGANConfig:
     def test_defaults(self) -> None:
         cfg = GANConfig()
-        assert cfg.enabled is False
-        assert cfg.discriminator_lr == 4e-4
+        assert cfg.enabled is True  # Changed: Enable by default to match original
+        assert cfg.discriminator_lr == 1e-5  # Changed: 0.00001 (original)
         assert cfg.lambda_gp == 10.0
         assert cfg.n_critic == 1
         assert cfg.clip_weights == 0.01
+        assert cfg.g_loss_scale == 1.0  # Changed: from 0.001 to 1.0 (original)
 
     def test_enabled(self) -> None:
         cfg = GANConfig(enabled=True, discriminator_lr=1e-4, lambda_gp=5.0)
@@ -78,16 +79,20 @@ class TestDistortionRamp:
 class TestLossConfig:
     def test_defaults(self) -> None:
         cfg = LossConfig()
-        assert cfg.message.scale == 7.0  # StegaStamp uses ~7x higher message loss
-        assert cfg.l2.scale == 1.0
+        # Updated to match original StegaStamp TensorFlow implementation
+        assert cfg.message.scale == 1.0  # Original: 1.0
+        assert cfg.l2.scale == 1.5  # Original: 1.5
         assert cfg.l2.ramp_steps == 20000
-        assert cfg.lpips.scale == 1.5
+        assert cfg.lpips.scale == 1.0  # Original: 1.0
         assert cfg.l2_edge_gain == 10.0
         assert cfg.l2_edge_delay_steps == 60000
         assert cfg.yuv_weights == (1.0, 1.0, 1.0)
         assert cfg.ffl is None
         assert cfg.gan is None
-        assert cfg.gan_config.enabled is False
+        assert cfg.gan_config.enabled is True  # Changed: Enable by default
+        # New border falloff parameters
+        assert cfg.use_border_falloff is True
+        assert cfg.border_falloff_speed == 4
 
     def test_with_ffl_and_gan(self) -> None:
         cfg = LossConfig(
@@ -155,7 +160,7 @@ class TestConfig:
         )
         assert cfg.experiment_name == "test"
         assert cfg.training.num_steps == 140000
-        assert cfg.loss.l2.scale == 1.0
+        assert cfg.loss.l2.scale == 1.5  # Changed: Original StegaStamp default
 
 
 class TestLoadConfig:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any, cast
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -83,6 +84,90 @@ def compute_yuv_l2_loss(
     # Original StegaStamp uses dot product without normalization
     weights = torch.tensor(list(yuv_weights), device=original.device, dtype=original.dtype)
     weighted_loss = (mse_per_channel * weights).sum()  # No normalization to match original
+
+    return weighted_loss
+
+
+def create_border_falloff_mask(
+    height: int,
+    width: int,
+    falloff_speed: int = 4,
+    device: torch.device | None = None,
+) -> Tensor:
+    """Create cosine-weighted border falloff mask matching original StegaStamp.
+
+    The mask has value 0 at center, ramping up to 1 at borders using
+    a cosine function. This penalizes perturbations at image edges more heavily.
+
+    Args:
+        height: Image height (e.g., 400).
+        width: Image width (e.g., 400).
+        falloff_speed: Controls falloff rate (default 4 = 25% border region).
+        device: Target device.
+
+    Returns:
+        (1, 1, H, W) tensor for broadcasting with images.
+    """
+    falloff_im = np.ones((height, width), dtype=np.float32)
+
+    # Vertical falloff (top and bottom borders)
+    for i in range(height // falloff_speed):
+        factor = (np.cos(4 * np.pi * i / height + np.pi) + 1) / 2
+        falloff_im[-i - 1, :] *= factor
+        falloff_im[i, :] *= factor
+
+    # Horizontal falloff (left and right borders)
+    for j in range(width // falloff_speed):
+        factor = (np.cos(4 * np.pi * j / width + np.pi) + 1) / 2
+        falloff_im[:, -j - 1] *= factor
+        falloff_im[:, j] *= factor
+
+    # Invert: now high values at borders
+    falloff_im = 1 - falloff_im
+
+    # Convert to tensor with broadcast dimensions
+    mask = torch.from_numpy(falloff_im).unsqueeze(0).unsqueeze(0)
+    if device is not None:
+        mask = mask.to(device)
+
+    return mask
+
+
+def compute_yuv_l2_loss_with_falloff(
+    original: Tensor,
+    encoded: Tensor,
+    yuv_weights: tuple[float, float, float],
+    falloff_mask: Tensor,
+    edge_gain: float = 10.0,
+) -> Tensor:
+    """Compute YUV-weighted L2 loss with border falloff mask.
+
+    Matches original StegaStamp: im_diff += im_diff * falloff_im * edge_gain
+
+    Args:
+        original: (B, 3, H, W) original image in [0, 1].
+        encoded: (B, 3, H, W) encoded image in [0, 1].
+        yuv_weights: [Y_weight, U_weight, V_weight].
+        falloff_mask: (1, 1, H, W) border falloff mask (0 center, 1 border).
+        edge_gain: Amplification factor for border regions.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    original_yuv = rgb_to_yuv(original)
+    encoded_yuv = rgb_to_yuv(encoded)
+
+    # Compute difference
+    diff = encoded_yuv - original_yuv
+
+    # Apply border falloff amplification (original formula: im_diff += im_diff * falloff_im)
+    scaled_falloff = falloff_mask * edge_gain
+    diff = diff + diff * scaled_falloff
+
+    # Weighted MSE per channel
+    mse_per_channel = (diff ** 2).mean(dim=(0, 2, 3))  # (3,)
+    weights = torch.tensor(list(yuv_weights), device=original.device, dtype=original.dtype)
+    weighted_loss = (mse_per_channel * weights).sum()
 
     return weighted_loss
 
@@ -168,6 +253,17 @@ class Trainer:
 
         # Optional LPIPS loss (lazy loaded)
         self._lpips_fn: nn.Module | None = None
+
+        # Create border falloff mask (cached for efficiency)
+        if config.loss.use_border_falloff:
+            self._border_falloff_mask: Tensor | None = create_border_falloff_mask(
+                height=config.training.image_size,
+                width=config.training.image_size,
+                falloff_speed=config.loss.border_falloff_speed,
+                device=self.device,
+            )
+        else:
+            self._border_falloff_mask = None
 
     @classmethod
     def from_config(cls, path: str, overrides: dict[str, Any] | None = None) -> Trainer:
@@ -326,8 +422,15 @@ class Trainer:
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
-        # Note: Original StegaStamp does NOT clip generator/decoder gradients
-        # Removing gradient clipping to match original behavior
+        # Clip generator/decoder gradients (matches original StegaStamp)
+        if self.config.training.generator_grad_clip > 0:
+            clip_val = self.config.training.generator_grad_clip
+            for p in self.encoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
+            for p in self.decoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
 
         self.optimizer.step()
 
@@ -487,16 +590,24 @@ class Trainer:
                 total = total + weighted_G
                 losses["loss_G"] = loss_G
 
-        # Edge loss (after delay) - skip during no_im_loss_steps
+        # Border falloff loss (after delay) - skip during no_im_loss_steps
+        # This matches original StegaStamp: amplifies L2 loss at image borders
         if not skip_image_loss and effective_step >= loss_cfg.l2_edge_delay_steps:
             edge_step = effective_step - loss_cfg.l2_edge_delay_steps
             edge_scale = self._ramp(
                 loss_cfg.l2_edge_gain, loss_cfg.l2_edge_ramp_steps, edge_step
             )
             if edge_scale > 0:
-                loss_edge = self._compute_edge_loss(original, encoded)
-                weighted_edge = edge_scale * loss_edge
-                total = total + weighted_edge
+                if loss_cfg.use_border_falloff and self._border_falloff_mask is not None:
+                    # Border falloff: amplify loss at borders using cosine mask
+                    loss_edge = compute_yuv_l2_loss_with_falloff(
+                        original, encoded, yuv_weights, self._border_falloff_mask, edge_scale
+                    )
+                else:
+                    # Fallback to Sobel edge loss if border falloff disabled
+                    loss_edge = self._compute_edge_loss(original, encoded)
+                    loss_edge = edge_scale * loss_edge
+                total = total + loss_edge
                 losses["loss_edge"] = loss_edge
 
         losses["loss"] = total

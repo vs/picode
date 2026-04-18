@@ -1,0 +1,87 @@
+# configs/stegastamp_original.yaml
+# Configuration matching original StegaStamp TensorFlow implementation exactly
+# Reference: https://github.com/tancik/StegaStamp
+
+experiment_name: stegastamp_original
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 4
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 0  # Original doesn't use warmup
+  no_im_loss_steps: 500  # Original: 500 steps message-only training
+  generator_grad_clip: 0.25  # Original: clips to [-0.25, 0.25]
+
+loss:
+  message:
+    scale: 1.0  # Original: secret_loss_scale = 1.0
+    ramp_steps: 1
+  message_loss_type: bce
+
+  l2:
+    scale: 1.5  # Original: 1.5
+    ramp_steps: 20000  # Original: ramp_l 20k
+
+  lpips:
+    scale: 1.0  # Original: lpips_loss_scale = 1.0
+    ramp_steps: 20000  # Original: ramp_l 20k
+
+  # Border falloff (original StegaStamp approach)
+  # Replaces Sobel edge detection with cosine-weighted border mask
+  use_border_falloff: true
+  border_falloff_speed: 4  # Original: falloff_speed = 4
+  l2_edge_gain: 10.0  # Original: border region amplification
+  l2_edge_ramp_steps: 20000
+  l2_edge_delay_steps: 60000
+
+  yuv_weights: [1.0, 1.0, 1.0]  # Original uses equal YUV weights
+
+  # GAN enabled with original hyperparameters
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001  # Original: 1e-5
+    g_loss_scale: 1.0  # Original: G_loss_scale = 1.0
+    g_loss_ramp_steps: 20000
+    clip_weights: 0.01  # Original: WGAN weight clipping
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 10000
+  brightness:
+    strength: 0.3
+    ramp_steps: 1000
+  saturation:
+    strength: 1.0
+    ramp_steps: 1000
+  hue:
+    strength: 0.1
+    ramp_steps: 1000
+  noise:
+    strength: 0.02
+    ramp_steps: 1000
+  contrast: [0.5, 1.5]
+  contrast_ramp_steps: 1000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 1000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 5
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
+  tensorboard_dir: runs

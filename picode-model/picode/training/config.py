@@ -40,14 +40,15 @@ class GANConfig:
     """GAN training configuration.
 
     Controls discriminator training and generator adversarial loss.
+    Defaults match original StegaStamp TensorFlow implementation.
     """
 
-    enabled: bool = False
-    discriminator_lr: float = 4e-4  # Typically higher than generator LR
+    enabled: bool = True  # Enable by default to match original
+    discriminator_lr: float = 1e-5  # Original: 0.00001
     lambda_gp: float = 10.0  # Gradient penalty weight for WGAN-GP
     n_critic: int = 1  # Discriminator updates per generator update
-    clip_weights: float = 0.01  # WGAN weight clipping bound
-    g_loss_scale: float = 0.001  # Generator adversarial loss weight
+    clip_weights: float = 0.01  # Original: 0.01
+    g_loss_scale: float = 1.0  # Original: 1.0 (not 0.001)
     g_loss_ramp_steps: int = 20000  # Steps to ramp up generator loss
 
 
@@ -55,20 +56,23 @@ class GANConfig:
 class LossConfig:
     """Loss function configuration with ramping.
 
-    StegaStamp uses ~7x higher message loss than image loss to ensure
-    the encoder prioritizes message encoding over image preservation.
-    Without this, the encoder learns to output the original image unchanged.
+    Defaults match original StegaStamp TensorFlow implementation.
     """
 
-    message: LossRamp = field(default_factory=lambda: LossRamp(7.0, 1))
-    l2: LossRamp = field(default_factory=lambda: LossRamp(1.0, 20000))
-    lpips: LossRamp = field(default_factory=lambda: LossRamp(1.5, 20000))
+    message: LossRamp = field(default_factory=lambda: LossRamp(1.0, 1))  # Original: 1.0
+    l2: LossRamp = field(default_factory=lambda: LossRamp(1.5, 20000))  # Original: 1.5
+    lpips: LossRamp = field(default_factory=lambda: LossRamp(1.0, 20000))  # Original: 1.0
 
     # Message loss type: "bce" (binary cross entropy) or "mse" (mean squared error)
     # MSE avoids the trivial solution where decoder outputs 0.5 for all bits
     message_loss_type: str = "bce"
 
-    l2_edge_gain: float = 10.0
+    # Border falloff mask (original StegaStamp approach)
+    # Amplifies loss at image borders using cosine falloff
+    use_border_falloff: bool = True  # Enable by default to match original
+    border_falloff_speed: int = 4  # Original: falloff_speed=4 (25% border region)
+
+    l2_edge_gain: float = 10.0  # Gain for border falloff amplification
     l2_edge_ramp_steps: int = 20000
     l2_edge_delay_steps: int = 60000
 
@@ -107,7 +111,10 @@ class DistortionConfig:
 
 @dataclass
 class TrainingConfig:
-    """Training hyperparameters."""
+    """Training hyperparameters.
+
+    Defaults match original StegaStamp TensorFlow implementation.
+    """
 
     num_steps: int = 140000
     lr: float = 1e-4
@@ -116,7 +123,8 @@ class TrainingConfig:
     warmup_steps: int = 500
     residual_scale: float = 0.1  # picode_v2 encoder residual magnitude
     encoder_lr_scale: float = 1.0  # Multiplier for encoder learning rate (decoder uses base lr)
-    no_im_loss_steps: int = 0  # Steps to train message loss only (no L2/LPIPS), like StegaStamp
+    no_im_loss_steps: int = 500  # Original: 500 steps message-only training
+    generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
 
 
 @dataclass
