@@ -26,13 +26,13 @@ class Decoder(BaseDecoder):
         height: Image height for STN output (default: 400).
         width: Image width for STN output (default: 400).
         freeze_stn_linear: If True, freeze the STN linear transformation parameters
-            (stn_fc_weight and stn_fc_bias). This prevents the trivial solution
-            collapse during early training. Default: True for stability.
+            (stn_fc_weight and stn_fc_bias). Default: False to match original
+            StegaStamp which trains STN from the start.
     """
 
     def __init__(
         self, num_bits: int = 100, height: int = 400, width: int = 400,
-        freeze_stn_linear: bool = True,
+        freeze_stn_linear: bool = False,
     ) -> None:
         super().__init__()
         self.num_bits = num_bits

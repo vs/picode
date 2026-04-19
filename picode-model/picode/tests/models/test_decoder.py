@@ -80,3 +80,46 @@ class TestDecoderForward:
         # Forward should still work (STN handles transform)
         result = decoder(sample_image)
         assert result.shape == (2, 100)
+
+
+class TestSTNTrainability:
+    """Test that STN parameters are trainable (matches original StegaStamp)."""
+
+    def test_stn_parameters_trainable_by_default(self) -> None:
+        """STN parameters should be trainable by default (not frozen)."""
+        decoder = Decoder(num_bits=100)
+        assert decoder.stn_fc_weight.requires_grad is True
+        assert decoder.stn_fc_bias.requires_grad is True
+
+    def test_stn_parameters_receive_gradients(self, sample_image: torch.Tensor) -> None:
+        """STN parameters should receive gradients during backprop."""
+        decoder = Decoder(num_bits=100)
+        output = decoder(sample_image)
+        output.sum().backward()
+
+        assert decoder.stn_fc_weight.grad is not None
+        assert decoder.stn_fc_bias.grad is not None
+        # Gradients should be non-zero (STN is actually learning)
+        assert not torch.all(decoder.stn_fc_weight.grad == 0)
+
+    def test_freeze_stn_linear_option(self) -> None:
+        """Can explicitly freeze STN parameters when needed."""
+        decoder = Decoder(num_bits=100, freeze_stn_linear=True)
+        assert decoder.stn_fc_weight.requires_grad is False
+        assert decoder.stn_fc_bias.requires_grad is False
+
+    def test_unfreeze_stn_linear_method(self) -> None:
+        """Can unfreeze STN parameters after initialization."""
+        decoder = Decoder(num_bits=100, freeze_stn_linear=True)
+        assert decoder.stn_fc_weight.requires_grad is False
+        decoder.unfreeze_stn_linear()
+        assert decoder.stn_fc_weight.requires_grad is True
+        assert decoder.stn_fc_bias.requires_grad is True
+
+    def test_freeze_stn_linear_method(self) -> None:
+        """Can freeze STN parameters after initialization."""
+        decoder = Decoder(num_bits=100)  # Default: unfrozen
+        assert decoder.stn_fc_weight.requires_grad is True
+        decoder.freeze_stn_linear()
+        assert decoder.stn_fc_weight.requires_grad is False
+        assert decoder.stn_fc_bias.requires_grad is False
