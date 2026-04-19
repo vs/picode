@@ -50,6 +50,7 @@ class GANConfig:
     clip_weights: float = 0.01  # Original: 0.01
     g_loss_scale: float = 1.0  # Original: 1.0 (not 0.001)
     g_loss_ramp_steps: int = 20000  # Steps to ramp up generator loss
+    gradient_clip: float = 0.25  # Original: clips D gradients to [-0.25, 0.25]
 
 
 @dataclass

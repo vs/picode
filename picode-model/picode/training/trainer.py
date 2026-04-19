@@ -515,9 +515,11 @@ class Trainer:
             loss_D.backward()
 
             # Clip discriminator gradients by value (original uses [-0.25, 0.25])
-            for p in self.discriminator.parameters():
-                if p.grad is not None:
-                    p.grad.data.clamp_(-0.25, 0.25)
+            if self.config.loss.gan_config.gradient_clip > 0:
+                clip_val = self.config.loss.gan_config.gradient_clip
+                for p in self.discriminator.parameters():
+                    if p.grad is not None:
+                        p.grad.data.clamp_(-clip_val, clip_val)
 
             self.d_optimizer.step()
 

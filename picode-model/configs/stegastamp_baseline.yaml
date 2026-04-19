@@ -15,19 +15,22 @@ training:
   num_bits: 100  # Original uses 100 bits
   image_size: 400
   warmup_steps: 500
-  no_im_loss_steps: 1500  # Original: 1500
+  no_im_loss_steps: 500  # Original: 500
   generator_grad_clip: 0.25  # Original: clips to [-0.25, 0.25]
+  borders: black  # Original: black borders for out-of-frame regions
+  rnd_trans: 0.1  # Original: 0.1 max perspective translation
+  rnd_trans_ramp: 10000  # Original: 10000 steps to ramp up perspective
 
 loss:
   message:
-    scale: 1.5  # Original: 1.5 (not 7.0)
+    scale: 1.0  # Original: 1.0
     ramp_steps: 1
   message_loss_type: bce
   l2:
-    scale: 2.0  # Original: 2.0 (not 1.0)
+    scale: 1.5  # Original: 1.5
     ramp_steps: 15000  # Original: 15000
   lpips:
-    scale: 1.5  # Original: 1.5
+    scale: 1.0  # Original: 1.0
     ramp_steps: 15000  # Original: 15000
 
   # Border falloff (original StegaStamp approach)
@@ -35,15 +38,16 @@ loss:
   border_falloff_speed: 4
   l2_edge_gain: 10.0
   l2_edge_ramp_steps: 10000  # Original: 10000
-  l2_edge_delay_steps: 80000  # Original: 80000
+  l2_edge_delay_steps: 60000  # Original: 60000
 
-  yuv_weights: [1.0, 100.0, 100.0]  # Original: Y=1, U=100, V=100
+  yuv_weights: [1.0, 1.0, 1.0]  # Original: equal weights (Y=1, U=1, V=1)
   gan_config:
     enabled: true
     discriminator_lr: 0.00001  # Original: 1e-5
-    g_loss_scale: 0.5  # Original: 0.5
+    g_loss_scale: 1.0  # Original: 1.0
     g_loss_ramp_steps: 15000  # Original: 15000
     clip_weights: 0.01  # Original: 0.01
+    gradient_clip: 0.25  # Original: clips D gradients to [-0.25, 0.25]
 
 distortion:
   strategy: curriculum
