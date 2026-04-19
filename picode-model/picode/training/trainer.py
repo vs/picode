@@ -215,11 +215,25 @@ class Trainer:
         self.decoder: BaseDecoder = StegaDecoder(num_bits=num_bits).to(self.device)
 
         # Create optimizer with optional separate learning rates
+        # STN linear params get a much lower LR to prevent collapse
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
+        stn_lr = config.training.lr * config.training.stn_lr_scale
+
+        # Separate decoder params: STN linear vs rest
+        stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
+        stn_params = []
+        decoder_params = []
+        for name, param in self.decoder.named_parameters():
+            if name in stn_param_names:
+                stn_params.append(param)
+            else:
+                decoder_params.append(param)
+
         param_groups = [
             {"params": self.encoder.parameters(), "lr": encoder_lr},
-            {"params": self.decoder.parameters(), "lr": decoder_lr},
+            {"params": decoder_params, "lr": decoder_lr},
+            {"params": stn_params, "lr": stn_lr},
         ]
         self.optimizer = torch.optim.Adam(param_groups)
         self.scheduler = None  # No scheduler by default

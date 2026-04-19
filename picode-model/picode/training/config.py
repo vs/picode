@@ -124,6 +124,7 @@ class TrainingConfig:
     warmup_steps: int = 500
     residual_scale: float = 0.1  # picode_v2 encoder residual magnitude
     encoder_lr_scale: float = 1.0  # Multiplier for encoder learning rate (decoder uses base lr)
+    stn_lr_scale: float = 0.01  # Multiplier for STN linear params (stn_fc_weight, stn_fc_bias)
     no_im_loss_steps: int = 500  # Original: 500 steps message-only training
     generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
 
