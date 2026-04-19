@@ -12,6 +12,11 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from picode.distortions.native.perspective import (
+    get_identity_transform,
+    get_rand_transform_matrix,
+    perspective_transform,
+)
 from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
 from picode.models.stegastamp import Decoder as StegaDecoder
@@ -382,6 +387,15 @@ class Trainer:
     def _train_step(self, images: Tensor) -> dict[str, float]:
         """Execute a single training step.
 
+        Implements the StegaStamp warp-encode-unwarp flow:
+        1. Generate random perspective transform matrices
+        2. Warp input image to canonical encoding space
+        3. Encode in warped space
+        4. Unwarp residual back to original space
+        5. Apply border handling
+        6. Apply remaining distortions
+        7. Decode
+
         Args:
             images: Batch of images (B, C, H, W) in [0, 1].
 
@@ -390,13 +404,57 @@ class Trainer:
         """
         batch_size = images.shape[0]
         num_bits = self.config.training.num_bits
+        image_size = self.config.training.image_size
 
         # Generate random messages
         messages = torch.randint(0, 2, (batch_size, num_bits), device=self.device).float()
 
-        # Forward pass
-        encoded = self.encoder(images, messages)
+        # Compute ramped perspective strength
+        rnd_trans = self.config.training.rnd_trans
+        rnd_trans_ramp = self.config.training.rnd_trans_ramp
+        if rnd_trans_ramp > 0:
+            perspective_strength = min(
+                rnd_trans * self.global_step / rnd_trans_ramp, rnd_trans
+            )
+        else:
+            perspective_strength = rnd_trans
+
+        # Generate perspective transform matrices (or identity if strength is 0)
+        if perspective_strength > 0:
+            M_forward, M_inverse = get_rand_transform_matrix(
+                batch_size, image_size, perspective_strength, self.device
+            )
+        else:
+            M_forward = get_identity_transform(batch_size, self.device)
+            M_inverse = get_identity_transform(batch_size, self.device)
+
+        # 1. Warp input image to canonical space
+        # M_forward maps src->dst, so to warp we need to sample from src given dst
+        # This means we apply M_inverse to get source coords for each dest coord
+        images_warped = perspective_transform(images, M_inverse, padding_mode="border")
+
+        # 2. Encode in warped space
+        encoded_warped = self.encoder(images_warped, messages)
+
+        # 3. Compute residual in warped space
+        residual_warped = encoded_warped - images_warped
+
+        # 4. Unwarp residual back to original space
+        # To unwarp, we sample from warped coords given original coords
+        # This means we apply M_forward to get warped coords for each original coord
+        residual_unwarped = perspective_transform(
+            residual_warped, M_forward, padding_mode="zeros"
+        )
+
+        # 5. Apply border handling and combine with original image
+        encoded = self._apply_border_mode(
+            images, residual_unwarped, M_forward, self.config.training.borders
+        )
+
+        # 6. Apply distortions to encoded image
         distorted = self.distortion(encoded, self.global_step)
+
+        # 7. Decode
         decoded_logits = self.decoder(distorted)
 
         # Compute residual for diagnostics (encoded - original)
@@ -493,6 +551,85 @@ class Trainer:
             metrics["bit_accuracy"] = bit_accuracy
 
         return metrics
+
+    def _apply_border_mode(
+        self,
+        original: Tensor,
+        residual: Tensor,
+        M_forward: Tensor,
+        border_mode: str,
+    ) -> Tensor:
+        """Apply border handling after unwarping residual.
+
+        The border mode determines how to handle pixels outside the valid
+        transformed region (where the residual is zero due to padding).
+
+        Modes:
+        - no_edge: Simply add residual to original (may have visible edge artifacts)
+        - black: Black border outside valid region
+        - white: White border outside valid region
+        - random: Random gray value border (same value for entire border)
+        - randomrgb: Random RGB color border (same color for entire border)
+        - image: Use original image as background (default, recommended)
+
+        Args:
+            original: Original images (B, C, H, W) in [0, 1].
+            residual: Unwarped residual (B, C, H, W).
+            M_forward: Forward homography matrices (B, 3, 3) - used to compute valid mask.
+            border_mode: Border handling mode.
+
+        Returns:
+            Final encoded image with border handling applied.
+        """
+        B, C, H, W = original.shape
+
+        if border_mode == "no_edge":
+            # Simply add residual - visible edge artifacts possible
+            return (original + residual).clamp(0.0, 1.0)
+
+        # Create a mask of valid transformed region
+        # Transform a white image and see where it maps to
+        ones = torch.ones(B, 1, H, W, device=original.device, dtype=original.dtype)
+        valid_mask = perspective_transform(ones, M_forward, padding_mode="zeros")
+        # Threshold to binary mask (pixels > 0.5 are valid)
+        valid_mask = (valid_mask > 0.5).float()
+
+        # Apply residual only in valid region
+        encoded_valid = original + residual * valid_mask
+
+        if border_mode == "image":
+            # Use original image as background (residual is 0 outside valid region)
+            # This is effectively what we already have
+            return encoded_valid.clamp(0.0, 1.0)
+
+        elif border_mode == "black":
+            # Black border outside valid region
+            background = torch.zeros_like(original)
+
+        elif border_mode == "white":
+            # White border outside valid region
+            background = torch.ones_like(original)
+
+        elif border_mode == "random":
+            # Random gray value (same for entire batch)
+            gray_value = torch.rand(1, device=original.device, dtype=original.dtype)
+            background = torch.full_like(original, gray_value.item())
+
+        elif border_mode == "randomrgb":
+            # Random RGB color (same for entire batch)
+            rgb_values = torch.rand(1, 3, 1, 1, device=original.device, dtype=original.dtype)
+            background = rgb_values.expand(B, C, H, W)
+
+        else:
+            # Default to image mode
+            background = original
+
+        # Composite: valid region from encoded, background elsewhere
+        # Use valid_mask to blend (expand to match channels)
+        valid_mask_3ch = valid_mask.expand(-1, C, -1, -1)
+        result = encoded_valid * valid_mask_3ch + background * (1 - valid_mask_3ch)
+
+        return result.clamp(0.0, 1.0)
 
     def _compute_ramped_losses(
         self,

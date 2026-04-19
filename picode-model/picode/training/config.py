@@ -126,6 +126,12 @@ class TrainingConfig:
     no_im_loss_steps: int = 500  # Original: 500 steps message-only training
     generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
 
+    # Pre-encode warp / post-encode unwarp (StegaStamp training strategy)
+    # This creates a canonical encoding space that is robust to geometric transforms
+    borders: str = "black"  # Border mode: no_edge, black, random, randomrgb, white, image
+    rnd_trans: float = 0.1  # Max perspective translation (fraction of image size)
+    rnd_trans_ramp: int = 10000  # Steps to ramp up perspective strength from 0 to rnd_trans
+
 
 @dataclass
 class DataConfig:
