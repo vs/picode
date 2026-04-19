@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 from torchvision import transforms
 from torchvision.utils import save_image
 
@@ -82,15 +82,13 @@ def encode_command(args: argparse.Namespace) -> None:
     device = get_device(args.device)
     encoder, decoder, num_bits = load_model(args.checkpoint, device)
 
-    # Load and preprocess image
-    transform = transforms.Compose([
-        transforms.Resize((args.size, args.size)),
-        transforms.ToTensor(),
-    ])
-
+    # Load and preprocess image with center-crop (matches StegaStamp's ImageOps.fit)
     image = Image.open(args.input).convert("RGB")
-    original_size = image.size
-    image_tensor = transform(image).unsqueeze(0).to(device)
+    image_cropped = ImageOps.fit(image, (args.size, args.size), method=Image.LANCZOS)
+
+    # Convert to tensor
+    to_tensor = transforms.ToTensor()
+    image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
     # Convert message to bits
     message = args.message
@@ -124,13 +122,7 @@ def encode_command(args: argparse.Namespace) -> None:
         save_image(residual_vis, args.save_residual)
         print(f"Saved residual to {args.save_residual}")
 
-    # Resize back to original if needed
-    if original_size != (args.size, args.size):
-        encoded_pil = Image.open(args.output)
-        encoded_pil = encoded_pil.resize(original_size, Image.Resampling.LANCZOS)
-        encoded_pil.save(args.output)
-
-    print(f"Encoded message into {args.output}")
+    print(f"Encoded message into {args.output} ({args.size}x{args.size})")
     print(f"Message: {message}")
     print(f"Bits used: {num_bits}")
 
@@ -202,7 +194,7 @@ Examples:
         "--size",
         type=int,
         default=400,
-        help="Image size for processing (default: 400)",
+        help="Output image size; input is center-cropped to square (default: 400)",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
