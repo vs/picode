@@ -3,7 +3,7 @@
 These implementations match the StegaStamp paper and use no external libraries.
 """
 
-from picode.distortions.native.blur import GaussianBlur, MotionBlur, RandomBlur
+from picode.distortions.native.blur import GaussianBlur, MotionBlur, RandomBlur, RandomBlurKernel
 from picode.distortions.native.color import BrightnessHue, Contrast, Saturation
 from picode.distortions.native.composite import Compose
 from picode.distortions.native.compression import JPEGCompression
@@ -21,6 +21,7 @@ __all__ = [
     "MotionBlur",
     "PerspectiveWarp",
     "RandomBlur",
+    "RandomBlurKernel",
     "Rotation",
     "Saturation",
     "Scale",

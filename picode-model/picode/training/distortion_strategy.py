@@ -21,6 +21,7 @@ from picode.distortions.native import (
     GaussianNoise,
     JPEGCompression,
     PerspectiveWarp,
+    RandomBlurKernel,
     Rotation,
     Saturation,
     Scale,
@@ -126,12 +127,25 @@ class CurriculumDistortion:
     strength over the specified ramp_steps. This allows the model to
     first learn basic encoding before facing stronger distortions.
 
+    IMPORTANT: Random blur is applied FIRST before other distortions,
+    matching StegaStamp's training pipeline. This is critical for
+    achieving StegaStamp parity.
+
     Args:
         config: DistortionConfig with ramp parameters.
     """
 
     def __init__(self, config: DistortionConfig) -> None:
         self.config = config
+        # Random blur applied FIRST (matches StegaStamp)
+        # 25% Gaussian, 25% line/motion, 50% identity
+        self.random_blur = RandomBlurKernel(
+            probs=(0.25, 0.25),
+            kernel_size=7,
+            sigma_range_gauss=(1.0, 3.0),
+            sigma_range_line=(0.25, 1.0),
+            min_line_width=3,
+        )
 
     def _ramp(self, ramp: DistortionRamp, step: int) -> float:
         """Compute ramped strength at current step.
@@ -157,6 +171,9 @@ class CurriculumDistortion:
         Returns:
             Distorted tensor.
         """
+        # 1. BLUR FIRST (always, matches StegaStamp)
+        image = self.random_blur(image)
+
         distortions: list[Distortion] = []
 
         # Noise - ramp the std parameter
