@@ -164,12 +164,27 @@ class LoggingConfig:
 
 
 @dataclass
+class ModelConfig:
+    """Model architecture configuration.
+
+    Attributes:
+        type: Model type, either "stegastamp" or "picodelite".
+        encoder_size: Image size for the encoder (e.g., 400 for StegaStamp, 800 for PicodeLite).
+        decoder_size: Image size for the decoder (e.g., 400 for StegaStamp, 320 for PicodeLite).
+    """
+
+    type: str = "stegastamp"  # stegastamp or picodelite
+    encoder_size: int = 400
+    decoder_size: int = 400
+
+
+@dataclass
 class Config:
     """Complete training configuration."""
 
     experiment_name: str
     data: DataConfig
-    model: str = "stegastamp"  # Only stegastamp is supported
+    model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     loss: LossConfig = field(default_factory=LossConfig)
     distortion: DistortionConfig = field(default_factory=DistortionConfig)
@@ -192,6 +207,16 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     """Convert nested dict to Config, handling nested dataclasses."""
     # Handle DataConfig (required)
     data["data"] = DataConfig(**data["data"])
+
+    # Handle ModelConfig (BEFORE TrainingConfig)
+    if "model" in data:
+        if isinstance(data["model"], str):
+            # Backward compat: "model: stegastamp" -> ModelConfig(type="stegastamp")
+            data["model"] = ModelConfig(type=data["model"])
+        elif isinstance(data["model"], dict):
+            data["model"] = ModelConfig(**data["model"])
+    else:
+        data["model"] = ModelConfig()
 
     # Handle TrainingConfig
     if "training" in data:
