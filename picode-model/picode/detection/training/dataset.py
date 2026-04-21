@@ -93,7 +93,10 @@ class DetectionDataset(Dataset):
         # Encode watermark
         message = torch.randint(0, 2, (1, self.num_bits)).float()
         with torch.no_grad():
+            # Encoder returns unclamped image (allows gradients during training)
+            # We clamp to [0, 1] for detector training dataset
             watermarked = self.encoder(image.unsqueeze(0), message)
+            watermarked = torch.clamp(watermarked, 0, 1)
         watermarked = watermarked.squeeze(0)
 
         # Generate random perspective corners
