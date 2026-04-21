@@ -7,12 +7,18 @@ based on model configuration. Supported model types:
 - **picodelite**: Optimized mobile architecture (800x800 encoder, 320x320 decoder, 63 bits)
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
-from picode.training.config import ModelConfig
+
+if TYPE_CHECKING:
+    from picode.training.config import ModelConfig
 
 
-def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
+def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:  # type: ignore
     """Create an encoder based on model configuration.
 
     Factory function that instantiates the appropriate encoder class
@@ -47,7 +53,7 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
         raise ValueError(f"Unknown model type: {config.type}")
 
 
-def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
+def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:  # type: ignore
     """Create a decoder based on model configuration.
 
     Factory function that instantiates the appropriate decoder class
