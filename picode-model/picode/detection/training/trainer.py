@@ -181,6 +181,7 @@ class DetectionTrainer:
         )
 
         history = []
+        best_val_loss = float("inf")
 
         for epoch in range(num_epochs):
             self.epoch = epoch + 1
@@ -195,14 +196,36 @@ class DetectionTrainer:
             self.scheduler.step()
 
             # Combine metrics
-            metrics = {**train_metrics, **val_metrics, "epoch": self.epoch}
+            lr = self.optimizer.param_groups[0]["lr"]
+            metrics = {**train_metrics, **val_metrics, "epoch": self.epoch, "lr": lr}
             history.append(metrics)
 
+            # Log progress
+            val_loss = val_metrics.get("val_loss", 0.0)
+            print(
+                f"Epoch {self.epoch}/{num_epochs} - "
+                f"train_loss: {train_metrics['train_loss']:.4f}, "
+                f"val_loss: {val_loss:.4f}, "
+                f"lr: {lr:.2e}"
+            )
+
             # Save checkpoint
-            if save_dir is not None and (epoch + 1) % save_every == 0:
-                save_path = Path(save_dir) / f"checkpoint_epoch_{self.epoch}.pt"
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-                self.save_checkpoint(save_path)
+            if save_dir is not None:
+                save_path = Path(save_dir)
+                save_path.mkdir(parents=True, exist_ok=True)
+
+                # Save periodic checkpoint
+                if (epoch + 1) % save_every == 0:
+                    ckpt_path = save_path / f"checkpoint_epoch_{self.epoch:03d}.pt"
+                    self.save_checkpoint(ckpt_path)
+                    print(f"  Saved checkpoint: {ckpt_path}")
+
+                # Save best model
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_path = save_path / "best.pt"
+                    self.save_checkpoint(best_path)
+                    print(f"  New best model (val_loss={val_loss:.4f})")
 
         return history
 
