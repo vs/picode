@@ -112,16 +112,19 @@ class DetectionDataset(Dataset):
             align_corners=False,
         ).squeeze(0)
 
-        # Apply additional transforms
-        if self.transform is not None:
-            output = self.transform(output)
-
-        return {
+        # Build sample dict
+        sample = {
             "image": output,
             "is_watermark": torch.tensor(1.0),
             "corners": corners.flatten(),
             "has_corners": torch.tensor(1.0),
         }
+
+        # Apply additional transforms (expects dict, returns dict)
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample
 
     def _generate_negative(self, image: Tensor) -> dict[str, Tensor]:
         """Generate clean (non-watermarked) image."""
@@ -133,16 +136,19 @@ class DetectionDataset(Dataset):
             align_corners=False,
         ).squeeze(0)
 
-        # Apply additional transforms
-        if self.transform is not None:
-            output = self.transform(output)
-
-        return {
+        # Build sample dict
+        sample = {
             "image": output,
             "is_watermark": torch.tensor(0.0),
             "corners": torch.zeros(8),
             "has_corners": torch.tensor(0.0),
         }
+
+        # Apply additional transforms (expects dict, returns dict)
+        if self.transform is not None:
+            sample = self.transform(sample)
+
+        return sample
 
     def _random_perspective_corners(self) -> Tensor:
         """Generate random quadrilateral corners (normalized [0, 1])."""
