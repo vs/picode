@@ -6,6 +6,7 @@ from picode.detection.training.augmentation import (
     PhotometricAugmentation,
 )
 from picode.detection.training.dataset import DetectionDataset
+from picode.detection.training.pregenerated_dataset import PregeneratedDetectionDataset
 from picode.detection.training.evaluator import (
     DetectionEvaluator,
     DetectionMetrics,
@@ -25,6 +26,7 @@ __all__ = [
     "PhotometricAugmentation",
     # Dataset
     "DetectionDataset",
+    "PregeneratedDetectionDataset",
     "HardNegativeDataset",
     "HardNegativeTransform",
     # Loss

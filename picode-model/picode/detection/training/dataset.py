@@ -90,12 +90,17 @@ class DetectionDataset(Dataset):
 
     def _generate_positive(self, image: Tensor) -> dict[str, Tensor]:
         """Generate watermarked image with perspective transform."""
-        # Encode watermark
-        message = torch.randint(0, 2, (1, self.num_bits)).float()
+        # Get encoder device (could be CUDA or CPU)
+        encoder_device = next(self.encoder.parameters()).device
+
+        # Encode watermark - move tensors to encoder's device
+        message = torch.randint(0, 2, (1, self.num_bits)).float().to(encoder_device)
+        image_on_device = image.unsqueeze(0).to(encoder_device)
+
         with torch.no_grad():
             # Encoder returns unclamped image (allows gradients during training)
             # We clamp to [0, 1] for detector training dataset
-            watermarked = self.encoder(image.unsqueeze(0), message)
+            watermarked = self.encoder(image_on_device, message)
             watermarked = torch.clamp(watermarked, 0, 1)
         watermarked = watermarked.squeeze(0)
 
@@ -111,6 +116,9 @@ class DetectionDataset(Dataset):
             mode="bilinear",
             align_corners=False,
         ).squeeze(0)
+
+        # Move back to CPU for DataLoader compatibility
+        output = output.cpu()
 
         # Build sample dict
         sample = {
