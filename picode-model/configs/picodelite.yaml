@@ -1,0 +1,86 @@
+# PicodeLite Configuration
+# Optimized for reduced visual artifacts and fast mobile inference
+
+experiment_name: picodelite
+
+model:
+  type: picodelite
+  encoder_size: 800  # High-res encoder for fine patterns
+  decoder_size: 320  # Low-res decoder for fast mobile inference
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 2  # Smaller batch for 800x800 images
+  num_workers: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 63  # BCH(63, 36)
+  image_size: 800  # For backward compat, should match encoder_size
+  warmup_steps: 500
+  no_im_loss_steps: 500
+  borders: black
+  rnd_trans: 0.15  # Stronger perspective (no STN to correct)
+  rnd_trans_ramp: 10000
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  message_loss_type: bce
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+  use_border_falloff: true
+  border_falloff_speed: 4
+  l2_edge_gain: 10.0
+  l2_edge_ramp_steps: 20000
+  l2_edge_delay_steps: 60000
+  yuv_weights: [1.0, 1.0, 1.0]
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001
+    g_loss_scale: 1.0
+    g_loss_ramp_steps: 20000
+    clip_weights: 0.01
+    gradient_clip: 0.25
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.15  # Stronger than StegaStamp
+    ramp_steps: 10000
+  brightness:
+    strength: 0.3
+    ramp_steps: 1000
+  saturation:
+    strength: 1.0
+    ramp_steps: 1000
+  hue:
+    strength: 0.1
+    ramp_steps: 1000
+  noise:
+    strength: 0.02
+    ramp_steps: 1000
+  contrast: [0.5, 1.5]
+  contrast_ramp_steps: 1000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 1000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 3
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
+  tensorboard_dir: runs

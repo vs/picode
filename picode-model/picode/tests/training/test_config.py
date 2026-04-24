@@ -13,6 +13,7 @@ from picode.training.config import (
     LoggingConfig,
     LossConfig,
     LossRamp,
+    ModelConfig,
     TrainingConfig,
     load_config,
 )
@@ -237,7 +238,7 @@ loss:
         config_file.write_text(yaml_content)
 
         cfg = load_config(str(config_file))
-        assert cfg.model == "stegastamp"  # Default model
+        assert cfg.model.type == "stegastamp"  # Default model
         assert cfg.loss.ffl is not None
         assert cfg.loss.ffl.scale == 0.1
         assert cfg.loss.ffl.ramp_steps == 40000
@@ -247,3 +248,86 @@ loss:
         assert cfg.loss.gan.delay_steps == 30000
         assert cfg.loss.gan_config.enabled is True
         assert cfg.loss.gan_config.discriminator_lr == 0.0004
+
+
+class TestModelConfig:
+    """Test model configuration."""
+
+    def test_defaults(self) -> None:
+        """Default ModelConfig uses stegastamp with 400x400."""
+        cfg = ModelConfig()
+        assert cfg.type == "stegastamp"
+        assert cfg.encoder_size == 400
+        assert cfg.decoder_size == 400
+
+    def test_picodelite_config(self) -> None:
+        """Can configure picodelite model with different sizes."""
+        cfg = ModelConfig(type="picodelite", encoder_size=800, decoder_size=320)
+        assert cfg.type == "picodelite"
+        assert cfg.encoder_size == 800
+        assert cfg.decoder_size == 320
+
+    def test_default_model_is_stegastamp(self, tmp_path: Path) -> None:
+        """Default model type is stegastamp for backward compatibility."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+experiment_name: test
+data:
+  source: folder
+  path: ./data
+""")
+        config = load_config(str(config_file))
+        assert config.model.type == "stegastamp"
+        assert config.model.encoder_size == 400
+        assert config.model.decoder_size == 400
+
+    def test_picodelite_model_config(self, tmp_path: Path) -> None:
+        """Can configure picodelite model."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+experiment_name: test
+data:
+  source: folder
+  path: ./data
+model:
+  type: picodelite
+  encoder_size: 800
+  decoder_size: 320
+""")
+        config = load_config(str(config_file))
+        assert config.model.type == "picodelite"
+        assert config.model.encoder_size == 800
+        assert config.model.decoder_size == 320
+
+    def test_stegastamp_uses_single_image_size(self, tmp_path: Path) -> None:
+        """StegaStamp model uses same size for encoder and decoder."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+experiment_name: test
+data:
+  source: folder
+  path: ./data
+model:
+  type: stegastamp
+  encoder_size: 512
+  decoder_size: 512
+""")
+        config = load_config(str(config_file))
+        assert config.model.type == "stegastamp"
+        assert config.model.encoder_size == 512
+        assert config.model.decoder_size == 512
+
+    def test_backward_compat_string_model(self, tmp_path: Path) -> None:
+        """Backward compatibility: 'model: stegastamp' string works."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+experiment_name: test
+data:
+  source: folder
+  path: ./data
+model: stegastamp
+""")
+        config = load_config(str(config_file))
+        assert config.model.type == "stegastamp"
+        assert config.model.encoder_size == 400
+        assert config.model.decoder_size == 400

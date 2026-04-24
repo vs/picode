@@ -1,4 +1,4 @@
-"""Main Trainer class for StegaStamp training."""
+"""Main Trainer class for steganography model training."""
 
 from __future__ import annotations
 
@@ -19,8 +19,7 @@ from picode.distortions.native.perspective import (
 )
 from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
-from picode.models.stegastamp import Decoder as StegaDecoder
-from picode.models.stegastamp import Encoder as StegaEncoder
+from picode.models.factory import create_decoder, create_encoder
 from picode.training.checkpointing import Checkpointer
 from picode.training.config import (
     Config,
@@ -209,37 +208,50 @@ class Trainer:
         else:
             self.device = torch.device("cpu")
 
-        # Create StegaStamp models
+        # Create models via factory
         num_bits = config.training.num_bits
-        self.encoder: BaseEncoder = StegaEncoder(num_bits=num_bits).to(self.device)
-        self.decoder: BaseDecoder = StegaDecoder(num_bits=num_bits).to(self.device)
+        self.encoder: BaseEncoder = create_encoder(config.model, num_bits).to(self.device)
+        self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
+
+        # Determine image size for dataloader based on model type
+        # PicodeLite uses encoder_size (800), StegaStamp uses training.image_size
+        if config.model.type == "picodelite":
+            train_image_size = config.model.encoder_size
+        else:
+            train_image_size = config.training.image_size
 
         # Create optimizer with optional separate learning rates
-        # STN linear params get a much lower LR to prevent collapse
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
-        stn_lr = config.training.lr * config.training.stn_lr_scale
 
-        # Separate decoder params: STN linear vs rest
-        stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
-        stn_params = []
-        decoder_params = []
-        for name, param in self.decoder.named_parameters():
-            if name in stn_param_names:
-                stn_params.append(param)
-            else:
-                decoder_params.append(param)
+        if config.model.type == "stegastamp":
+            # StegaStamp has STN with separate LR to prevent collapse
+            stn_lr = config.training.lr * config.training.stn_lr_scale
+            stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
+            stn_params = []
+            decoder_params = []
+            for name, param in self.decoder.named_parameters():
+                if name in stn_param_names:
+                    stn_params.append(param)
+                else:
+                    decoder_params.append(param)
+            param_groups = [
+                {"params": self.encoder.parameters(), "lr": encoder_lr},
+                {"params": decoder_params, "lr": decoder_lr},
+                {"params": stn_params, "lr": stn_lr},
+            ]
+        else:
+            # PicodeLite: no STN, simpler param groups
+            param_groups = [
+                {"params": self.encoder.parameters(), "lr": encoder_lr},
+                {"params": self.decoder.parameters(), "lr": decoder_lr},
+            ]
 
-        param_groups = [
-            {"params": self.encoder.parameters(), "lr": encoder_lr},
-            {"params": decoder_params, "lr": decoder_lr},
-            {"params": stn_params, "lr": stn_lr},
-        ]
         self.optimizer = torch.optim.Adam(param_groups)
         self.scheduler = None  # No scheduler by default
 
         # Create dataloader
-        self.dataloader = create_dataloader(config.data, config.training.image_size)
+        self.dataloader = create_dataloader(config.data, train_image_size)
         self._data_iter: Iterator[Tensor] | None = None
 
         # Create distortion strategy
@@ -273,11 +285,14 @@ class Trainer:
         # Optional LPIPS loss (lazy loaded)
         self._lpips_fn: nn.Module | None = None
 
+        # Store train_image_size for later use
+        self._train_image_size = train_image_size
+
         # Create border falloff mask (cached for efficiency)
         if config.loss.use_border_falloff:
             self._border_falloff_mask: Tensor | None = create_border_falloff_mask(
-                height=config.training.image_size,
-                width=config.training.image_size,
+                height=train_image_size,
+                width=train_image_size,
                 falloff_speed=config.loss.border_falloff_speed,
                 device=self.device,
             )
@@ -418,7 +433,8 @@ class Trainer:
         """
         batch_size = images.shape[0]
         num_bits = self.config.training.num_bits
-        image_size = self.config.training.image_size
+        # Get image size from actual input (works for both model types)
+        image_size = images.shape[-1]  # H dimension
 
         # Generate random messages
         messages = torch.randint(0, 2, (batch_size, num_bits), device=self.device).float()
