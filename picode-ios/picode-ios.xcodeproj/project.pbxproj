@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		053783B5AE08C614F1A35759 /* ScanState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E5F24FB9FD3675FE82DDD3 /* ScanState.swift */; };
 		0A38167F22E62BAA1E591005 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9D25457A8C6197F09569EA7 /* CameraView.swift */; };
 		0CCE24B0CC9BD4653D0CD348 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */; };
 		21F2F273AB706DEFCA118FB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA2045C38D58C57A6B1891D6 /* Assets.xcassets */; };
@@ -46,6 +47,7 @@
 		492B237A548764590351C646 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		4C46CBEFA8960DCC072F32FE /* FastDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastDetector.swift; sourceTree = "<group>"; };
 		4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeDecoder.swift; sourceTree = "<group>"; };
+		59E5F24FB9FD3675FE82DDD3 /* ScanState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanState.swift; sourceTree = "<group>"; };
 		5FF6280FF1774916B2D97E98 /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
 		635784AC68EE83D91DB66729 /* CaptureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButton.swift; sourceTree = "<group>"; };
 		6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraControllerTests.swift; sourceTree = "<group>"; };
@@ -146,6 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				35321055F2F3512A28F5D586 /* Quadrilateral.swift */,
+				59E5F24FB9FD3675FE82DDD3 /* ScanState.swift */,
 			);
 			path = Types;
 			sourceTree = "<group>";
@@ -260,6 +263,7 @@
 				45399C52DA90E5E043FB0ED9 /* Quadrilateral.swift in Sources */,
 				34FEB9F4B04A82CC945F971E /* QuadrilateralOverlay.swift in Sources */,
 				CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */,
+				053783B5AE08C614F1A35759 /* ScanState.swift in Sources */,
 				B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
