@@ -42,18 +42,36 @@ final class PreviewView: UIView {
         if let connection = previewLayer.connection {
             let orientation = UIDevice.current.orientation
 
-            if connection.isVideoRotationAngleSupported(0) {
-                switch orientation {
-                case .portrait:
-                    connection.videoRotationAngle = 90
-                case .landscapeLeft:
-                    connection.videoRotationAngle = 180
-                case .landscapeRight:
-                    connection.videoRotationAngle = 0
-                case .portraitUpsideDown:
-                    connection.videoRotationAngle = 270
-                default:
-                    connection.videoRotationAngle = 90
+            if #available(iOS 17.0, *) {
+                if connection.isVideoRotationAngleSupported(0) {
+                    switch orientation {
+                    case .portrait:
+                        connection.videoRotationAngle = 90
+                    case .landscapeLeft:
+                        connection.videoRotationAngle = 180
+                    case .landscapeRight:
+                        connection.videoRotationAngle = 0
+                    case .portraitUpsideDown:
+                        connection.videoRotationAngle = 270
+                    default:
+                        connection.videoRotationAngle = 90
+                    }
+                }
+            } else {
+                // Fallback for iOS 16
+                if connection.isVideoOrientationSupported {
+                    switch orientation {
+                    case .portrait:
+                        connection.videoOrientation = .portrait
+                    case .landscapeLeft:
+                        connection.videoOrientation = .landscapeRight
+                    case .landscapeRight:
+                        connection.videoOrientation = .landscapeLeft
+                    case .portraitUpsideDown:
+                        connection.videoOrientation = .portraitUpsideDown
+                    default:
+                        connection.videoOrientation = .portrait
+                    }
                 }
             }
         }

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,13 +12,19 @@
 		21F2F273AB706DEFCA118FB7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA2045C38D58C57A6B1891D6 /* Assets.xcassets */; };
 		2E8A3F4E8D44BECE4D55DC59 /* PicodeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300972E9F340CD6345BF6A5C /* PicodeApp.swift */; };
 		2FD79D41E1D0DBB03CDC8A28 /* PicodeDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */; };
+		34FEB9F4B04A82CC945F971E /* QuadrilateralOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2DFBFA32663897E74B24A7B /* QuadrilateralOverlay.swift */; };
+		3C30ADF87542225B07060702 /* FastDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82D4C805CD2098FD857CFF7 /* FastDetectorTests.swift */; };
 		44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */; };
+		45399C52DA90E5E043FB0ED9 /* Quadrilateral.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35321055F2F3512A28F5D586 /* Quadrilateral.swift */; };
 		599F2CFBDFD060E6184A8BC4 /* CaptureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635784AC68EE83D91DB66729 /* CaptureButton.swift */; };
+		6E1DE15710394050F68B2896 /* FastDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C46CBEFA8960DCC072F32FE /* FastDetector.swift */; };
 		779F630EBEE260A939341414 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FF6280FF1774916B2D97E98 /* DecoderTests.swift */; };
+		9637084485AC68DC745C383D /* CameraControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */; };
 		A62B69C916596CFE137AC0C0 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19857120E395BEF01C81EE8B /* CameraPreview.swift */; };
 		B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */; };
 		CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */; };
 		D832E2D046C527F83204A09A /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492B237A548764590351C646 /* CameraController.swift */; };
+		E29940F54BC896B460B714EA /* QuadrilateralTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,14 +41,20 @@
 		19857120E395BEF01C81EE8B /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsView.swift; sourceTree = "<group>"; };
 		300972E9F340CD6345BF6A5C /* PicodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeApp.swift; sourceTree = "<group>"; };
+		35321055F2F3512A28F5D586 /* Quadrilateral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quadrilateral.swift; sourceTree = "<group>"; };
 		3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubDecoder.swift; sourceTree = "<group>"; };
 		492B237A548764590351C646 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
+		4C46CBEFA8960DCC072F32FE /* FastDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastDetector.swift; sourceTree = "<group>"; };
 		4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeDecoder.swift; sourceTree = "<group>"; };
 		5FF6280FF1774916B2D97E98 /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
 		635784AC68EE83D91DB66729 /* CaptureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButton.swift; sourceTree = "<group>"; };
+		6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraControllerTests.swift; sourceTree = "<group>"; };
 		9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
+		B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuadrilateralTests.swift; sourceTree = "<group>"; };
 		C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		D004072E32381E3254956C2F /* picode-iosTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "picode-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2DFBFA32663897E74B24A7B /* QuadrilateralOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuadrilateralOverlay.swift; sourceTree = "<group>"; };
+		F82D4C805CD2098FD857CFF7 /* FastDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FastDetectorTests.swift; sourceTree = "<group>"; };
 		F9D25457A8C6197F09569EA7 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
 		FA2045C38D58C57A6B1891D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FD0F06900D15F1B64B4917DE /* picode-ios.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "picode-ios.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,7 +64,10 @@
 		0B9059BC25DC1142E0270448 /* picode-iosTests */ = {
 			isa = PBXGroup;
 			children = (
+				6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */,
 				5FF6280FF1774916B2D97E98 /* DecoderTests.swift */,
+				F82D4C805CD2098FD857CFF7 /* FastDetectorTests.swift */,
+				B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */,
 				9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */,
 			);
 			path = "picode-iosTests";
@@ -73,6 +88,7 @@
 				56A6D30E1B8F61E0F91442C1 /* App */,
 				E9E91A5820505071DDF4D4FE /* Camera */,
 				335A99866DEA18658260DE16 /* Decoder */,
+				D58BE5A0514D178562D687C0 /* Types */,
 				A8331778B3F2154BDE69D48B /* Views */,
 			);
 			path = "picode-ios";
@@ -90,6 +106,7 @@
 		335A99866DEA18658260DE16 /* Decoder */ = {
 			isa = PBXGroup;
 			children = (
+				4C46CBEFA8960DCC072F32FE /* FastDetector.swift */,
 				4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */,
 				3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */,
 			);
@@ -110,6 +127,7 @@
 			children = (
 				F9D25457A8C6197F09569EA7 /* CameraView.swift */,
 				C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */,
+				E2DFBFA32663897E74B24A7B /* QuadrilateralOverlay.swift */,
 				2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */,
 				CE5C30D783ED5CB840898551 /* Components */,
 			);
@@ -122,6 +140,14 @@
 				635784AC68EE83D91DB66729 /* CaptureButton.swift */,
 			);
 			path = Components;
+			sourceTree = "<group>";
+		};
+		D58BE5A0514D178562D687C0 /* Types */ = {
+			isa = PBXGroup;
+			children = (
+				35321055F2F3512A28F5D586 /* Quadrilateral.swift */,
+			);
+			path = Types;
 			sourceTree = "<group>";
 		};
 		E9E91A5820505071DDF4D4FE /* Camera */ = {
@@ -148,6 +174,8 @@
 				0356E7D82CE96F8177C6F989 /* PBXTargetDependency */,
 			);
 			name = "picode-iosTests";
+			packageProductDependencies = (
+			);
 			productName = "picode-iosTests";
 			productReference = D004072E32381E3254956C2F /* picode-iosTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -164,6 +192,8 @@
 			dependencies = (
 			);
 			name = "picode-ios";
+			packageProductDependencies = (
+			);
 			productName = "picode-ios";
 			productReference = FD0F06900D15F1B64B4917DE /* picode-ios.app */;
 			productType = "com.apple.product-type.application";
@@ -192,6 +222,8 @@
 				en,
 			);
 			mainGroup = 32CB90DB20634EA55DEFD6CE;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -222,8 +254,11 @@
 				0A38167F22E62BAA1E591005 /* CameraView.swift in Sources */,
 				0CCE24B0CC9BD4653D0CD348 /* CameraViewModel.swift in Sources */,
 				599F2CFBDFD060E6184A8BC4 /* CaptureButton.swift in Sources */,
+				6E1DE15710394050F68B2896 /* FastDetector.swift in Sources */,
 				2E8A3F4E8D44BECE4D55DC59 /* PicodeApp.swift in Sources */,
 				2FD79D41E1D0DBB03CDC8A28 /* PicodeDecoder.swift in Sources */,
+				45399C52DA90E5E043FB0ED9 /* Quadrilateral.swift in Sources */,
+				34FEB9F4B04A82CC945F971E /* QuadrilateralOverlay.swift in Sources */,
 				CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */,
 				B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */,
 			);
@@ -233,7 +268,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9637084485AC68DC745C383D /* CameraControllerTests.swift in Sources */,
 				779F630EBEE260A939341414 /* DecoderTests.swift in Sources */,
+				3C30ADF87542225B07060702 /* FastDetectorTests.swift in Sources */,
+				E29940F54BC896B460B714EA /* QuadrilateralTests.swift in Sources */,
 				44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

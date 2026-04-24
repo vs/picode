@@ -114,7 +114,11 @@ final class CameraController: NSObject, ObservableObject {
 
         // Set video orientation
         if let connection = videoOutput.connection(with: .video) {
-            connection.videoRotationAngle = 90  // Portrait
+            if #available(iOS 17.0, *) {
+                connection.videoRotationAngle = 90  // Portrait
+            } else {
+                connection.videoOrientation = .portrait
+            }
         }
 
         captureSession.commitConfiguration()
