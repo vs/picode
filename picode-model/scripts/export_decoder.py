@@ -96,6 +96,10 @@ def main() -> None:
     print(f"Exporting to: {output_path}")
     print(f"  iOS target: {args.ios_version}")
     print(f"  FP16: {args.fp16}")
+
+    # For mlprogram models, FP16 is set via compute_precision
+    compute_precision = ct.precision.FLOAT16 if args.fp16 else ct.precision.FLOAT32
+
     mlmodel = ct.convert(
         traced,
         inputs=[
@@ -110,19 +114,13 @@ def main() -> None:
         compute_units=ct.ComputeUnit.ALL,
         minimum_deployment_target=ios_targets.get(args.ios_version, ct.target.iOS16),
         convert_to="mlprogram",
+        compute_precision=compute_precision,
     )
 
     # Metadata
     mlmodel.author = "Picode"
     mlmodel.short_description = "StegaStamp decoder for iOS"
     mlmodel.version = "1.0"
-
-    # FP16 quantization
-    if args.fp16:
-        print("Applying FP16 quantization...")
-        mlmodel = ct.models.neural_network.quantization_utils.quantize_weights(
-            mlmodel, nbits=16
-        )
 
     # Save
     output_path.parent.mkdir(parents=True, exist_ok=True)
