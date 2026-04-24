@@ -106,14 +106,15 @@ class Encoder(BaseEncoder):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
-    def prepare_message(self, message: Tensor) -> Tensor:
+    def prepare_message(self, message: Tensor, target_size: tuple[int, int]) -> Tensor:
         """Expand message bits to spatial feature map using learned upsampling.
 
         Args:
             message: (B, num_bits) binary tensor (already normalized to [-0.5, 0.5])
+            target_size: (H, W) target spatial dimensions to match input image
 
         Returns:
-            (B, 3, 800, 800) spatial tensor
+            (B, 3, H, W) spatial tensor matching target_size
         """
         # Linear projection and reshape to spatial
         x = F.relu(self.secret_dense(message))  # (B, 48*16*16)
@@ -125,8 +126,8 @@ class Encoder(BaseEncoder):
         x = F.relu(self.secret_up3(x))  # (B, 8, 128, 128)
         x = F.relu(self.secret_up4(x))  # (B, 3, 256, 256)
 
-        # Final bilinear upsample to 800x800
-        x = F.interpolate(x, size=(800, 800), mode="bilinear", align_corners=False)
+        # Final bilinear upsample to target size (derived from input image)
+        x = F.interpolate(x, size=target_size, mode="bilinear", align_corners=False)
 
         return x
 
@@ -134,19 +135,22 @@ class Encoder(BaseEncoder):
         """Encode message into image.
 
         Args:
-            image: (B, 3, 800, 800) in [0, 1]
+            image: (B, 3, H, W) in [0, 1] - typically 800x800 but size is derived from input
             message: (B, num_bits) binary tensor
 
         Returns:
-            Encoded image (B, 3, 800, 800) - NOT clamped to allow gradient flow
+            Encoded image (B, 3, H, W) same size as input - NOT clamped to allow gradient flow
         """
         # Normalize inputs (match original TF implementation)
         image_norm = image - 0.5
         message_norm = message - 0.5
 
+        # Derive target size from input image (no hardcoded dimensions)
+        target_size = (image.shape[2], image.shape[3])
+
         # Prepare message and concatenate with image
-        secret_enlarged = self.prepare_message(message_norm)  # (B, 3, 800, 800)
-        inputs = torch.cat([secret_enlarged, image_norm], dim=1)  # (B, 6, 800, 800)
+        secret_enlarged = self.prepare_message(message_norm, target_size)  # (B, 3, H, W)
+        inputs = torch.cat([secret_enlarged, image_norm], dim=1)  # (B, 6, H, W)
 
         # Encoder path (save activations for skip connections)
         c1 = F.relu(self.conv1(inputs))  # (B, 32, 800, 800)

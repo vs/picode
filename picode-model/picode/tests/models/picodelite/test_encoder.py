@@ -45,15 +45,23 @@ class TestMessagePreparation:
     def test_output_shape(self, sample_message_63: torch.Tensor) -> None:
         """Message prep outputs (B, 3, 800, 800) tensor."""
         encoder = Encoder(num_bits=63)
-        result = encoder.prepare_message(sample_message_63)
+        result = encoder.prepare_message(sample_message_63, target_size=(800, 800))
         assert result.shape == (2, 3, 800, 800)
 
     def test_output_shape_batch_1(self) -> None:
         """Works with batch size 1."""
         encoder = Encoder(num_bits=63)
         message = torch.randint(0, 2, (1, 63)).float()
-        result = encoder.prepare_message(message)
+        result = encoder.prepare_message(message, target_size=(800, 800))
         assert result.shape == (1, 3, 800, 800)
+
+    def test_output_shape_different_sizes(self) -> None:
+        """Message prep works with different target sizes."""
+        encoder = Encoder(num_bits=63)
+        message = torch.randint(0, 2, (1, 63)).float()
+        # Test with 400x400 (derived from input, not hardcoded)
+        result = encoder.prepare_message(message, target_size=(400, 400))
+        assert result.shape == (1, 3, 400, 400)
 
     def test_smooth_output(self, sample_message_63: torch.Tensor) -> None:
         """Learned upsampling produces smooth output (low gradient magnitude).
@@ -62,7 +70,7 @@ class TestMessagePreparation:
         than nearest-neighbor upsampling, reducing wave artifacts.
         """
         encoder = Encoder(num_bits=63)
-        result = encoder.prepare_message(sample_message_63)
+        result = encoder.prepare_message(sample_message_63, target_size=(800, 800))
 
         # Compute spatial gradients (Sobel-like)
         dx = result[:, :, :, 1:] - result[:, :, :, :-1]

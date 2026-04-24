@@ -213,12 +213,15 @@ class Trainer:
         self.encoder: BaseEncoder = create_encoder(config.model, num_bits).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 
-        # Determine image size for dataloader based on model type
-        # PicodeLite uses encoder_size (800), StegaStamp uses training.image_size
+        # Determine image sizes based on model type
+        # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
+        # StegaStamp: same size for both (training.image_size, typically 400)
         if config.model.type == "picodelite":
             train_image_size = config.model.encoder_size
+            self._decoder_size = config.model.decoder_size
         else:
             train_image_size = config.training.image_size
+            self._decoder_size = config.training.image_size  # Same as encoder for StegaStamp
 
         # Create optimizer with optional separate learning rates
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
@@ -484,8 +487,17 @@ class Trainer:
         # 6. Apply distortions to encoded image
         distorted = self.distortion(encoded, self.global_step)
 
-        # 7. Decode
-        decoded_logits = self.decoder(distorted)
+        # 7. Resize to decoder size if different from encoder size (e.g., PicodeLite 800->320)
+        if distorted.shape[-1] != self._decoder_size:
+            decoder_input = torch.nn.functional.interpolate(
+                distorted, size=(self._decoder_size, self._decoder_size),
+                mode="bilinear", align_corners=False
+            )
+        else:
+            decoder_input = distorted
+
+        # 8. Decode
+        decoded_logits = self.decoder(decoder_input)
 
         # Compute residual for diagnostics (encoded - original)
         residual = encoded - images
