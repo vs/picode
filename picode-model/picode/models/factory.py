@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from picode.training.config import ModelConfig
 
 
-def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:  # type: ignore
+def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
     """Create an encoder based on model configuration.
 
     Factory function that instantiates the appropriate encoder class
@@ -53,7 +53,7 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:  # type: 
         raise ValueError(f"Unknown model type: {config.type}")
 
 
-def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:  # type: ignore
+def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
     """Create a decoder based on model configuration.
 
     Factory function that instantiates the appropriate decoder class

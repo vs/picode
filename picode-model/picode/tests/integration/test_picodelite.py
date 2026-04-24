@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from picode.models.picodelite import Encoder, Decoder
 from picode.ecc import BCH
+from picode.models.picodelite import Decoder, Encoder
 
 
 class TestPicodeLiteIntegration:
