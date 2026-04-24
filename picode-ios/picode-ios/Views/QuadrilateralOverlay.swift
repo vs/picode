@@ -19,10 +19,9 @@ struct QuadrilateralOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             if let quad = quadrilateral {
-                Path { path in
-                    let size = geometry.size
-                    let pixelQuad = quad.toPixelCoordinates(imageSize: size)
+                let pixelQuad = quad.toPixelCoordinates(imageSize: geometry.size)
 
+                Path { path in
                     path.move(to: pixelQuad.topLeft)
                     path.addLine(to: pixelQuad.topRight)
                     path.addLine(to: pixelQuad.bottomRight)
@@ -32,12 +31,12 @@ struct QuadrilateralOverlay: View {
                 .stroke(color, lineWidth: lineWidth)
 
                 // Corner markers
-                ForEach(0..<4) { index in
-                    let corners = quad.toPixelCoordinates(imageSize: geometry.size).corners
+                let pixelQuadCorners = pixelQuad.corners
+                ForEach(0..<pixelQuadCorners.count, id: \.self) { index in
                     Circle()
                         .fill(color)
                         .frame(width: 12, height: 12)
-                        .position(corners[index])
+                        .position(pixelQuadCorners[index])
                 }
             }
         }
