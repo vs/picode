@@ -83,6 +83,27 @@ class TestMessagePreparation:
         assert grad_mag < 1.0, f"Gradient magnitude too high: {grad_mag}"
 
 
+class TestEncoderValidation:
+    """Test encoder input validation."""
+
+    def test_rejects_non_divisible_by_32(self) -> None:
+        """Encoder rejects input sizes not divisible by 32."""
+        encoder = Encoder(num_bits=63)
+        img = torch.rand(1, 3, 400, 400)  # 400 % 32 = 16, not divisible
+        msg = torch.randint(0, 2, (1, 63)).float()
+        with pytest.raises(ValueError, match="divisible by 32"):
+            encoder(img, msg)
+
+    def test_accepts_divisible_by_32(self) -> None:
+        """Encoder accepts input sizes divisible by 32."""
+        encoder = Encoder(num_bits=63)
+        # 640 % 32 = 0, should work
+        img = torch.rand(1, 3, 640, 640)
+        msg = torch.randint(0, 2, (1, 63)).float()
+        result = encoder(img, msg)
+        assert result.shape == (1, 3, 640, 640)
+
+
 class TestEncoderForward:
     """Test full encoder forward pass."""
 
