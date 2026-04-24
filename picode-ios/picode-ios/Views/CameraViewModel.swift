@@ -45,17 +45,14 @@ final class CameraViewModel: NSObject, ObservableObject {
     /// Whether a frame is currently being processed.
     private var isProcessingFrame = false
 
-    /// Queue for frame processing.
-    private let processingQueue = DispatchQueue(
-        label: "com.picode.frameProcessing",
-        qos: .userInteractive
-    )
-
     /// Core Image context for efficient image processing.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
     /// Throttle interval for frame processing (seconds).
     private let frameProcessingInterval: TimeInterval = 0.1  // 10 FPS max
+
+    /// Minimum confidence threshold for detection.
+    private let detectionConfidenceThreshold: Double = 0.5
 
     /// Last time a frame was processed.
     private var lastFrameTime: CFAbsoluteTime = 0
@@ -235,11 +232,9 @@ final class CameraViewModel: NSObject, ObservableObject {
     }
 
     /// Process a video frame for detection.
-    private func processFrame(_ sampleBuffer: CMSampleBuffer) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-
+    ///
+    /// - Parameter ciImage: The CIImage extracted from the video frame.
+    private func processFrame(_ ciImage: CIImage) {
         // Convert to UIImage for decoder
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
         let image = UIImage(cgImage: cgImage)
@@ -250,7 +245,7 @@ final class CameraViewModel: NSObject, ObservableObject {
                 let result = try await fastDetector.decode(image: image)
 
                 // Check if we got a valid detection
-                if result.confidence > 0.5, let region = result.detectedRegion {
+                if result.confidence > detectionConfidenceThreshold, let region = result.detectedRegion {
                     // Create quadrilateral from detected region
                     let quad = Quadrilateral(
                         topLeft: CGPoint(x: region.minX, y: region.minY),
@@ -288,11 +283,14 @@ extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        // Throttle frame processing
         let currentTime = CFAbsoluteTimeGetCurrent()
 
-        // Use a simple approach to avoid data races with actor isolation
+        // Extract pixel buffer synchronously before it's recycled by AVFoundation
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+
         Task { @MainActor in
+            // Check throttling and state on main actor
             guard !self.isProcessingFrame else { return }
             guard currentTime - self.lastFrameTime >= self.frameProcessingInterval else { return }
 
@@ -301,7 +299,7 @@ extension CameraViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
             case .scanning, .detected:
                 self.isProcessingFrame = true
                 self.lastFrameTime = currentTime
-                self.processFrame(sampleBuffer)
+                self.processFrame(ciImage)
             default:
                 break
             }
