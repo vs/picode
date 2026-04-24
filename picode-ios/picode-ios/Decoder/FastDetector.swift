@@ -357,6 +357,43 @@ final class FastDetector: PicodeDecoder {
 
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
+
+    // MARK: - Real-time Detection
+
+    /// Detect watermark in real-time from camera frame.
+    /// Returns detection info for overlay, or nil if not detected.
+    func detectRealtime(ciImage: CIImage) async throws -> ScanState.DetectionInfo? {
+        // Step 1: Detect watermark
+        let detection = try await detectWatermark(in: ciImage)
+
+        guard let corners = detection.corners,
+              detection.confidence > detectionThreshold else {
+            return nil
+        }
+
+        // Step 2: Rectify the detected region
+        let rectifiedImage = try rectifyRegion(in: ciImage, corners: corners)
+
+        // Step 3: Decode the message
+        let (_, rawBits) = try await decodeMessage(from: rectifiedImage)
+
+        // Step 4: Convert to detection info
+        let message = bitsToMessage(rawBits)
+
+        // Corners are already normalized (0-1), create Quadrilateral directly
+        let quadrilateral = Quadrilateral(
+            topLeft: corners[0],
+            topRight: corners[1],
+            bottomRight: corners[2],
+            bottomLeft: corners[3]
+        )
+
+        return ScanState.DetectionInfo(
+            quadrilateral: quadrilateral,
+            message: message,
+            confidence: Double(detection.confidence)
+        )
+    }
 }
 
 // MARK: - Preview Support
