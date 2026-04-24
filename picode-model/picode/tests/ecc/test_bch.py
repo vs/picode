@@ -221,3 +221,31 @@ class TestBCHBatchBehavior:
         assert success.shape == (1,)
         assert success.all()
         assert (decoded == msg).all()
+
+
+def test_bch_63_36() -> None:
+    """BCH(63, 36) works for PicodeLite."""
+    bch = BCH(n=63, k=36)
+
+    # Check properties
+    assert bch.codeword_length == 63
+    assert bch.message_length == 36
+    assert bch.t >= 5  # Should correct at least 5 errors
+
+    # Test encode/decode
+    message = torch.randint(0, 2, (4, 36)).float()
+    codeword = bch.encode(message)
+    assert codeword.shape == (4, 63)
+
+    # Decode without errors
+    decoded, success = bch.decode(codeword)
+    assert decoded.shape == (4, 36)
+    assert success.all()
+    assert torch.equal(decoded, message)
+
+    # Decode with 5 errors (should correct)
+    corrupted = codeword.clone()
+    corrupted[0, :5] = 1 - corrupted[0, :5]  # Flip 5 bits
+    decoded, success = bch.decode(corrupted)
+    assert success[0]
+    assert torch.equal(decoded[0], message[0])
