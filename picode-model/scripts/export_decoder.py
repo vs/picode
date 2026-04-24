@@ -130,21 +130,24 @@ def main() -> None:
     # Validate
     if args.validate:
         print("\nValidating...")
-        import time
+        try:
+            import time
 
-        import numpy as np
-        from PIL import Image
+            import numpy as np
+            from PIL import Image
 
-        model = ct.models.MLModel(str(output_path))
-        test_img = Image.fromarray(
-            (np.random.rand(input_size, input_size, 3) * 255).astype(np.uint8)
-        )
+            model = ct.models.MLModel(str(output_path))
+            test_img = Image.fromarray(
+                (np.random.rand(input_size, input_size, 3) * 255).astype(np.uint8)
+            )
 
-        start = time.perf_counter()
-        result = model.predict({"image": test_img})
-        elapsed = (time.perf_counter() - start) * 1000
-        print(f"  Inference: {elapsed:.1f}ms")
-        print(f"  Output shape: {np.array(result['logits']).shape}")
+            start = time.perf_counter()
+            result = model.predict({"image": test_img})
+            elapsed = (time.perf_counter() - start) * 1000
+            print(f"  Inference: {elapsed:.1f}ms")
+            print(f"  Output shape: {np.array(result['logits']).shape}")
+        except Exception as e:
+            print(f"  Validation failed: {e}")
 
 
 if __name__ == "__main__":
