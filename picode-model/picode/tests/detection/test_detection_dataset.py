@@ -3,18 +3,29 @@
 
 import pytest
 import torch
+import torch.nn as nn
 from torch import Tensor
-from unittest.mock import Mock
 
 from picode.detection.training.dataset import DetectionDataset
 
 
+class _MockEncoder(nn.Module):
+    """Mock encoder that returns input with small perturbation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._dummy = nn.Parameter(torch.zeros(1))
+
+    def forward(self, image: Tensor, message: Tensor) -> Tensor:
+        return image + torch.randn_like(image) * 0.01
+
+
 class TestDetectionDataset:
     @pytest.fixture
-    def mock_encoder(self) -> Mock:
+    def mock_encoder(self) -> nn.Module:
         """Mock encoder that returns input with small perturbation."""
-        encoder = Mock()
-        encoder.return_value = torch.rand(1, 3, 400, 400)
+        encoder = _MockEncoder()
+        encoder.eval()
         return encoder
 
     @pytest.fixture

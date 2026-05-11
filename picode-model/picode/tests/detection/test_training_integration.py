@@ -17,10 +17,14 @@ from picode.detection.training import (
 )
 
 
-class MockEncoder:
+class MockEncoder(torch.nn.Module):
     """Mock encoder for testing."""
 
-    def __call__(self, image: Tensor, message: Tensor) -> Tensor:
+    def __init__(self) -> None:
+        super().__init__()
+        self._dummy = torch.nn.Parameter(torch.zeros(1))
+
+    def forward(self, image: Tensor, message: Tensor) -> Tensor:
         # Return image with small perturbation
         return image + torch.randn_like(image) * 0.01
 
