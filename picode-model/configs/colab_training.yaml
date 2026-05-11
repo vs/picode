@@ -1,0 +1,82 @@
+# configs/colab_training.yaml
+# Configuration for Google Colab GPU training with COCO dataset
+# Paths point to Google Drive for persistence across sessions
+# GPU: Colab free tier (T4 16GB), Colab Pro (T4/A100)
+
+experiment_name: picode_coco
+
+data:
+  source: folder
+  path: /content/drive/MyDrive/picode/data/train2017
+  batch_size: 4  # T4 (16GB) safe
+  num_workers: 2  # Colab has fewer CPUs than dedicated servers
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 400
+  warmup_steps: 2000
+  no_im_loss_steps: 500
+  generator_grad_clip: 0.25
+
+loss:
+  message:
+    scale: 1.0
+    ramp_steps: 1
+  l2:
+    scale: 1.5
+    ramp_steps: 20000
+  lpips:
+    scale: 1.0
+    ramp_steps: 20000
+
+  use_border_falloff: true
+  border_falloff_speed: 4
+  l2_edge_gain: 10.0
+  l2_edge_ramp_steps: 20000
+  l2_edge_delay_steps: 60000
+
+  yuv_weights: [1.0, 1.0, 1.0]
+
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001
+    g_loss_scale: 1.0
+    g_loss_ramp_steps: 20000
+    clip_weights: 0.01
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 20000
+  brightness:
+    strength: 0.3
+    ramp_steps: 10000
+  saturation:
+    strength: 1.0
+    ramp_steps: 10000
+  hue:
+    strength: 0.1
+    ramp_steps: 10000
+  noise:
+    strength: 0.02
+    ramp_steps: 10000
+  contrast: [0.5, 1.5]
+  contrast_ramp_steps: 10000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 15000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: /content/drive/MyDrive/picode/checkpoints
+  save_every_steps: 5000
+  keep_last: 5
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 50
+  tensorboard_dir: /content/drive/MyDrive/picode/checkpoints/runs
