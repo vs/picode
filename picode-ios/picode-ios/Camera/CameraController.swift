@@ -12,6 +12,19 @@ final class CameraController: NSObject, ObservableObject {
     /// Photo output for capturing still images.
     private let photoOutput = AVCapturePhotoOutput()
 
+    /// Video output for real-time frame processing.
+    private let videoOutput = AVCaptureVideoDataOutput()
+
+    /// Queue for video frame processing.
+    private let videoQueue = DispatchQueue(label: "com.picode.videoQueue", qos: .userInteractive)
+
+    /// Delegate for receiving video frames.
+    weak var videoDelegate: AVCaptureVideoDataOutputSampleBufferDelegate? {
+        didSet {
+            videoOutput.setSampleBufferDelegate(videoDelegate, queue: videoQueue)
+        }
+    }
+
     /// Completion handler for photo capture.
     private var photoCaptureCompletion: ((UIImage?) -> Void)?
 
@@ -86,6 +99,27 @@ final class CameraController: NSObject, ObservableObject {
             return
         }
         captureSession.addOutput(photoOutput)
+
+        // Add video output for real-time processing
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
+
+        guard captureSession.canAddOutput(videoOutput) else {
+            handleSetupError("Could not add video output")
+            return
+        }
+        captureSession.addOutput(videoOutput)
+
+        // Set video orientation
+        if let connection = videoOutput.connection(with: .video) {
+            if #available(iOS 17.0, *) {
+                connection.videoRotationAngle = 90  // Portrait
+            } else {
+                connection.videoOrientation = .portrait
+            }
+        }
 
         captureSession.commitConfiguration()
         captureSession.startRunning()

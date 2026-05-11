@@ -85,12 +85,14 @@ final class FastDetectorTests: XCTestCase {
 
     // MARK: - Integration with ViewModel
 
+    @MainActor
     func testViewModelUsesFastDetector() {
         // CameraViewModel should default to FastDetector
         let viewModel = CameraViewModel()
         XCTAssertNotNil(viewModel)
     }
 
+    @MainActor
     func testViewModelAcceptsCustomDecoder() {
         // Should still work with StubDecoder for testing
         let stubDecoder = StubDecoder()

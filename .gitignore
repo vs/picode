@@ -49,6 +49,10 @@ wandb/
 checkpoints/
 runs/
 
+# CoreML models (large binaries, export locally)
+*.mlpackage
+*.mlmodelc
+
 # OS
 .DS_Store
 Thumbs.db
