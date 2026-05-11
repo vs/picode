@@ -60,6 +60,7 @@ class Evaluator:
         decoder: nn.Module,
         device: torch.device,
         lpips_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
+        decoder_size: int | None = None,
     ) -> None:
         """Initialize evaluator.
 
@@ -68,11 +69,25 @@ class Evaluator:
             decoder: Decoder model.
             device: Device to run evaluation on.
             lpips_fn: Optional LPIPS function for perceptual quality.
+            decoder_size: If set, resize encoded images to this size before decoding.
+                Used for PicodeLite where decoder_size < encoder_size.
         """
         self.encoder = encoder
         self.decoder = decoder
         self.device = device
         self.lpips_fn = lpips_fn
+        self.decoder_size = decoder_size
+
+    def _resize_for_decoder(self, images: Tensor) -> Tensor:
+        """Resize images to decoder_size if configured and sizes differ."""
+        if self.decoder_size is not None and images.shape[-1] != self.decoder_size:
+            return F.interpolate(
+                images,
+                size=(self.decoder_size, self.decoder_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+        return images
 
     @torch.no_grad()
     def evaluate(
@@ -110,7 +125,8 @@ class Evaluator:
             ).float()
 
             encoded = self.encoder(images, messages)
-            decoded_logits = self.decoder(encoded)
+            decoder_input = self._resize_for_decoder(encoded)
+            decoded_logits = self.decoder(decoder_input)
             decoded_binary = (decoded_logits > 0).float()  # Logits: > 0 means > 0.5 probability
 
             # Message metrics
@@ -164,7 +180,8 @@ class Evaluator:
                 distortion = self._create_distortion(name, strength)
                 distorted = distortion(encoded)
 
-                decoded_logits = self.decoder(distorted)
+                decoder_input = self._resize_for_decoder(distorted)
+                decoded_logits = self.decoder(decoder_input)
                 decoded_binary = (decoded_logits > 0).float()  # Logits threshold
 
                 bit_acc = (decoded_binary == messages).float().mean().item()

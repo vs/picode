@@ -267,7 +267,10 @@ class Trainer:
         self.checkpointer = Checkpointer(config.checkpoint, config.experiment_name)
 
         # Create evaluator
-        self.evaluator = Evaluator(self.encoder, self.decoder, self.device)
+        self.evaluator = Evaluator(
+            self.encoder, self.decoder, self.device,
+            decoder_size=self._decoder_size,
+        )
 
         # Create discriminator if GAN training enabled
         self.discriminator: nn.Module | None = None
