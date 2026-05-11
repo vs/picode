@@ -19,6 +19,11 @@ targets:
       - path: picode-ios
         excludes:
           - "**/*.plist"
+          - Models
+    resources:
+      - path: picode-ios/Models
+        buildPhase: resources
+        optional: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.picode.ios
       INFOPLIST_FILE: picode-ios/Info.plist
