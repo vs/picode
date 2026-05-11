@@ -18,6 +18,7 @@
 		44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */; };
 		45399C52DA90E5E043FB0ED9 /* Quadrilateral.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35321055F2F3512A28F5D586 /* Quadrilateral.swift */; };
 		599F2CFBDFD060E6184A8BC4 /* CaptureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635784AC68EE83D91DB66729 /* CaptureButton.swift */; };
+		5A49C8B6F81DEB4D0E0EF271 /* SlowDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EA61690B707C6ABDB586EC /* SlowDetectorTests.swift */; };
 		6E1DE15710394050F68B2896 /* FastDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C46CBEFA8960DCC072F32FE /* FastDetector.swift */; };
 		779F630EBEE260A939341414 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FF6280FF1774916B2D97E98 /* DecoderTests.swift */; };
 		9637084485AC68DC745C383D /* CameraControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */; };
@@ -26,6 +27,7 @@
 		CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */; };
 		D832E2D046C527F83204A09A /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492B237A548764590351C646 /* CameraController.swift */; };
 		E29940F54BC896B460B714EA /* QuadrilateralTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */; };
+		FA6676E93E782D9F37955505 /* SlowDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EB5EE3DBD17D8EF420D8020 /* SlowDetector.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +42,7 @@
 
 /* Begin PBXFileReference section */
 		19857120E395BEF01C81EE8B /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		1EB5EE3DBD17D8EF420D8020 /* SlowDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlowDetector.swift; sourceTree = "<group>"; };
 		2D5C9D330EDD8E5E2E4C3C2F /* ResultsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultsView.swift; sourceTree = "<group>"; };
 		300972E9F340CD6345BF6A5C /* PicodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PicodeApp.swift; sourceTree = "<group>"; };
 		35321055F2F3512A28F5D586 /* Quadrilateral.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quadrilateral.swift; sourceTree = "<group>"; };
@@ -52,6 +55,7 @@
 		635784AC68EE83D91DB66729 /* CaptureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButton.swift; sourceTree = "<group>"; };
 		6479C762E2023BBCFE38F4CE /* CameraControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraControllerTests.swift; sourceTree = "<group>"; };
 		9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelTests.swift; sourceTree = "<group>"; };
+		A3EA61690B707C6ABDB586EC /* SlowDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlowDetectorTests.swift; sourceTree = "<group>"; };
 		B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuadrilateralTests.swift; sourceTree = "<group>"; };
 		C0D025FBD9635C1AEC55E3F5 /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		D004072E32381E3254956C2F /* picode-iosTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "picode-iosTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -70,6 +74,7 @@
 				5FF6280FF1774916B2D97E98 /* DecoderTests.swift */,
 				F82D4C805CD2098FD857CFF7 /* FastDetectorTests.swift */,
 				B850CA5EA58ECDA773EE7874 /* QuadrilateralTests.swift */,
+				A3EA61690B707C6ABDB586EC /* SlowDetectorTests.swift */,
 				9E5258E7F54F983C8D1C49AE /* ViewModelTests.swift */,
 			);
 			path = "picode-iosTests";
@@ -110,6 +115,7 @@
 			children = (
 				4C46CBEFA8960DCC072F32FE /* FastDetector.swift */,
 				4F36C1FCB517AC7BD097EE01 /* PicodeDecoder.swift */,
+				1EB5EE3DBD17D8EF420D8020 /* SlowDetector.swift */,
 				3EF66DAA8CDD153B97C8616C /* StubDecoder.swift */,
 			);
 			path = Decoder;
@@ -264,6 +270,7 @@
 				34FEB9F4B04A82CC945F971E /* QuadrilateralOverlay.swift in Sources */,
 				CD7104D9197A4930FA02CEB5 /* ResultsView.swift in Sources */,
 				053783B5AE08C614F1A35759 /* ScanState.swift in Sources */,
+				FA6676E93E782D9F37955505 /* SlowDetector.swift in Sources */,
 				B9E680C97BD5F24A7CFCCC2E /* StubDecoder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -276,6 +283,7 @@
 				779F630EBEE260A939341414 /* DecoderTests.swift in Sources */,
 				3C30ADF87542225B07060702 /* FastDetectorTests.swift in Sources */,
 				E29940F54BC896B460B714EA /* QuadrilateralTests.swift in Sources */,
+				5A49C8B6F81DEB4D0E0EF271 /* SlowDetectorTests.swift in Sources */,
 				44BA8C56C85DEB6B0B696EC0 /* ViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
