@@ -5,22 +5,22 @@ experiment_name: picodelite
 
 model:
   type: picodelite
-  encoder_size: 800  # High-res encoder for fine patterns
-  decoder_size: 320  # Low-res decoder for fast mobile inference
+  encoder_size: 512
+  decoder_size: 512
 
 data:
   source: folder
   path: ./data/train
-  batch_size: 2  # Smaller batch for 800x800 images
+  batch_size: 4
   num_workers: 4
 
 training:
   num_steps: 140000
   lr: 0.0001
   num_bits: 63  # BCH(63, 36)
-  image_size: 800  # For backward compat, should match encoder_size
-  warmup_steps: 500
-  no_im_loss_steps: 500
+  image_size: 512
+  warmup_steps: 1000
+  no_im_loss_steps: 1000
   borders: black
   rnd_trans: 0.15  # Stronger perspective (no STN to correct)
   rnd_trans_ramp: 10000

@@ -1,13 +1,12 @@
 """PicodeLite decoder network.
 
-Lightweight decoder optimized for mobile inference:
+StegaStamp-style CNN decoder without STN:
 - No Spatial Transformer Network (STN)
-- Global average pooling (resolution-independent)
+- Flatten + large FC (matches StegaStamp's proven approach)
 - No BatchNorm
 - Input normalization (subtract 0.5)
 - Raw logits output (no sigmoid)
 - He normal weight initialization
-- ~640K parameters (< 1M for mobile)
 """
 
 import torch
@@ -18,39 +17,52 @@ from picode.models.base import Decoder as BaseDecoder
 
 
 class Decoder(BaseDecoder):
-    """CNN decoder with global pooling that extracts message bits from an encoded image.
+    """CNN decoder that extracts message bits from an encoded image.
 
-    Unlike StegaStamp, this decoder has no STN for geometric correction.
-    Uses global average pooling for resolution-independent inference.
+    Matches the StegaStamp decoder architecture (without STN):
+    7 conv layers with stride-2 downsampling, then Flatten + FC.
+    This preserves spatial features that carry the hidden message.
 
     Args:
         num_bits: Number of bits in the message (default: 63 for BCH(63,36)).
+        input_size: Expected input spatial dimension (default: 512).
     """
 
-    def __init__(self, num_bits: int = 63) -> None:
+    def __init__(self, num_bits: int = 63, input_size: int = 512) -> None:
         super().__init__()
         self.num_bits = num_bits
 
-        # Main decoder CNN - 8 conv layers, no BatchNorm
-        # Channel progression: 3 -> 32 -> 32 -> 64 -> 64 -> 128 -> 128 -> 128 -> 128
-        # Reduced from original 256 channels to stay under 1M params (~640K target)
-        self.conv1 = nn.Conv2d(3, 32, 3, stride=2, padding=1)      # 160x160
-        self.conv2 = nn.Conv2d(32, 32, 3, stride=1, padding=1)     # 160x160
-        self.conv3 = nn.Conv2d(32, 64, 3, stride=2, padding=1)     # 80x80
-        self.conv4 = nn.Conv2d(64, 64, 3, stride=1, padding=1)     # 80x80
-        self.conv5 = nn.Conv2d(64, 128, 3, stride=2, padding=1)    # 40x40
-        self.conv6 = nn.Conv2d(128, 128, 3, stride=1, padding=1)   # 40x40
-        self.conv7 = nn.Conv2d(128, 128, 3, stride=2, padding=1)   # 20x20
-        self.conv8 = nn.Conv2d(128, 128, 3, stride=1, padding=1)   # 20x20
+        # Main decoder CNN - matches StegaStamp structure (no BatchNorm)
+        # 5 stride-2 convs + 2 stride-1 convs = 7 total
+        # For 512x512: 512 -> 256 -> 256 -> 128 -> 128 -> 64 -> 32 -> 16
+        self.decoder = nn.Sequential(
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),    # /2
+            nn.ReLU(),
+            nn.Conv2d(32, 32, 3, padding=1),             # same
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),   # /2
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 3, padding=1),             # same
+            nn.ReLU(),
+            nn.Conv2d(64, 64, 3, stride=2, padding=1),   # /2
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),  # /2
+            nn.ReLU(),
+            nn.Conv2d(128, 128, 3, stride=2, padding=1), # /2
+            nn.ReLU(),
+            nn.Flatten(),
+        )
 
-        # Global average pooling for resolution-independence
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        # Compute flattened size: 5 stride-2 convs reduce spatial by 2^5 = 32
+        spatial = input_size // 32
+        flatten_size = 128 * spatial * spatial
 
-        # FC head: 128 -> 128 -> num_bits
-        self.fc1 = nn.Linear(128, 128)
-        self.fc2 = nn.Linear(128, num_bits)
-
-        self.relu = nn.ReLU()
+        # FC head (matches StegaStamp: large FC -> ReLU -> output)
+        self.fc = nn.Sequential(
+            nn.Linear(flatten_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, num_bits),
+        )
 
         # Initialize weights (He normal)
         self._init_weights()
@@ -76,29 +88,9 @@ class Decoder(BaseDecoder):
         Returns:
             Message logits (B, num_bits) - unbounded, apply sigmoid for probabilities
         """
-        # Normalize input (match original StegaStamp convention)
         x = image - 0.5
-
-        # Conv blocks: stride-2 + stride-1 pairs
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        x = self.relu(self.conv3(x))
-        x = self.relu(self.conv4(x))
-        x = self.relu(self.conv5(x))
-        x = self.relu(self.conv6(x))
-        x = self.relu(self.conv7(x))
-        x = self.relu(self.conv8(x))
-
-        # Global average pooling: (B, 128, H', W') -> (B, 128, 1, 1)
-        x = self.global_pool(x)
-
-        # Flatten: (B, 128, 1, 1) -> (B, 128)
-        x = x.view(x.size(0), -1)
-
-        # FC head
-        x = self.relu(self.fc1(x))
-        logits: Tensor = self.fc2(x)
-
+        x = self.decoder(x)
+        logits: Tensor = self.fc(x)
         return logits
 
     def decode(self, image: Tensor) -> Tensor:

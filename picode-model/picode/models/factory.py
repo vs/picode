@@ -83,6 +83,6 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
     elif config.type == "picodelite":
         from picode.models.picodelite import Decoder as LiteDecoder
 
-        return LiteDecoder(num_bits=num_bits)
+        return LiteDecoder(num_bits=num_bits, input_size=config.decoder_size)
     else:
         raise ValueError(f"Unknown model type: {config.type}")
