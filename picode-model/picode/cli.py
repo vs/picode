@@ -8,18 +8,30 @@ from PIL import Image, ImageOps
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from picode.models import stegastamp
+from picode.models.factory import create_decoder, create_encoder
+from picode.training.config import ModelConfig
 
 
 def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
-    """Load encoder and decoder from checkpoint."""
+    """Load encoder and decoder from checkpoint.
+
+    Returns:
+        Tuple of (encoder, decoder, num_bits, image_size).
+    """
     data = torch.load(checkpoint_path, weights_only=False, map_location=device)
     config = data.get("config", {})
     num_bits = config.get("training", {}).get("num_bits", 100)
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
+    image_size = model_cfg.get("encoder_size", 400)
 
-    # Create StegaStamp models
-    encoder = stegastamp.Encoder(num_bits=num_bits).to(device)
-    decoder = stegastamp.Decoder(num_bits=num_bits).to(device)
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=model_cfg.get("encoder_size", 400),
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits).to(device)
+    decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
     encoder.load_state_dict(data["encoder_state"])
     decoder.load_state_dict(data["decoder_state"])
@@ -27,7 +39,7 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
     encoder.eval()
     decoder.eval()
 
-    return encoder, decoder, num_bits
+    return encoder, decoder, num_bits, image_size
 
 
 def text_to_bits(text: str, num_bits: int) -> list[int]:
@@ -80,11 +92,12 @@ def get_device(device_str: str) -> torch.device:
 def encode_command(args: argparse.Namespace) -> None:
     """Handle encode subcommand."""
     device = get_device(args.device)
-    encoder, decoder, num_bits = load_model(args.checkpoint, device)
+    encoder, decoder, num_bits, image_size = load_model(args.checkpoint, device)
+    size = args.size or image_size
 
     # Load and preprocess image with center-crop (matches StegaStamp's ImageOps.fit)
     image = Image.open(args.input).convert("RGB")
-    image_cropped = ImageOps.fit(image, (args.size, args.size), method=Image.LANCZOS)
+    image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
 
     # Convert to tensor
     to_tensor = transforms.ToTensor()
@@ -122,7 +135,7 @@ def encode_command(args: argparse.Namespace) -> None:
         save_image(residual_vis, args.save_residual)
         print(f"Saved residual to {args.save_residual}")
 
-    print(f"Encoded message into {args.output} ({args.size}x{args.size})")
+    print(f"Encoded message into {args.output} ({size}x{size})")
     print(f"Message: {message}")
     print(f"Bits used: {num_bits}")
 
@@ -130,11 +143,12 @@ def encode_command(args: argparse.Namespace) -> None:
 def decode_command(args: argparse.Namespace) -> None:
     """Handle decode subcommand."""
     device = get_device(args.device)
-    _, decoder, num_bits = load_model(args.checkpoint, device)
+    _, decoder, num_bits, image_size = load_model(args.checkpoint, device)
+    size = args.size or image_size
 
     # Load and preprocess image
     transform = transforms.Compose([
-        transforms.Resize((args.size, args.size)),
+        transforms.Resize((size, size)),
         transforms.ToTensor(),
     ])
 
@@ -193,8 +207,8 @@ Examples:
     parser.add_argument(
         "--size",
         type=int,
-        default=400,
-        help="Output image size; input is center-cropped to square (default: 400)",
+        default=None,
+        help="Output image size; input is center-cropped to square (default: from checkpoint)",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
