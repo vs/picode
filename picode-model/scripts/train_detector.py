@@ -22,6 +22,7 @@ from picode.detection.training import (
     DetectionLoss,
     DetectionTrainer,
 )
+from picode.detection.training.augmentation import DomainRandomizedAugmentation
 from picode.models.stegastamp import Encoder
 
 
@@ -52,6 +53,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
     parser.add_argument("--save-every", type=int, default=5, help="Save checkpoint every N epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--domain-randomization",
+        action="store_true",
+        help="Use domain randomization for sim-to-real transfer",
+    )
     return parser.parse_args()
 
 
@@ -80,14 +86,25 @@ def create_datasets(
     data_dir: str,
     val_split: float,
     seed: int = 42,
+    use_domain_randomization: bool = False,
 ) -> tuple[Dataset, Dataset]:
     """Create train and validation datasets."""
     print(f"Creating datasets from {data_dir}...")
 
-    augmentation = DetectionAugmentation(
-        photometric_p=0.5,
-        geometric_p=0.5,
-    )
+    if use_domain_randomization:
+        print("Using DomainRandomizedAugmentation for sim-to-real transfer")
+        augmentation = DomainRandomizedAugmentation(
+            photometric_p=0.7,
+            geometric_p=0.5,
+            domain_random_p=0.6,
+            perspective_strength=(0.0, 0.15),
+            rotation_degrees=(-30, 30),
+        )
+    else:
+        augmentation = DetectionAugmentation(
+            photometric_p=0.5,
+            geometric_p=0.5,
+        )
 
     # Full dataset
     full_dataset = DetectionDataset(
@@ -133,6 +150,7 @@ def main() -> None:
         data_dir=args.data_dir,
         val_split=args.val_split,
         seed=args.seed,
+        use_domain_randomization=args.domain_randomization,
     )
 
     # Create data loaders
