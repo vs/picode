@@ -8,7 +8,8 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from picode.models import stegastamp
+from picode.models.factory import create_decoder, create_encoder
+from picode.training.config import ModelConfig
 from picode.training.evaluation import DEFAULT_ROBUSTNESS_SWEEP, Evaluator
 
 
@@ -19,12 +20,19 @@ def load_checkpoint(path: Path, device: torch.device) -> tuple:
     # Get config
     config = data.get("config", {})
     num_bits = config.get("training", {}).get("num_bits", 100)
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
 
-    print("Model type: stegastamp")
+    print(f"Model type: {model_type}")
 
-    # Create StegaStamp models
-    encoder = stegastamp.Encoder(num_bits=num_bits).to(device)
-    decoder = stegastamp.Decoder(num_bits=num_bits).to(device)
+    # Create models via factory
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=model_cfg.get("encoder_size", 400),
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits).to(device)
+    decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
     # Load weights
     encoder.load_state_dict(data["encoder_state"])
@@ -42,11 +50,12 @@ def evaluate_single_image(
     image_path: Path,
     device: torch.device,
     num_bits: int = 100,
+    image_size: int = 400,
 ) -> dict:
     """Encode a message in an image and decode it back."""
     # Load and preprocess image
     transform = transforms.Compose([
-        transforms.Resize((400, 400)),
+        transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
     ])
 
@@ -83,10 +92,11 @@ def run_robustness_sweep(
     image_path: Path,
     device: torch.device,
     num_bits: int = 100,
+    image_size: int = 400,
 ) -> list:
     """Run robustness sweep on a single image."""
     transform = transforms.Compose([
-        transforms.Resize((400, 400)),
+        transforms.Resize((image_size, image_size)),
         transforms.ToTensor(),
     ])
 
@@ -108,6 +118,7 @@ def evaluate_directory(
     num_bits: int = 100,
     run_robustness: bool = False,
     max_images: int | None = None,
+    image_size: int = 400,
 ) -> dict:
     """Evaluate on all images in a directory."""
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -133,13 +144,17 @@ def evaluate_directory(
     for i, image_path in enumerate(image_paths):
         print(f"\n[{i+1}/{len(image_paths)}] {image_path.name}")
 
-        result = evaluate_single_image(encoder, decoder, image_path, device, num_bits)
+        result = evaluate_single_image(
+            encoder, decoder, image_path, device, num_bits, image_size
+        )
         all_bit_acc.append(result["bit_accuracy"])
         all_psnr.append(result["psnr"])
         print(f"  Bit accuracy: {result['bit_accuracy']:.4f}, PSNR: {result['psnr']:.2f} dB")
 
         if run_robustness:
-            rob_results = run_robustness_sweep(encoder, decoder, image_path, device, num_bits)
+            rob_results = run_robustness_sweep(
+                encoder, decoder, image_path, device, num_bits, image_size
+            )
             for r in rob_results:
                 if r.distortion not in all_robustness:
                     all_robustness[r.distortion] = {}
@@ -198,8 +213,9 @@ def main():
     encoder, decoder, config = load_checkpoint(args.checkpoint, device)
 
     num_bits = config.get("training", {}).get("num_bits", 100)
+    image_size = config.get("model", {}).get("encoder_size", 400)
     step = config.get("step", "unknown")
-    print(f"Checkpoint step: {step}, num_bits: {num_bits}")
+    print(f"Checkpoint step: {step}, num_bits: {num_bits}, image_size: {image_size}")
 
     # Count parameters
     enc_params = sum(p.numel() for p in encoder.parameters())
@@ -207,16 +223,21 @@ def main():
     print(f"Encoder params: {enc_params:,}, Decoder params: {dec_params:,}")
 
     if args.dir:
-        evaluate_directory(encoder, decoder, args.dir, device, num_bits, args.robustness, args.max_images)
+        evaluate_directory(
+            encoder, decoder, args.dir, device, num_bits,
+            args.robustness, args.max_images, image_size,
+        )
     elif args.image:
         print(f"\nEvaluating on: {args.image}")
-        result = evaluate_single_image(encoder, decoder, args.image, device, num_bits)
+        result = evaluate_single_image(encoder, decoder, args.image, device, num_bits, image_size)
         print(f"  Bit accuracy: {result['bit_accuracy']:.4f}")
         print(f"  PSNR: {result['psnr']:.2f} dB")
 
         if args.robustness:
             print("\nRobustness sweep:")
-            results = run_robustness_sweep(encoder, decoder, args.image, device, num_bits)
+            results = run_robustness_sweep(
+                encoder, decoder, args.image, device, num_bits, image_size
+            )
             current_dist = None
             for r in results:
                 if r.distortion != current_dist:
