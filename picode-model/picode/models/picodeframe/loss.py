@@ -6,7 +6,6 @@ while preserving the original center pixels.
 
 from collections.abc import Callable
 
-import torch
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -52,86 +51,29 @@ def frame_lpips_loss(
     mask: Tensor,
     lpips_fn: Callable[[Tensor, Tensor], Tensor],
 ) -> Tensor:
-    """LPIPS loss focused on frame region.
+    """LPIPS loss on frame region via full-image comparison.
 
-    Extracts the bounding box around the frame area and computes LPIPS
-    on the border strips. Since the frame is a thin border, we compute
-    LPIPS on each side strip separately and average.
+    Computes LPIPS on the full generated vs ground truth images. Since
+    the center pixels are identical (enforced by hard mask), the perceptual
+    loss naturally comes from the frame region only. This avoids extracting
+    thin border strips that are too small for LPIPS network pooling layers.
 
     Args:
         generated: Generated framed image (B, C, H, W) in [0, 1].
         ground_truth: Ground truth image (B, C, H, W) in [0, 1].
-        mask: Binary mask (B, 1, H, W), 1 in center, 0 in border.
+        mask: Binary mask (B, 1, H, W), 1 in center, 0 in border. (unused,
+            kept for API consistency)
         lpips_fn: LPIPS loss function (expects inputs in [-1, 1]).
 
     Returns:
-        Scalar LPIPS loss on frame region.
+        Scalar LPIPS loss.
     """
-    _, _, H, W = generated.shape
-
-    # Find frame width from the mask (distance from edge to first 1)
-    # Use the first element's mask to determine frame width
-    mask_2d = mask[0, 0]  # (H, W)
-    # Find first row that has a 1 in the center
-    row_sums = mask_2d.sum(dim=1)
-    frame_rows = (row_sums == 0).sum().item()
-    fw = max(int(frame_rows), 1)
-
     # Scale to [-1, 1] for LPIPS
     gen_scaled = generated * 2 - 1
     gt_scaled = ground_truth * 2 - 1
 
-    # Compute LPIPS on each border strip
-    losses = []
-
-    # Top strip
-    if fw > 0:
-        top_gen = gen_scaled[:, :, :fw, :]
-        top_gt = gt_scaled[:, :, :fw, :]
-        # LPIPS needs reasonable spatial size, pad if too thin
-        if fw < 16:
-            top_gen = F.interpolate(top_gen, size=(16, W), mode="bilinear", align_corners=False)
-            top_gt = F.interpolate(top_gt, size=(16, W), mode="bilinear", align_corners=False)
-        losses.append(lpips_fn(top_gen, top_gt).mean())
-
-    # Bottom strip
-    if fw > 0:
-        bot_gen = gen_scaled[:, :, H - fw:, :]
-        bot_gt = gt_scaled[:, :, H - fw:, :]
-        if fw < 16:
-            bot_gen = F.interpolate(bot_gen, size=(16, W), mode="bilinear", align_corners=False)
-            bot_gt = F.interpolate(bot_gt, size=(16, W), mode="bilinear", align_corners=False)
-        losses.append(lpips_fn(bot_gen, bot_gt).mean())
-
-    # Left strip (excluding corners already counted)
-    if fw > 0:
-        left_gen = gen_scaled[:, :, fw:H - fw, :fw]
-        left_gt = gt_scaled[:, :, fw:H - fw, :fw]
-        if fw < 16:
-            left_gen = F.interpolate(
-                left_gen, size=(H - 2 * fw, 16), mode="bilinear", align_corners=False
-            )
-            left_gt = F.interpolate(
-                left_gt, size=(H - 2 * fw, 16), mode="bilinear", align_corners=False
-            )
-        losses.append(lpips_fn(left_gen, left_gt).mean())
-
-    # Right strip
-    if fw > 0:
-        right_gen = gen_scaled[:, :, fw:H - fw, W - fw:]
-        right_gt = gt_scaled[:, :, fw:H - fw, W - fw:]
-        if fw < 16:
-            right_gen = F.interpolate(
-                right_gen, size=(H - 2 * fw, 16), mode="bilinear", align_corners=False
-            )
-            right_gt = F.interpolate(
-                right_gt, size=(H - 2 * fw, 16), mode="bilinear", align_corners=False
-            )
-        losses.append(lpips_fn(right_gen, right_gt).mean())
-
-    if losses:
-        return torch.stack(losses).mean()
-    return torch.tensor(0.0, device=generated.device)
+    # Full-image LPIPS. Center pixels are identical so loss comes from frame.
+    return lpips_fn(gen_scaled, gt_scaled).mean()
 
 
 def stn_scale_loss(decoder: Decoder) -> Tensor:
