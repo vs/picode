@@ -164,16 +164,32 @@ class LoggingConfig:
 
 
 @dataclass
+class FrameConfig:
+    """PicodeFrame-specific configuration.
+
+    Controls frame generation parameters for the PicodeFrame model.
+    """
+
+    min_frame_pct: float = 0.02  # Min frame width as fraction of image
+    max_frame_pct: float = 0.05  # Max frame width as fraction of image
+    frame_l2_scale: float = 2.0
+    frame_l2_ramp_steps: int = 1
+    frame_lpips_scale: float = 1.5
+    frame_lpips_ramp_steps: int = 10000
+    stn_reg_scale: float = 0.1
+
+
+@dataclass
 class ModelConfig:
     """Model architecture configuration.
 
     Attributes:
-        type: Model type, either "stegastamp" or "picodelite".
+        type: Model type: "stegastamp", "picodelite", or "picodeframe".
         encoder_size: Image size for the encoder (e.g., 400 for StegaStamp, 800 for PicodeLite).
         decoder_size: Image size for the decoder (e.g., 400 for StegaStamp, 320 for PicodeLite).
     """
 
-    type: str = "stegastamp"  # stegastamp or picodelite
+    type: str = "stegastamp"  # stegastamp, picodelite, or picodeframe
     encoder_size: int = 400
     decoder_size: int = 400
 
@@ -190,6 +206,7 @@ class Config:
     distortion: DistortionConfig = field(default_factory=DistortionConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    frame: FrameConfig | None = None
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -258,6 +275,11 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     # Handle LoggingConfig
     if "logging" in data:
         data["logging"] = LoggingConfig(**data["logging"])
+
+    # Handle FrameConfig (PicodeFrame-specific)
+    if "frame" in data:
+        if data["frame"] is not None and isinstance(data["frame"], dict):
+            data["frame"] = FrameConfig(**data["frame"])
 
     return Config(**data)
 

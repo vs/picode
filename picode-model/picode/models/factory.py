@@ -5,6 +5,7 @@ based on model configuration. Supported model types:
 
 - **stegastamp**: Original StegaStamp architecture (400x400, 100 bits)
 - **picodelite**: Optimized mobile architecture (800x800 encoder, 320x320 decoder, 63 bits)
+- **picodeframe**: Frame-based encoding (400x400, 96 bits, preserves original image)
 """
 
 from __future__ import annotations
@@ -49,6 +50,10 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
         from picode.models.picodelite import Encoder as LiteEncoder
 
         return LiteEncoder(num_bits=num_bits)
+    elif config.type == "picodeframe":
+        from picode.models.picodeframe import Encoder as FrameEncoder
+
+        return FrameEncoder(num_bits=num_bits)
     else:
         raise ValueError(f"Unknown model type: {config.type}")
 
@@ -84,5 +89,9 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
         from picode.models.picodelite import Decoder as LiteDecoder
 
         return LiteDecoder(num_bits=num_bits, input_size=config.decoder_size)
+    elif config.type == "picodeframe":
+        from picode.models.picodeframe import Decoder as FrameDecoder
+
+        return FrameDecoder(num_bits=num_bits)
     else:
         raise ValueError(f"Unknown model type: {config.type}")

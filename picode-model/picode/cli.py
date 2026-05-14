@@ -95,13 +95,9 @@ def encode_command(args: argparse.Namespace) -> None:
     encoder, decoder, num_bits, image_size = load_model(args.checkpoint, device)
     size = args.size or image_size
 
-    # Load and preprocess image with center-crop (matches StegaStamp's ImageOps.fit)
-    image = Image.open(args.input).convert("RGB")
-    image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
-
-    # Convert to tensor
-    to_tensor = transforms.ToTensor()
-    image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+    # Check model type from checkpoint
+    data = torch.load(args.checkpoint, weights_only=False, map_location=device)
+    model_type = data.get("config", {}).get("model", {}).get("type", "stegastamp")
 
     # Convert message to bits
     message = args.message
@@ -116,26 +112,69 @@ def encode_command(args: argparse.Namespace) -> None:
 
     message_tensor = torch.tensor(bits, dtype=torch.float32, device=device).unsqueeze(0)
 
-    with torch.no_grad():
-        encoded = encoder(image_tensor, message_tensor)
+    if model_type == "picodeframe":
+        # PicodeFrame: resize to inner size, reflection-pad, encode with frame_width
+        frame_pct = args.frame_pct or 0.04
+        frame_width = int(size * frame_pct)
+        inner_size = size - 2 * frame_width
 
-    # Save encoded image
-    save_image(encoded, args.output)
+        # Load and resize image to inner size
+        image = Image.open(args.input).convert("RGB")
+        image_cropped = ImageOps.fit(image, (inner_size, inner_size), method=Image.LANCZOS)
 
-    # Save original if requested
-    if args.save_original:
-        save_image(image_tensor, args.save_original)
-        print(f"Saved original to {args.save_original}")
+        to_tensor = transforms.ToTensor()
+        inner_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
-    # Save residual if requested (amplified for visibility)
-    if args.save_residual:
-        residual = encoded - image_tensor
-        # Amplify 10x and center at gray (0.5) for visibility
-        residual_vis = (residual * 10 + 0.5).clamp(0, 1)
-        save_image(residual_vis, args.save_residual)
-        print(f"Saved residual to {args.save_residual}")
+        # Reflection-pad to full size
+        import torch.nn.functional as F
+        padded_tensor = F.pad(inner_tensor, (frame_width,) * 4, mode="reflect")
 
-    print(f"Encoded message into {args.output} ({size}x{size})")
+        with torch.no_grad():
+            encoded = encoder(padded_tensor, message_tensor, frame_width=frame_width)
+
+        # Save encoded image
+        save_image(encoded, args.output)
+
+        # Save original if requested (the inner image at full output size)
+        if args.save_original:
+            save_image(padded_tensor, args.save_original)
+            print(f"Saved original to {args.save_original}")
+
+        # Save residual if requested
+        if args.save_residual:
+            residual = encoded - padded_tensor
+            residual_vis = (residual * 10 + 0.5).clamp(0, 1)
+            save_image(residual_vis, args.save_residual)
+            print(f"Saved residual to {args.save_residual}")
+
+        print(f"Encoded message into {args.output} ({size}x{size})")
+        print(f"Frame width: {frame_width}px ({frame_pct*100:.0f}%)")
+        print(f"Inner image: {inner_size}x{inner_size}")
+    else:
+        # StegaStamp/PicodeLite: standard full-image encoding
+        image = Image.open(args.input).convert("RGB")
+        image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
+
+        to_tensor = transforms.ToTensor()
+        image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            encoded = encoder(image_tensor, message_tensor)
+
+        save_image(encoded, args.output)
+
+        if args.save_original:
+            save_image(image_tensor, args.save_original)
+            print(f"Saved original to {args.save_original}")
+
+        if args.save_residual:
+            residual = encoded - image_tensor
+            residual_vis = (residual * 10 + 0.5).clamp(0, 1)
+            save_image(residual_vis, args.save_residual)
+            print(f"Saved residual to {args.save_residual}")
+
+        print(f"Encoded message into {args.output} ({size}x{size})")
+
     print(f"Message: {message}")
     print(f"Bits used: {num_bits}")
 
@@ -221,6 +260,10 @@ Examples:
     encode_parser.add_argument("--save-original", type=Path, help="Save original image to path")
     encode_parser.add_argument(
         "--save-residual", type=Path, help="Save residual (amplified) to path"
+    )
+    encode_parser.add_argument(
+        "--frame-pct", type=float, default=None, dest="frame_pct",
+        help="Frame width as fraction of image (PicodeFrame only, default: 0.04)"
     )
     encode_parser.set_defaults(func=encode_command)
 

@@ -215,10 +215,13 @@ class Trainer:
 
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
-        # StegaStamp: same size for both (training.image_size, typically 400)
+        # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
         if config.model.type == "picodelite":
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
+        elif config.model.type == "picodeframe":
+            train_image_size = 400
+            self._decoder_size = 400
         else:
             train_image_size = config.training.image_size
             self._decoder_size = config.training.image_size  # Same as encoder for StegaStamp
@@ -227,8 +230,8 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type == "stegastamp":
-            # StegaStamp has STN with separate LR to prevent collapse
+        if config.model.type in ("stegastamp", "picodeframe"):
+            # StegaStamp and PicodeFrame have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
             stn_params = []
@@ -422,6 +425,21 @@ class Trainer:
     def _train_step(self, images: Tensor) -> dict[str, float]:
         """Execute a single training step.
 
+        Dispatches to model-specific training step based on model type.
+
+        Args:
+            images: Batch of images (B, C, H, W) in [0, 1].
+
+        Returns:
+            Dict of metrics for this step.
+        """
+        if self.config.model.type == "picodeframe":
+            return self._train_step_picodeframe(images)
+        return self._train_step_default(images)
+
+    def _train_step_default(self, images: Tensor) -> dict[str, float]:
+        """Execute a single training step for StegaStamp/PicodeLite.
+
         Implements the StegaStamp warp-encode-unwarp flow:
         1. Generate random perspective transform matrices
         2. Warp input image to canonical encoding space
@@ -593,6 +611,178 @@ class Trainer:
             metrics["decoder_prob_std"] = decoded_probs.std().item()
 
             # Bit accuracy (how many bits are correct)
+            predicted_bits = (decoded_probs > 0.5).float()
+            bit_accuracy = (predicted_bits == messages).float().mean().item()
+            metrics["bit_accuracy"] = bit_accuracy
+
+        return metrics
+
+    def _train_step_picodeframe(self, images: Tensor) -> dict[str, float]:
+        """Execute a single training step for PicodeFrame.
+
+        PicodeFrame encoding flow:
+        1. Load 400x400 images (ground truth including borders)
+        2. Sample random frame_width
+        3. Extract inner image, reflection-pad back to 400x400
+        4. Encode with frame_width parameter
+        5. Apply distortions
+        6. Decode
+        7. Compute frame-specific losses
+
+        Args:
+            images: Batch of images (B, C, H, W) in [0, 1].
+
+        Returns:
+            Dict of metrics for this step.
+        """
+        from picode.models.picodeframe import loss as frame_loss
+        from picode.models.picodeframe.decoder import Decoder as FrameDecoder
+
+        batch_size = images.shape[0]
+        num_bits = self.config.training.num_bits
+        image_size = images.shape[-1]  # 400
+
+        # Generate random messages
+        messages = torch.randint(0, 2, (batch_size, num_bits), device=self.device).float()
+
+        # Sample random frame width from [min_frame_pct, max_frame_pct]
+        frame_cfg = self.config.frame
+        if frame_cfg is not None:
+            min_fw = int(frame_cfg.min_frame_pct * image_size)
+            max_fw = int(frame_cfg.max_frame_pct * image_size)
+        else:
+            min_fw = int(0.02 * image_size)
+            max_fw = int(0.05 * image_size)
+        fw = torch.randint(min_fw, max_fw + 1, (1,)).item()
+        fw = int(fw)
+
+        # Extract inner image and reflection-pad back to full size
+        inner = images[:, :, fw:image_size - fw, fw:image_size - fw]
+        padded_inner = F.pad(inner, (fw, fw, fw, fw), mode="reflect")
+
+        # Create mask (1 in center, 0 in border)
+        mask = torch.zeros(batch_size, 1, image_size, image_size, device=self.device)
+        mask[:, :, fw:image_size - fw, fw:image_size - fw] = 1.0
+
+        # Encode
+        encoded = self.encoder(padded_inner, messages, frame_width=fw)
+
+        # Apply perspective warp/unwarp (same as StegaStamp)
+        rnd_trans = self.config.training.rnd_trans
+        rnd_trans_ramp = self.config.training.rnd_trans_ramp
+        if rnd_trans_ramp > 0:
+            perspective_strength = min(
+                rnd_trans * self.global_step / rnd_trans_ramp, rnd_trans
+            )
+        else:
+            perspective_strength = rnd_trans
+
+        if perspective_strength > 0:
+            M_forward, M_inverse = get_rand_transform_matrix(
+                batch_size, image_size, perspective_strength, self.device
+            )
+            # Warp encoded image
+            encoded_warped = perspective_transform(encoded, M_inverse, padding_mode="border")
+        else:
+            encoded_warped = encoded
+
+        # Apply distortions
+        distorted = self.distortion(encoded_warped, self.global_step)
+
+        # Decode
+        decoded_logits = self.decoder(distorted)
+
+        # Compute losses
+        step = self.global_step
+        no_im_loss_steps = self.config.training.no_im_loss_steps
+        skip_image_loss = step < no_im_loss_steps
+        effective_step = max(0, step - no_im_loss_steps)
+
+        # Message loss
+        msg_scale = self._ramp(
+            self.config.loss.message.scale,
+            self.config.loss.message.ramp_steps,
+            step,
+        )
+        loss_msg = frame_loss.message_loss(decoded_logits, messages)
+
+        losses: dict[str, Tensor] = {"loss_msg": loss_msg}
+
+        # Frame L2 loss
+        if frame_cfg is not None:
+            fl2_scale_cfg = frame_cfg.frame_l2_scale
+            fl2_ramp = frame_cfg.frame_l2_ramp_steps
+            flpips_scale_cfg = frame_cfg.frame_lpips_scale
+            flpips_ramp = frame_cfg.frame_lpips_ramp_steps
+            stn_reg_scale = frame_cfg.stn_reg_scale
+        else:
+            fl2_scale_cfg = 2.0
+            fl2_ramp = 1
+            flpips_scale_cfg = 1.5
+            flpips_ramp = 10000
+            stn_reg_scale = 0.1
+
+        loss_fl2 = frame_loss.frame_l2_loss(encoded, images, mask)
+        losses["loss_frame_l2"] = loss_fl2
+
+        # STN regularization
+        assert isinstance(self.decoder, FrameDecoder)
+        loss_stn = frame_loss.stn_scale_loss(self.decoder)
+        losses["loss_stn_reg"] = loss_stn
+
+        # Compute total loss
+        if self.global_step < self.config.training.warmup_steps:
+            total_loss = msg_scale * loss_msg
+        else:
+            total_loss = msg_scale * loss_msg + stn_reg_scale * loss_stn
+
+            if not skip_image_loss:
+                fl2_scale = self._ramp(fl2_scale_cfg, fl2_ramp, effective_step)
+                total_loss = total_loss + fl2_scale * loss_fl2
+
+                # Frame LPIPS loss
+                flpips_scale = self._ramp(flpips_scale_cfg, flpips_ramp, effective_step)
+                if flpips_scale > 0 and self._get_lpips_fn() is not None:
+                    loss_flpips = frame_loss.frame_lpips_loss(
+                        encoded, images, mask, self._get_lpips_fn()  # type: ignore[arg-type]
+                    )
+                    total_loss = total_loss + flpips_scale * loss_flpips
+                    losses["loss_frame_lpips"] = loss_flpips
+
+        losses["loss"] = total_loss
+
+        # Backward and optimize
+        self.optimizer.zero_grad()
+        total_loss.backward()  # type: ignore[no-untyped-call]
+
+        if self.config.training.generator_grad_clip > 0:
+            clip_val = self.config.training.generator_grad_clip
+            for p in self.encoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
+            for p in self.decoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
+
+        self.optimizer.step()
+
+        # Metrics
+        metrics: dict[str, float] = {}
+        metrics.update({k: v.item() for k, v in losses.items()})
+
+        # Residual statistics (only in frame region)
+        residual = encoded - images
+        frame_residual = residual * (1 - mask)
+        metrics["residual_mean"] = frame_residual.mean().item()
+        metrics["residual_std"] = frame_residual.std().item()
+        metrics["residual_abs_max"] = frame_residual.abs().max().item()
+        metrics["frame_width"] = float(fw)
+
+        with torch.no_grad():
+            decoded_probs = torch.sigmoid(decoded_logits)
+            metrics["decoder_prob_mean"] = decoded_probs.mean().item()
+            metrics["decoder_prob_std"] = decoded_probs.std().item()
+
             predicted_bits = (decoded_probs > 0.5).float()
             bit_accuracy = (predicted_bits == messages).float().mean().item()
             metrics["bit_accuracy"] = bit_accuracy
