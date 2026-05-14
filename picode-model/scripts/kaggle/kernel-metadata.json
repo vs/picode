@@ -1,0 +1,15 @@
+{
+  "id": "INSERT_YOUR_USERNAME/picodelite-training",
+  "title": "picodelite-training",
+  "code_file": "kaggle_train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "INSERT_YOUR_USERNAME/picode-source"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}
