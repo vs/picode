@@ -33,6 +33,7 @@ ENV/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/
 
 # PyTorch
 *.pt
