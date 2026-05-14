@@ -667,30 +667,41 @@ class Trainer:
         # Encode
         encoded = self.encoder(padded_inner, messages, frame_width=fw)
 
-        # Apply perspective warp/unwarp (same as StegaStamp)
-        rnd_trans = self.config.training.rnd_trans
-        rnd_trans_ramp = self.config.training.rnd_trans_ramp
-        if rnd_trans_ramp > 0:
-            perspective_strength = min(
-                rnd_trans * self.global_step / rnd_trans_ramp, rnd_trans
-            )
-        else:
-            perspective_strength = rnd_trans
+        # During warmup, skip distortions and perspective warp entirely.
+        # The message is hidden in a thin border (~4% of pixels) — the decoder
+        # needs clean signal to first learn the message channel before we add noise.
+        in_warmup = self.global_step < self.config.training.warmup_steps
 
-        if perspective_strength > 0:
-            M_forward, M_inverse = get_rand_transform_matrix(
-                batch_size, image_size, perspective_strength, self.device
-            )
-            # Warp encoded image
-            encoded_warped = perspective_transform(encoded, M_inverse, padding_mode="border")
+        if in_warmup:
+            decoder_input = encoded
         else:
-            encoded_warped = encoded
+            # Apply perspective warp (ramped)
+            rnd_trans = self.config.training.rnd_trans
+            rnd_trans_ramp = self.config.training.rnd_trans_ramp
+            # Ramp from warmup end, not from step 0
+            warp_step = self.global_step - self.config.training.warmup_steps
+            if rnd_trans_ramp > 0:
+                perspective_strength = min(
+                    rnd_trans * warp_step / rnd_trans_ramp, rnd_trans
+                )
+            else:
+                perspective_strength = rnd_trans
 
-        # Apply distortions
-        distorted = self.distortion(encoded_warped, self.global_step)
+            if perspective_strength > 0:
+                M_forward, M_inverse = get_rand_transform_matrix(
+                    batch_size, image_size, perspective_strength, self.device
+                )
+                encoded_warped = perspective_transform(
+                    encoded, M_inverse, padding_mode="border"
+                )
+            else:
+                encoded_warped = encoded
+
+            # Apply distortions (curriculum also ramps from 0)
+            decoder_input = self.distortion(encoded_warped, warp_step)
 
         # Decode
-        decoded_logits = self.decoder(distorted)
+        decoded_logits = self.decoder(decoder_input)
 
         # Compute losses
         step = self.global_step
