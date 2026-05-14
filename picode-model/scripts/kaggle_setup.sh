@@ -1,16 +1,44 @@
 #!/bin/bash
-# Kaggle setup and utility commands for PicodeLite training.
+# Kaggle setup and utility commands for Picode model training.
 #
 # Mirrors the pattern of modal_setup.sh but for Kaggle Kernels API.
 # The repo is private, so we upload the source as a Kaggle dataset
 # rather than git cloning at runtime.
+#
+# Supports multiple models via --model flag (default: picodelite).
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 KAGGLE_DIR="$SCRIPT_DIR/kaggle"
-KERNEL_SLUG="picodelite-training"
+
+# Default model
+MODEL_NAME="picodelite"
+
+# Parse --model flag from any position
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --model)
+            MODEL_NAME="$2"
+            shift 2
+            ;;
+        --model=*)
+            MODEL_NAME="${1#*=}"
+            shift
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${ARGS[@]}"
+
+# Derived names based on model
+KERNEL_SLUG="${MODEL_NAME}-training"
+CKPT_DATASET="${MODEL_NAME}-checkpoints"
 
 # --- Helpers ---
 
@@ -29,7 +57,11 @@ check_kaggle() {
 
 usage() {
     cat << 'EOF'
-Usage: ./scripts/kaggle_setup.sh <command> [args]
+Usage: ./scripts/kaggle_setup.sh [--model NAME] <command> [args]
+
+Models:
+    picodelite      PicodeLite model (default)
+    picodeframe     PicodeFrame model
 
 Commands:
     setup           Verify kaggle CLI installed, show username
@@ -42,10 +74,10 @@ Commands:
 Examples:
     ./scripts/kaggle_setup.sh setup
     ./scripts/kaggle_setup.sh upload-code
-    ./scripts/kaggle_setup.sh push
-    ./scripts/kaggle_setup.sh status
-    ./scripts/kaggle_setup.sh output ./kaggle_ckpts
-    ./scripts/kaggle_setup.sh resume
+    ./scripts/kaggle_setup.sh --model picodeframe push
+    ./scripts/kaggle_setup.sh --model picodeframe status
+    ./scripts/kaggle_setup.sh --model picodeframe output ./kaggle_ckpts
+    ./scripts/kaggle_setup.sh --model picodeframe resume
 EOF
 }
 
@@ -71,7 +103,7 @@ cmd_setup() {
     echo ""
     echo "Setup complete! Next steps:"
     echo "  1. Upload source code:  ./scripts/kaggle_setup.sh upload-code"
-    echo "  2. Push training kernel: ./scripts/kaggle_setup.sh push"
+    echo "  2. Push training kernel: ./scripts/kaggle_setup.sh --model $MODEL_NAME push"
 }
 
 cmd_upload_code() {
@@ -130,21 +162,40 @@ cmd_push() {
         exit 1
     fi
 
+    echo "Model: $MODEL_NAME (kernel: $KERNEL_SLUG)"
+
     # Create a working copy of kernel metadata with username substituted
     PUSH_DIR=$(mktemp -d)
     trap "rm -rf $PUSH_DIR" EXIT
 
-    # Substitute username in metadata
-    sed "s/INSERT_YOUR_USERNAME/$USERNAME/g" "$KAGGLE_DIR/kernel-metadata.json" > "$PUSH_DIR/kernel-metadata.json"
+    # Generate kernel metadata for this model
+    cat > "$PUSH_DIR/kernel-metadata.json" << METAEOF
+{
+  "id": "$USERNAME/$KERNEL_SLUG",
+  "title": "$KERNEL_SLUG",
+  "code_file": "kaggle_train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "$USERNAME/picode-source",
+    "awsaf49/coco-2017-dataset"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}
+METAEOF
 
-    # If picodelite-checkpoints dataset exists, add it to sources
-    if kaggle datasets status "$USERNAME/picodelite-checkpoints" >/dev/null 2>&1; then
-        echo "Found checkpoint dataset, adding to kernel sources..."
+    # If checkpoint dataset exists for this model, add it to sources
+    if kaggle datasets status "$USERNAME/$CKPT_DATASET" >/dev/null 2>&1; then
+        echo "Found checkpoint dataset ($CKPT_DATASET), adding to kernel sources..."
         python3 -c "
 import json
 with open('$PUSH_DIR/kernel-metadata.json') as f:
     meta = json.load(f)
-src = '$USERNAME/picodelite-checkpoints'
+src = '$USERNAME/$CKPT_DATASET'
 if src not in meta['dataset_sources']:
     meta['dataset_sources'].append(src)
 with open('$PUSH_DIR/kernel-metadata.json', 'w') as f:
@@ -152,8 +203,11 @@ with open('$PUSH_DIR/kernel-metadata.json', 'w') as f:
 "
     fi
 
-    # Copy training script
-    cp "$KAGGLE_DIR/kaggle_train.py" "$PUSH_DIR/kaggle_train.py"
+    # Copy training script and inject MODEL_NAME at the top
+    {
+        echo "import os; os.environ['MODEL_NAME'] = '$MODEL_NAME'  # injected by kaggle_setup.sh"
+        cat "$KAGGLE_DIR/kaggle_train.py"
+    } > "$PUSH_DIR/kaggle_train.py"
 
     echo "Pushing kernel $USERNAME/$KERNEL_SLUG..."
     echo "Metadata:"
@@ -163,7 +217,7 @@ with open('$PUSH_DIR/kernel-metadata.json', 'w') as f:
     kaggle kernels push -p "$PUSH_DIR"
 
     echo ""
-    echo "Kernel pushed! Check status with: ./scripts/kaggle_setup.sh status"
+    echo "Kernel pushed! Check status with: ./scripts/kaggle_setup.sh --model $MODEL_NAME status"
     echo "View at: https://www.kaggle.com/code/$USERNAME/$KERNEL_SLUG"
 }
 
@@ -175,7 +229,7 @@ cmd_status() {
         exit 1
     fi
 
-    echo "Checking kernel status..."
+    echo "Checking kernel status for $KERNEL_SLUG..."
     kaggle kernels status "$USERNAME/$KERNEL_SLUG"
 }
 
@@ -190,7 +244,7 @@ cmd_output() {
     LOCAL_DIR="${2:-./kaggle_checkpoints}"
     mkdir -p "$LOCAL_DIR"
 
-    echo "Downloading kernel output to $LOCAL_DIR..."
+    echo "Downloading kernel output from $KERNEL_SLUG to $LOCAL_DIR..."
     kaggle kernels output "$USERNAME/$KERNEL_SLUG" -p "$LOCAL_DIR"
 
     # Check if checkpoints.zip was downloaded
@@ -215,7 +269,6 @@ cmd_resume() {
         exit 1
     fi
 
-    CKPT_DATASET="picodelite-checkpoints"
     STAGING_DIR=$(mktemp -d)
     trap "rm -rf $STAGING_DIR" EXIT
 
@@ -236,11 +289,11 @@ cmd_resume() {
 
     # Step 2: Upload as checkpoint dataset
     echo ""
-    echo "=== Step 2: Uploading checkpoints as dataset ==="
+    echo "=== Step 2: Uploading checkpoints as dataset ($CKPT_DATASET) ==="
 
     cat > "$STAGING_DIR/dataset-metadata.json" << METAEOF
 {
-  "title": "picodelite-checkpoints",
+  "title": "$CKPT_DATASET",
   "id": "$USERNAME/$CKPT_DATASET",
   "licenses": [{"name": "Apache 2.0"}]
 }

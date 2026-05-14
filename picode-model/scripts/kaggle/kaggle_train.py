@@ -1,4 +1,4 @@
-"""Kaggle kernel training script for PicodeLite.
+"""Kaggle kernel training script for Picode models.
 
 This script runs on Kaggle with GPU enabled. It:
 1. Installs missing pip dependencies (torch/torchvision/opencv are pre-installed)
@@ -7,6 +7,9 @@ This script runs on Kaggle with GPU enabled. It:
 4. Optionally resumes from a checkpoint dataset
 5. Runs Trainer.fit()
 6. Zips checkpoints to /kaggle/working/ for download
+
+Set MODEL_NAME env var to select model (default: picodelite).
+Supported: picodelite, picodeframe
 """
 
 import glob
@@ -15,6 +18,20 @@ import shutil
 import subprocess
 import sys
 import zipfile
+
+# --- Model selection ---
+MODEL_NAME = os.environ.get("MODEL_NAME", "picodelite")
+print(f"Model: {MODEL_NAME}")
+
+# Map model names to config files and checkpoint dataset names
+MODEL_CONFIGS = {
+    "picodelite": "picodelite_kaggle.yaml",
+    "picodeframe": "picodeframe_kaggle.yaml",
+}
+CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
+
+if MODEL_NAME not in MODEL_CONFIGS:
+    raise ValueError(f"Unknown model: {MODEL_NAME}. Supported: {list(MODEL_CONFIGS.keys())}")
 
 # --- Step 1: Install missing dependencies ---
 print("Installing dependencies...")
@@ -79,10 +96,10 @@ coco_path = find_coco_path()
 
 # --- Step 4: Find resume checkpoint ---
 CHECKPOINT_SEARCH_PATTERNS = [
-    "/kaggle/input/picodelite-checkpoints/checkpoints/picodelite/checkpoint_*.pt",
-    "/kaggle/input/picodelite-checkpoints/picodelite/checkpoint_*.pt",
-    "/kaggle/input/picodelite-checkpoints/checkpoint_*.pt",
-    "/kaggle/input/picodelite-checkpoints/**/*.pt",
+    f"/kaggle/input/{CKPT_DATASET_NAME}/checkpoints/{MODEL_NAME}/checkpoint_*.pt",
+    f"/kaggle/input/{CKPT_DATASET_NAME}/{MODEL_NAME}/checkpoint_*.pt",
+    f"/kaggle/input/{CKPT_DATASET_NAME}/checkpoint_*.pt",
+    f"/kaggle/input/{CKPT_DATASET_NAME}/**/*.pt",
 ]
 
 resume_checkpoint = None
@@ -100,7 +117,7 @@ else:
     print("No resume checkpoint found, starting fresh")
 
 # --- Step 5: Create Trainer and run fit() ---
-CONFIG_PATH = os.path.join(PICODE_SOURCE, "configs", "picodelite_kaggle.yaml")
+CONFIG_PATH = os.path.join(PICODE_SOURCE, "configs", MODEL_CONFIGS[MODEL_NAME])
 CHECKPOINT_DIR = "/kaggle/working/checkpoints"
 
 overrides = parse_overrides([
