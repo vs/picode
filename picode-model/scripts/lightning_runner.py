@@ -108,6 +108,8 @@ def cmd_train(args):
     
     # Build training command
     train_cmd = "cd /teamspace/studios/this_studio/code/picode-model && python scripts/lightning_train.py"
+    if args.config:
+        train_cmd += f" --config {args.config}"
     if args.resume:
         train_cmd += " --resume"
     if args.batch_size:
@@ -246,6 +248,7 @@ def main():
     
     # train
     train_parser = subparsers.add_parser("train", help="Start/resume training")
+    train_parser.add_argument("--config", type=str, help="Training config file (passed to lightning_train.py)")
     train_parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     train_parser.add_argument("--gpu", default="t4", choices=["t4", "l4", "a10g", "a100"], help="GPU type")
     train_parser.add_argument("--batch-size", type=int, help="Override batch size")

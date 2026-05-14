@@ -1,7 +1,9 @@
-# PicodeLite Configuration
-# Optimized for reduced visual artifacts and fast mobile inference
+# PicodeLite Configuration for Lightning.ai Studio
+# YUV fix: penalize chrominance shifts to eliminate green/magenta artifacts
+# Free tier: 80 GPU-hours/month, T4/L4/A100 available
+# Storage: 50GB persistent in /teamspace/studios/this_studio
 
-experiment_name: picodelite
+experiment_name: picodelite_v2
 
 model:
   type: picodelite
@@ -10,8 +12,9 @@ model:
 
 data:
   source: folder
-  path: ./data/train
-  batch_size: 4
+  # Lightning.ai persistent storage path
+  path: /teamspace/studios/this_studio/data/train2017
+  batch_size: 4  # T4 (16GB) safe, increase to 8 for L4/A100
   num_workers: 4
 
 training:
@@ -76,11 +79,12 @@ distortion:
   enable_blur: true
 
 checkpoint:
-  dir: checkpoints
-  save_every_steps: 10000
-  keep_last: 3
+  # Lightning.ai persistent storage
+  dir: /teamspace/studios/this_studio/checkpoints
+  save_every_steps: 5000
+  keep_last: 5
 
 logging:
   backends: [console, tensorboard]
-  log_every_steps: 100
-  tensorboard_dir: runs
+  log_every_steps: 50
+  tensorboard_dir: /teamspace/studios/this_studio/checkpoints/runs
