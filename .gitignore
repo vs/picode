@@ -49,6 +49,7 @@ wandb/
 # Training artifacts
 checkpoints/
 runs/
+kaggle_ckpts/
 
 # CoreML models (large binaries, export locally)
 *.mlpackage
