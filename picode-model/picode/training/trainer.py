@@ -749,9 +749,11 @@ class Trainer:
         loss_stn = frame_loss.stn_scale_loss(self.decoder)
         losses["loss_stn_reg"] = loss_stn
 
-        # Compute total loss
+        # Compute total loss.
+        # Frame L2 is always included (even during warmup) to prevent the
+        # encoder's residual from growing unbounded when no image loss is active.
         if self.global_step < self.config.training.warmup_steps:
-            total_loss = msg_scale * loss_msg
+            total_loss = msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
         else:
             total_loss = msg_scale * loss_msg + stn_reg_scale * loss_stn
 
