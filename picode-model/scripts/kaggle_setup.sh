@@ -131,9 +131,10 @@ METAEOF
 
     # Copy source code (exclude data, checkpoints, caches)
     mkdir -p "$STAGING_DIR/picode-model"
-    rsync -a --exclude='data/' --exclude='checkpoints/' --exclude='*.pyc' \
-        --exclude='__pycache__' --exclude='.git' --exclude='venv/' \
-        --exclude='.venv/' --exclude='runs/' --exclude='*.egg-info' \
+    rsync -a --exclude='data/' --exclude='checkpoints/' --exclude='kaggle_ckpts/' \
+        --exclude='*.pyc' --exclude='__pycache__' --exclude='.git' \
+        --exclude='venv/' --exclude='.venv/' --exclude='runs/' \
+        --exclude='*.egg-info' --exclude='*.pt' --exclude='notebooks/' \
         "$PROJECT_DIR/" "$STAGING_DIR/picode-model/"
 
     echo "Staging directory contents:"
@@ -150,7 +151,19 @@ METAEOF
         kaggle datasets create -p "$STAGING_DIR" --dir-mode zip
     fi
 
+    # Wait for dataset to be ready before returning
     echo ""
+    echo "Waiting for dataset to be ready..."
+    for i in $(seq 1 30); do
+        STATUS=$(kaggle datasets status "$USERNAME/$DATASET_SLUG" 2>/dev/null || echo "unknown")
+        if [ "$STATUS" = "ready" ]; then
+            echo "Dataset is ready!"
+            break
+        fi
+        echo "  Status: $STATUS (attempt $i/30, waiting 10s...)"
+        sleep 10
+    done
+
     echo "Done! Dataset: https://www.kaggle.com/datasets/$USERNAME/$DATASET_SLUG"
 }
 

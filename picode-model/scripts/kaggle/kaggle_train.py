@@ -41,17 +41,67 @@ subprocess.check_call([
 ])
 
 # --- Step 2: Add picode source to sys.path ---
-PICODE_SOURCE = "/kaggle/input/picode-source/picode-model"
-if not os.path.isdir(PICODE_SOURCE):
-    # Try without subfolder (depends on dataset structure)
-    alt = "/kaggle/input/picode-source"
-    if os.path.isdir(os.path.join(alt, "picode")):
-        PICODE_SOURCE = alt
+# Kaggle dataset structure varies depending on upload method (--dir-mode zip/tar/skip).
+# Search common layouts to find the picode package.
+PICODE_SOURCE = None
+SEARCH_PATHS = [
+    "/kaggle/input/picode-source/picode-model",
+    "/kaggle/input/picode-source",
+    # --dir-mode zip can nest inside an extra directory
+    "/kaggle/input/picode-source/picode-model/picode-model",
+]
+
+# Search all datasets under /kaggle/input/ (handles slug variations)
+if os.path.isdir("/kaggle/input"):
+    for dataset in os.listdir("/kaggle/input"):
+        ds_path = os.path.join("/kaggle/input", dataset)
+        if not os.path.isdir(ds_path):
+            continue
+        SEARCH_PATHS.append(ds_path)
+        for entry in os.listdir(ds_path):
+            candidate = os.path.join(ds_path, entry)
+            if os.path.isdir(candidate):
+                SEARCH_PATHS.append(candidate)
+                # One more level for double nesting
+                for sub in os.listdir(candidate):
+                    sub_path = os.path.join(candidate, sub)
+                    if os.path.isdir(sub_path):
+                        SEARCH_PATHS.append(sub_path)
+
+for path in dict.fromkeys(SEARCH_PATHS):  # deduplicate, preserve order
+    if os.path.isdir(path) and os.path.isdir(os.path.join(path, "picode")):
+        PICODE_SOURCE = path
+        break
+
+if PICODE_SOURCE is None:
+    # Print all available datasets for debugging
+    print("ERROR: Could not find picode package.")
+    print()
+    print("Available datasets in /kaggle/input/:")
+    if os.path.isdir("/kaggle/input"):
+        for d in sorted(os.listdir("/kaggle/input")):
+            full = os.path.join("/kaggle/input", d)
+            if os.path.isdir(full):
+                contents = os.listdir(full)
+                print(f"  {d}/ ({len(contents)} items)")
+                for item in sorted(contents)[:10]:
+                    item_path = os.path.join(full, item)
+                    if os.path.isdir(item_path):
+                        sub_contents = os.listdir(item_path)
+                        print(f"    {item}/ ({len(sub_contents)} items)")
+                        for sub in sorted(sub_contents)[:5]:
+                            print(f"      {sub}")
+                    else:
+                        size = os.path.getsize(item_path)
+                        print(f"    {item} ({size / 1e6:.1f} MB)")
+            else:
+                print(f"  {d} (file)")
     else:
-        raise FileNotFoundError(
-            f"picode source not found at {PICODE_SOURCE} or {alt}. "
-            "Check that the picode-source dataset was uploaded correctly."
-        )
+        print("  /kaggle/input does not exist!")
+    print()
+    raise FileNotFoundError(
+        "picode source not found. See directory listing above."
+    )
 
 sys.path.insert(0, PICODE_SOURCE)
 print(f"picode source: {PICODE_SOURCE}")
@@ -61,32 +111,19 @@ from picode.training.trainer import Trainer  # noqa: E402
 from picode.training.cli import parse_overrides  # noqa: E402
 
 # --- Step 3: Auto-detect COCO data path ---
-COCO_SEARCH_PATTERNS = [
-    "/kaggle/input/coco-2017-dataset/coco2017/train2017",
-    "/kaggle/input/coco2017/train2017",
-    "/kaggle/input/coco-2017/train2017",
-    "/kaggle/input/*/train2017",
-]
-
-
 def find_coco_path() -> str:
-    """Find COCO training images under /kaggle/input/."""
-    for pattern in COCO_SEARCH_PATTERNS:
-        matches = glob.glob(pattern)
-        for m in matches:
-            if os.path.isdir(m):
-                num_files = len(os.listdir(m))
-                if num_files > 1000:
-                    print(f"Found COCO data: {m} ({num_files} images)")
-                    return m
-    # List what's available for debugging
-    print("Available datasets in /kaggle/input/:")
-    for d in sorted(os.listdir("/kaggle/input/")):
-        print(f"  {d}/")
-        subdir = os.path.join("/kaggle/input", d)
-        if os.path.isdir(subdir):
-            for sd in sorted(os.listdir(subdir))[:5]:
-                print(f"    {sd}")
+    """Find COCO training images under /kaggle/input/.
+
+    Searches recursively for a 'train2017' directory with >1000 images.
+    Handles both old (/kaggle/input/<slug>/) and new
+    (/kaggle/input/datasets/<user>/<slug>/) Kaggle mount layouts.
+    """
+    for pattern in glob.glob("/kaggle/input/**/train2017", recursive=True):
+        if os.path.isdir(pattern):
+            num_files = len(os.listdir(pattern))
+            if num_files > 1000:
+                print(f"Found COCO data: {pattern} ({num_files} images)")
+                return pattern
     raise FileNotFoundError(
         "COCO train2017 not found. Add a COCO 2017 dataset to your kernel sources."
     )
@@ -95,21 +132,21 @@ def find_coco_path() -> str:
 coco_path = find_coco_path()
 
 # --- Step 4: Find resume checkpoint ---
-CHECKPOINT_SEARCH_PATTERNS = [
-    f"/kaggle/input/{CKPT_DATASET_NAME}/checkpoints/{MODEL_NAME}/checkpoint_*.pt",
-    f"/kaggle/input/{CKPT_DATASET_NAME}/{MODEL_NAME}/checkpoint_*.pt",
-    f"/kaggle/input/{CKPT_DATASET_NAME}/checkpoint_*.pt",
-    f"/kaggle/input/{CKPT_DATASET_NAME}/**/*.pt",
-]
-
+# Search for checkpoints from the dedicated checkpoint dataset only (not source dataset).
+# Filter to current model name to avoid loading wrong model's checkpoints.
 resume_checkpoint = None
-for pattern in CHECKPOINT_SEARCH_PATTERNS:
-    matches = sorted(glob.glob(pattern, recursive=True))
-    # Filter to periodic checkpoints (not best.pt)
-    periodic = [m for m in matches if "checkpoint_" in os.path.basename(m)]
-    if periodic:
-        resume_checkpoint = periodic[-1]
-        break
+all_ckpts = sorted(glob.glob(
+    f"/kaggle/input/**/{CKPT_DATASET_NAME}/**/checkpoint_*.pt", recursive=True
+))
+if not all_ckpts:
+    # Also try direct pattern under checkpoint dataset
+    all_ckpts = sorted(glob.glob(
+        f"/kaggle/input/**/{MODEL_NAME}/checkpoint_*.pt", recursive=True
+    ))
+    # Filter out anything from picode-source (avoid stale checkpoints in source upload)
+    all_ckpts = [c for c in all_ckpts if "picode-source" not in c]
+if all_ckpts:
+    resume_checkpoint = all_ckpts[-1]
 
 if resume_checkpoint:
     print(f"Will resume from: {resume_checkpoint}")
