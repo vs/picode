@@ -21,7 +21,7 @@ training:
   image_size: 512
   warmup_steps: 2000
   no_im_loss_steps: 2000
-  borders: black
+  borders: image
   rnd_trans: 0.10  # Match StegaStamp (no STN to correct)
   rnd_trans_ramp: 20000
 
@@ -31,19 +31,19 @@ loss:
     ramp_steps: 1
   message_loss_type: bce
   l2:
-    scale: 1.5
-    ramp_steps: 20000
+    scale: 2.0
+    ramp_steps: 10000
   lpips:
-    scale: 1.0
-    ramp_steps: 20000
-  use_border_falloff: true
+    scale: 1.5
+    ramp_steps: 10000
+  use_border_falloff: false
   border_falloff_speed: 4
   l2_edge_gain: 10.0
   l2_edge_ramp_steps: 20000
   l2_edge_delay_steps: 60000
   yuv_weights: [1.0, 100.0, 100.0]
   gan_config:
-    enabled: true
+    enabled: false
     discriminator_lr: 0.00001
     g_loss_scale: 1.0
     g_loss_ramp_steps: 20000
