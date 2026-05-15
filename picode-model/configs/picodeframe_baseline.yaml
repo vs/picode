@@ -34,7 +34,7 @@ frame:
 loss:
   message:
     scale: 7.0
-    ramp_steps: 5000
+    ramp_steps: 1         # No ramp — full gradient from step 0 (border signal needs max strength)
   message_loss_type: bce
   gan_config:
     enabled: false

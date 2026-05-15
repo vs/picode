@@ -114,19 +114,24 @@ class Decoder(BaseDecoder):
         weight_reg = (self.stn_fc_weight ** 2).mean()
         return bias_reg + weight_reg
 
-    def forward(self, image: Tensor) -> Tensor:
+    def forward(self, image: Tensor, **kwargs: Tensor) -> Tensor:
         """Extract message logits from framed image.
 
         Args:
             image: (B, 3, H, W) in [0, 1]
+            **kwargs: Optional ``mask`` (B, 1, H, W) with 1 in center, 0 in border.
+                When provided, center pixels are zeroed after the STN transform
+                so the decoder CNN only sees border signal.
 
         Returns:
             Message logits (B, num_bits) - unbounded, apply sigmoid for probabilities
         """
+        mask: Tensor | None = kwargs.get("mask", None)
+
         # Normalize input
         image_norm = image - 0.5
 
-        # Compute STN affine parameters
+        # Compute STN affine parameters (uses full image for perspective estimation)
         stn_features = self.stn_params(image_norm)
         theta = torch.mm(stn_features, self.stn_fc_weight) + self.stn_fc_bias
         theta = theta.view(-1, 2, 3)
@@ -137,20 +142,30 @@ class Decoder(BaseDecoder):
             image_norm, grid, align_corners=False, mode="bilinear", padding_mode="zeros"
         )
 
+        # Zero out center pixels so CNN only sees border signal.
+        # The message is hidden only in the border — center pixels are natural image
+        # content that acts as noise and drowns out the thin border signal.
+        if mask is not None:
+            transformed_mask = F.grid_sample(
+                mask, grid, align_corners=False, mode="bilinear", padding_mode="zeros"
+            )
+            transformed = transformed * (1 - transformed_mask)
+
         # Decode from transformed image
         logits: Tensor = self.decoder(transformed)
         return logits
 
-    def decode(self, image: Tensor) -> Tensor:
+    def decode(self, image: Tensor, **kwargs: Tensor) -> Tensor:
         """Extract binary message from an image.
 
         Args:
             image: Input image tensor (B, C, H, W) in [0, 1].
+            **kwargs: Optional ``mask`` passed to forward().
 
         Returns:
             Binary message tensor (B, num_bits).
         """
-        logits = self.forward(image)
+        logits = self.forward(image, **kwargs)
         probs = torch.sigmoid(logits)
         return (probs > 0.5).float()
 

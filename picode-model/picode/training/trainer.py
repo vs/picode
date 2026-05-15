@@ -700,8 +700,9 @@ class Trainer:
             # Apply distortions (curriculum also ramps from 0)
             decoder_input = self.distortion(encoded_warped, warp_step)
 
-        # Decode
-        decoded_logits = self.decoder(decoder_input)
+        # Decode — pass mask so decoder zeros out center pixels.
+        # The CNN only sees border signal, avoiding center-pixel noise dilution.
+        decoded_logits = self.decoder(decoder_input, mask=mask)
 
         # Compute losses
         step = self.global_step

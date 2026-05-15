@@ -68,6 +68,45 @@ class TestDecoderForward:
         assert torch.all((result == 0) | (result == 1))
 
 
+class TestDecoderWithMask:
+    """Test decoder with center-masking."""
+
+    def test_mask_zeros_center(self, sample_image: torch.Tensor) -> None:
+        """Passing mask zeros out center pixels before CNN."""
+        decoder = Decoder(num_bits=96)
+        fw = 16
+        B, _, H, W = sample_image.shape
+        mask = torch.zeros(B, 1, H, W)
+        mask[:, :, fw:H - fw, fw:W - fw] = 1.0
+
+        # With mask, output should differ from without
+        out_no_mask = decoder(sample_image)
+        out_with_mask = decoder(sample_image, mask=mask)
+        assert not torch.allclose(out_no_mask, out_with_mask, atol=1e-4)
+
+    def test_mask_gradient_flow(self, sample_image: torch.Tensor) -> None:
+        """Gradients flow through masked decoder."""
+        decoder = Decoder(num_bits=96)
+        fw = 16
+        B, _, H, W = sample_image.shape
+        mask = torch.zeros(B, 1, H, W)
+        mask[:, :, fw:H - fw, fw:W - fw] = 1.0
+
+        sample_image.requires_grad_(True)
+        result = decoder(sample_image, mask=mask)
+        loss = result.sum()
+        loss.backward()
+        assert sample_image.grad is not None
+
+    def test_output_shape_with_mask(self, sample_image: torch.Tensor) -> None:
+        """Output shape unchanged with mask."""
+        decoder = Decoder(num_bits=96)
+        mask = torch.zeros(2, 1, 400, 400)
+        mask[:, :, 16:384, 16:384] = 1.0
+        result = decoder(sample_image, mask=mask)
+        assert result.shape == (2, 96)
+
+
 class TestSTNRegularization:
     """Test STN scale regularization."""
 
