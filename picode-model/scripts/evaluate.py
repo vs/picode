@@ -5,7 +5,8 @@ import argparse
 from pathlib import Path
 
 import torch
-from PIL import Image
+import torch.nn.functional as F
+from PIL import Image, ImageOps
 from torchvision import transforms
 
 from picode.models.factory import create_decoder, create_encoder
@@ -51,31 +52,51 @@ def evaluate_single_image(
     device: torch.device,
     num_bits: int = 100,
     image_size: int = 400,
+    model_type: str = "stegastamp",
+    frame_pct: float = 0.04,
 ) -> dict:
     """Encode a message in an image and decode it back."""
-    # Load and preprocess image
-    transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-    ])
-
     image = Image.open(image_path).convert("RGB")
-    image_tensor = transform(image).unsqueeze(0).to(device)
 
     # Create random message
     message = torch.randint(0, 2, (1, num_bits), device=device).float()
+    to_tensor = transforms.ToTensor()
 
     with torch.no_grad():
-        # Encode
-        encoded = encoder(image_tensor, message)
+        if model_type == "picodeframe":
+            frame_width = int(image_size * frame_pct)
+            inner_size = image_size - 2 * frame_width
 
-        # Decode
-        decoded_logits = decoder(encoded)
-        decoded = (decoded_logits > 0).float()
+            # Crop to inner size, reflection-pad to full size
+            image_cropped = ImageOps.fit(image, (inner_size, inner_size), method=Image.LANCZOS)
+            inner_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+            padded = F.pad(inner_tensor, (frame_width,) * 4, mode="reflect")
 
-        # Metrics
+            # Encode with frame_width
+            encoded = encoder(padded, message, frame_width=frame_width)
+
+            # Decode with mask
+            mask = torch.zeros(1, 1, image_size, image_size, device=device)
+            mask[:, :, frame_width:image_size - frame_width,
+                 frame_width:image_size - frame_width] = 1.0
+            decoded_logits = decoder(encoded, mask=mask)
+            decoded = (decoded_logits > 0).float()
+
+            # PSNR on frame region only (center is identical by construction)
+            frame_mask = (1 - mask).expand_as(encoded)
+            frame_pixels_enc = encoded[frame_mask.bool()]
+            frame_pixels_pad = padded[frame_mask.bool()]
+            mse = ((frame_pixels_enc - frame_pixels_pad) ** 2).mean().item()
+        else:
+            image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
+            image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+
+            encoded = encoder(image_tensor, message)
+            decoded_logits = decoder(encoded)
+            decoded = (decoded_logits > 0).float()
+            mse = ((encoded - image_tensor) ** 2).mean().item()
+
         bit_acc = (decoded == message).float().mean().item()
-        mse = ((encoded - image_tensor) ** 2).mean().item()
         psnr = 10 * torch.log10(torch.tensor(1.0 / mse)).item() if mse > 0 else float("inf")
 
     return {
@@ -93,21 +114,49 @@ def run_robustness_sweep(
     device: torch.device,
     num_bits: int = 100,
     image_size: int = 400,
+    model_type: str = "stegastamp",
+    frame_pct: float = 0.04,
 ) -> list:
     """Run robustness sweep on a single image."""
-    transform = transforms.Compose([
-        transforms.Resize((image_size, image_size)),
-        transforms.ToTensor(),
-    ])
-
     image = Image.open(image_path).convert("RGB")
-    image_tensor = transform(image).unsqueeze(0).to(device)
+    to_tensor = transforms.ToTensor()
     message = torch.randint(0, 2, (1, num_bits), device=device).float()
 
-    evaluator = Evaluator(encoder, decoder, device)
-    results = evaluator.robustness_sweep(image_tensor, message, DEFAULT_ROBUSTNESS_SWEEP)
+    if model_type == "picodeframe":
+        frame_width = int(image_size * frame_pct)
+        inner_size = image_size - 2 * frame_width
+        image_cropped = ImageOps.fit(image, (inner_size, inner_size), method=Image.LANCZOS)
+        inner_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+        padded = F.pad(inner_tensor, (frame_width,) * 4, mode="reflect")
 
-    return results
+        mask = torch.zeros(1, 1, image_size, image_size, device=device)
+        mask[:, :, frame_width:image_size - frame_width,
+             frame_width:image_size - frame_width] = 1.0
+
+        # Manually run robustness sweep with PicodeFrame encode/decode
+        from picode.training.evaluation import RobustnessResult
+        results: list = []
+        with torch.no_grad():
+            encoded = encoder(padded, message, frame_width=frame_width)
+            evaluator = Evaluator(encoder, decoder, device)
+            for name, strengths in DEFAULT_ROBUSTNESS_SWEEP.items():
+                for strength in strengths:
+                    distortion = evaluator._create_distortion(name, strength)
+                    distorted = distortion(encoded)
+                    decoded_logits = decoder(distorted, mask=mask)
+                    decoded_binary = (decoded_logits > 0).float()
+                    bit_acc = (decoded_binary == message).float().mean().item()
+                    msg_acc = (decoded_binary == message).all(dim=1).float().mean().item()
+                    results.append(RobustnessResult(
+                        distortion=name, strength=strength,
+                        bit_accuracy=bit_acc, message_accuracy=msg_acc,
+                    ))
+        return results
+    else:
+        image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
+        image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+        evaluator = Evaluator(encoder, decoder, device)
+        return evaluator.robustness_sweep(image_tensor, message, DEFAULT_ROBUSTNESS_SWEEP)
 
 
 def evaluate_directory(
@@ -119,6 +168,8 @@ def evaluate_directory(
     run_robustness: bool = False,
     max_images: int | None = None,
     image_size: int = 400,
+    model_type: str = "stegastamp",
+    frame_pct: float = 0.04,
 ) -> dict:
     """Evaluate on all images in a directory."""
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -145,7 +196,8 @@ def evaluate_directory(
         print(f"\n[{i+1}/{len(image_paths)}] {image_path.name}")
 
         result = evaluate_single_image(
-            encoder, decoder, image_path, device, num_bits, image_size
+            encoder, decoder, image_path, device, num_bits, image_size,
+            model_type, frame_pct,
         )
         all_bit_acc.append(result["bit_accuracy"])
         all_psnr.append(result["psnr"])
@@ -153,7 +205,8 @@ def evaluate_directory(
 
         if run_robustness:
             rob_results = run_robustness_sweep(
-                encoder, decoder, image_path, device, num_bits, image_size
+                encoder, decoder, image_path, device, num_bits, image_size,
+                model_type, frame_pct,
             )
             for r in rob_results:
                 if r.distortion not in all_robustness:
@@ -193,6 +246,10 @@ def main():
     parser.add_argument("--max-images", type=int, help="Max images to evaluate")
     parser.add_argument("--robustness", action="store_true", help="Run robustness sweep")
     parser.add_argument("--device", default="auto", help="Device (auto, cpu, cuda, mps)")
+    parser.add_argument(
+        "--frame-pct", type=float, default=0.04, dest="frame_pct",
+        help="Frame width as fraction of image (PicodeFrame only, default: 0.04)",
+    )
     args = parser.parse_args()
 
     # Select device
@@ -214,8 +271,10 @@ def main():
 
     num_bits = config.get("training", {}).get("num_bits", 100)
     image_size = config.get("model", {}).get("encoder_size", 400)
+    model_type = config.get("model", {}).get("type", "stegastamp")
     step = config.get("step", "unknown")
     print(f"Checkpoint step: {step}, num_bits: {num_bits}, image_size: {image_size}")
+    print(f"Model type: {model_type}")
 
     # Count parameters
     enc_params = sum(p.numel() for p in encoder.parameters())
@@ -226,17 +285,22 @@ def main():
         evaluate_directory(
             encoder, decoder, args.dir, device, num_bits,
             args.robustness, args.max_images, image_size,
+            model_type, args.frame_pct,
         )
     elif args.image:
         print(f"\nEvaluating on: {args.image}")
-        result = evaluate_single_image(encoder, decoder, args.image, device, num_bits, image_size)
+        result = evaluate_single_image(
+            encoder, decoder, args.image, device, num_bits, image_size,
+            model_type, args.frame_pct,
+        )
         print(f"  Bit accuracy: {result['bit_accuracy']:.4f}")
         print(f"  PSNR: {result['psnr']:.2f} dB")
 
         if args.robustness:
             print("\nRobustness sweep:")
             results = run_robustness_sweep(
-                encoder, decoder, args.image, device, num_bits, image_size
+                encoder, decoder, args.image, device, num_bits, image_size,
+                model_type, args.frame_pct,
             )
             current_dist = None
             for r in results:
