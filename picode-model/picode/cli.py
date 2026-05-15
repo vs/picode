@@ -185,6 +185,10 @@ def decode_command(args: argparse.Namespace) -> None:
     _, decoder, num_bits, image_size = load_model(args.checkpoint, device)
     size = args.size or image_size
 
+    # Check model type from checkpoint
+    data = torch.load(args.checkpoint, weights_only=False, map_location=device)
+    model_type = data.get("config", {}).get("model", {}).get("type", "stegastamp")
+
     # Load and preprocess image
     transform = transforms.Compose([
         transforms.Resize((size, size)),
@@ -195,7 +199,16 @@ def decode_command(args: argparse.Namespace) -> None:
     image_tensor = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        decoded_logits = decoder(image_tensor)
+        if model_type == "picodeframe":
+            # PicodeFrame: create mask and pass to decoder for center-masking
+            import torch.nn.functional as F
+            frame_pct = args.frame_pct or 0.04
+            frame_width = int(size * frame_pct)
+            mask = torch.zeros(1, 1, size, size, device=device)
+            mask[:, :, frame_width:size - frame_width, frame_width:size - frame_width] = 1.0
+            decoded_logits = decoder(image_tensor, mask=mask)
+        else:
+            decoded_logits = decoder(image_tensor)
         decoded_bits = (decoded_logits > 0).float().squeeze(0).cpu().numpy().tolist()
 
     decoded_bits = [int(b) for b in decoded_bits]
@@ -271,6 +284,10 @@ Examples:
     decode_parser = subparsers.add_parser("decode", help="Decode a message from an image")
     decode_parser.add_argument("input", type=Path, help="Input image path")
     decode_parser.add_argument("--raw", action="store_true", help="Show raw bits only")
+    decode_parser.add_argument(
+        "--frame-pct", type=float, default=None, dest="frame_pct",
+        help="Frame width as fraction of image (PicodeFrame only, default: 0.04)"
+    )
     decode_parser.set_defaults(func=decode_command)
 
     args = parser.parse_args()
