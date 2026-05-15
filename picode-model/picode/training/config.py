@@ -172,6 +172,7 @@ class FrameConfig:
 
     min_frame_pct: float = 0.02  # Min frame width as fraction of image
     max_frame_pct: float = 0.05  # Max frame width as fraction of image
+    fixed_frame_steps: int = 0  # Use max_frame_pct for first N steps, then randomize
     frame_l2_scale: float = 2.0
     frame_l2_ramp_steps: int = 1
     frame_lpips_scale: float = 1.5

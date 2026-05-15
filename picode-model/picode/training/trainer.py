@@ -645,15 +645,22 @@ class Trainer:
         # Generate random messages
         messages = torch.randint(0, 2, (batch_size, num_bits), device=self.device).float()
 
-        # Sample random frame width from [min_frame_pct, max_frame_pct]
+        # Sample frame width. During fixed_frame_steps, use max width so the
+        # encoder/decoder learn on the easiest (widest) frames first.
         frame_cfg = self.config.frame
         if frame_cfg is not None:
             min_fw = int(frame_cfg.min_frame_pct * image_size)
             max_fw = int(frame_cfg.max_frame_pct * image_size)
+            fixed_steps = frame_cfg.fixed_frame_steps
         else:
             min_fw = int(0.02 * image_size)
             max_fw = int(0.05 * image_size)
-        fw = torch.randint(min_fw, max_fw + 1, (1,)).item()
+            fixed_steps = 0
+
+        if fixed_steps > 0 and self.global_step < fixed_steps:
+            fw = max_fw
+        else:
+            fw = torch.randint(min_fw, max_fw + 1, (1,)).item()
         fw = int(fw)
 
         # Extract inner image and reflection-pad back to full size

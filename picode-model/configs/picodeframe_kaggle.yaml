@@ -28,15 +28,16 @@ training:
 frame:
   min_frame_pct: 0.02
   max_frame_pct: 0.05
-  frame_l2_scale: 2.0
+  fixed_frame_steps: 20000  # Use max_frame_pct for first N steps, then randomize
+  frame_l2_scale: 1.0       # Reduced from 2.0 — let encoder encode more aggressively
   frame_l2_ramp_steps: 1
-  frame_lpips_scale: 1.5
+  frame_lpips_scale: 0.5    # Reduced from 1.5 — prioritize message over frame quality
   frame_lpips_ramp_steps: 10000
   stn_reg_scale: 0.1
 
 loss:
   message:
-    scale: 7.0
+    scale: 10.0
     ramp_steps: 1         # No ramp — full gradient from step 0 (border signal needs max strength)
   message_loss_type: bce
   gan_config:
