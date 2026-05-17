@@ -733,16 +733,24 @@ class Trainer:
             fl2_ramp = frame_cfg.frame_l2_ramp_steps
             flpips_scale_cfg = frame_cfg.frame_lpips_scale
             flpips_ramp = frame_cfg.frame_lpips_ramp_steps
+            fcolor_scale_cfg = frame_cfg.frame_color_scale
+            fcolor_ramp = frame_cfg.frame_color_ramp_steps
             stn_reg_scale = frame_cfg.stn_reg_scale
         else:
             fl2_scale_cfg = 2.0
             fl2_ramp = 1
             flpips_scale_cfg = 1.5
             flpips_ramp = 10000
+            fcolor_scale_cfg = 2.0
+            fcolor_ramp = 1
             stn_reg_scale = 0.1
 
         loss_fl2 = frame_loss.frame_l2_loss(encoded, images, mask)
         losses["loss_frame_l2"] = loss_fl2
+
+        # Frame color loss (penalize color shifts in residual)
+        loss_fcolor = frame_loss.frame_color_loss(encoded, images, mask)
+        losses["loss_frame_color"] = loss_fcolor
 
         # STN regularization
         assert isinstance(self.decoder, FrameDecoder)
@@ -750,12 +758,19 @@ class Trainer:
         losses["loss_stn_reg"] = loss_stn
 
         # Compute total loss.
-        # Frame L2 is always included (even during warmup) to prevent the
-        # encoder's residual from growing unbounded when no image loss is active.
+        # Frame L2 and color losses are always included (even during warmup) to
+        # prevent unbounded residuals and color artifacts from the start.
+        fcolor_scale = self._ramp(fcolor_scale_cfg, fcolor_ramp, step)
         if self.global_step < self.config.training.warmup_steps:
-            total_loss = msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
+            total_loss = (
+                msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
+                + fcolor_scale * loss_fcolor
+            )
         else:
-            total_loss = msg_scale * loss_msg + stn_reg_scale * loss_stn
+            total_loss = (
+                msg_scale * loss_msg + stn_reg_scale * loss_stn
+                + fcolor_scale * loss_fcolor
+            )
 
             if not skip_image_loss:
                 fl2_scale = self._ramp(fl2_scale_cfg, fl2_ramp, effective_step)

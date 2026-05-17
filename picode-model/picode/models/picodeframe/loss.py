@@ -76,6 +76,29 @@ def frame_lpips_loss(
     return lpips_fn(gen_scaled, gt_scaled).mean()
 
 
+def frame_color_loss(generated: Tensor, ground_truth: Tensor, mask: Tensor) -> Tensor:
+    """Penalize color shifts in the frame residual.
+
+    Computes the variance of the residual across RGB channels at each frame pixel,
+    then averages. This pushes the encoder toward grayscale-only residuals (equal
+    change across R, G, B) so the frame has no visible color artifacts.
+
+    Args:
+        generated: Generated framed image (B, C, H, W).
+        ground_truth: Ground truth image (B, C, H, W).
+        mask: Binary mask (B, 1, H, W), 1 in center, 0 in border.
+
+    Returns:
+        Scalar color variance loss on frame region.
+    """
+    residual = generated - ground_truth  # (B, 3, H, W)
+    frame_mask = 1 - mask  # (B, 1, H, W)
+    # Variance across RGB channels at each spatial position
+    channel_var = residual.var(dim=1, keepdim=True)  # (B, 1, H, W)
+    num_frame_pixels = frame_mask.sum().clamp(min=1)
+    return (channel_var * frame_mask).sum() / num_frame_pixels
+
+
 def stn_scale_loss(decoder: Decoder) -> Tensor:
     """STN scale regularization loss.
 
