@@ -16,7 +16,7 @@ data:
 
 training:
   num_steps: 140000
-  lr: 0.0001
+  lr: 0.0003
   num_bits: 96
   image_size: 400
   warmup_steps: 5000      # Long warmup: message-only, no distortions (frame signal is thin)
