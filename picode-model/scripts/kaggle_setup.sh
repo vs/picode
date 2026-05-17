@@ -61,6 +61,7 @@ Usage: ./scripts/kaggle_setup.sh [--model NAME] <command> [args]
 
 Models:
     picodelite      PicodeLite model (default)
+    picodelite_256bit  PicodeLite 256-bit model
     picodeframe     PicodeFrame model
 
 Commands:

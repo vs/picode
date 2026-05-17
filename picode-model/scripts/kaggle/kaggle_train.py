@@ -9,7 +9,7 @@ This script runs on Kaggle with GPU enabled. It:
 6. Zips checkpoints to /kaggle/working/ for download
 
 Set MODEL_NAME env var to select model (default: picodelite).
-Supported: picodelite, picodeframe
+Supported: picodelite, picodelite_256bit, picodeframe
 """
 
 import glob
@@ -26,6 +26,7 @@ print(f"Model: {MODEL_NAME}")
 # Map model names to config files and checkpoint dataset names
 MODEL_CONFIGS = {
     "picodelite": "picodelite_kaggle.yaml",
+    "picodelite_256bit": "picodelite_256bit_kaggle.yaml",
     "picodeframe": "picodeframe_kaggle.yaml",
 }
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
