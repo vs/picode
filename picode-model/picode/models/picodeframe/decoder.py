@@ -4,6 +4,7 @@ Based on the StegaStamp decoder with STN and CNN architecture.
 Key differences from StegaStamp decoder:
 - 96 output bits instead of 100
 - STN scale regularization to prevent zoom-in that would crop the frame
+- Shallow CNN (stops at 50x50) with masked average pooling for border-only features
 """
 
 import torch
@@ -17,9 +18,9 @@ from picode.models.base import Decoder as BaseDecoder
 class Decoder(BaseDecoder):
     """CNN decoder with STN that extracts message bits from a framed image.
 
-    Architecture matches StegaStamp decoder with 96-bit output and
-    STN scale regularization to prevent the STN from learning to
-    zoom in and crop the message-bearing frame.
+    Uses a shallow CNN (3 stride-2 + 3 stride-1 convolutions, stopping at 50x50)
+    followed by masked average pooling to aggregate only border features.
+    At 50x50, a 20px border is still ~2.5px wide — enough signal to decode from.
 
     Args:
         num_bits: Number of bits in the message (default: 96).
@@ -59,27 +60,27 @@ class Decoder(BaseDecoder):
             self.stn_fc_weight.requires_grad = False
             self.stn_fc_bias.requires_grad = False
 
-        # Main decoder CNN - no BatchNorm
-        self.decoder = nn.Sequential(
-            nn.Conv2d(3, 32, 3, stride=2, padding=1),  # 200x200
+        # Shallow decoder CNN — stops at 50x50 to preserve border signal
+        # 3 stride-2 convs (400→200→100→50) + 3 stride-1 convs for depth
+        # Receptive field ~43px at 50x50, covers full 20px border width
+        self.decoder_cnn = nn.Sequential(
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),    # 200x200
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, padding=1),
+            nn.Conv2d(32, 32, 3, padding=1),             # 200x200
             nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1),  # 100x100
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),   # 100x100
             nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1),
+            nn.Conv2d(64, 64, 3, padding=1),             # 100x100
             nn.ReLU(),
-            nn.Conv2d(64, 64, 3, stride=2, padding=1),  # 50x50
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),  # 50x50
             nn.ReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1),  # 25x25
+            nn.Conv2d(128, 128, 3, padding=1),           # 50x50
             nn.ReLU(),
-            nn.Conv2d(128, 128, 3, stride=2, padding=1),  # 13x13
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(128 * 13 * 13, 512),
-            nn.ReLU(),
-            nn.Linear(512, num_bits),  # Raw logits, no activation
         )
+
+        # FC head after masked average pooling: 128 → 512 → num_bits
+        self.fc1 = nn.Linear(128, 512)
+        self.fc2 = nn.Linear(512, num_bits)
 
         # Initialize weights (He normal)
         self._init_weights()
@@ -120,8 +121,8 @@ class Decoder(BaseDecoder):
         Args:
             image: (B, 3, H, W) in [0, 1]
             **kwargs: Optional ``mask`` (B, 1, H, W) with 1 in center, 0 in border.
-                When provided, center pixels are zeroed after the STN transform
-                so the decoder CNN only sees border signal.
+                When provided, masked average pooling aggregates only border features.
+                When absent, global average pooling is used (inference compatibility).
 
         Returns:
             Message logits (B, num_bits) - unbounded, apply sigmoid for probabilities
@@ -142,17 +143,31 @@ class Decoder(BaseDecoder):
             image_norm, grid, align_corners=False, mode="bilinear", padding_mode="zeros"
         )
 
-        # Zero out center pixels so CNN only sees border signal.
-        # The message is hidden only in the border — center pixels are natural image
-        # content that acts as noise and drowns out the thin border signal.
+        # Transform mask through same STN grid
         if mask is not None:
             transformed_mask = F.grid_sample(
                 mask, grid, align_corners=False, mode="bilinear", padding_mode="zeros"
             )
-            transformed = transformed * (1 - transformed_mask)
 
-        # Decode from transformed image
-        logits: Tensor = self.decoder(transformed)
+        # CNN features at 50x50
+        features = self.decoder_cnn(transformed)  # (B, 128, 50, 50)
+
+        # Masked average pooling — aggregate only border features
+        if mask is not None:
+            mask_small = F.interpolate(
+                transformed_mask, size=features.shape[2:], mode="bilinear", align_corners=False
+            )
+            mask_small = (mask_small > 0.5).float()
+            border_mask = 1.0 - mask_small  # 1=border, 0=center
+            num_border = border_mask.sum(dim=[2, 3], keepdim=True).clamp(min=1)
+            pooled = (features * border_mask).sum(dim=[2, 3]) / num_border.squeeze(-1).squeeze(-1)
+        else:
+            # No mask — global average pooling (inference)
+            pooled = features.mean(dim=[2, 3])
+
+        # FC head
+        x = F.relu(self.fc1(pooled))
+        logits: Tensor = self.fc2(x)
         return logits
 
     def decode(self, image: Tensor, **kwargs: Tensor) -> Tensor:
