@@ -34,7 +34,7 @@ frame:
   frame_lpips_scale: 0.5    # Reduced from 1.5 — prioritize message over frame quality
   frame_lpips_ramp_steps: 10000
   frame_color_scale: 2.0    # Penalize color shifts in frame residual
-  frame_color_ramp_steps: 1
+  frame_color_ramp_steps: 10000  # Slow ramp — let message path establish first
   stn_reg_scale: 0.1
 
 loss:

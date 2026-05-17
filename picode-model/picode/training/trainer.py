@@ -758,15 +758,15 @@ class Trainer:
         losses["loss_stn_reg"] = loss_stn
 
         # Compute total loss.
-        # Frame L2 and color losses are always included (even during warmup) to
-        # prevent unbounded residuals and color artifacts from the start.
-        fcolor_scale = self._ramp(fcolor_scale_cfg, fcolor_ramp, step)
+        # Frame L2 is always included (even during warmup) to prevent the
+        # encoder's residual from growing unbounded when no image loss is active.
+        # Color loss is delayed until after warmup so the message path establishes
+        # first — its direct gradient to the encoder can overwhelm the attenuated
+        # message gradient during early training.
         if self.global_step < self.config.training.warmup_steps:
-            total_loss = (
-                msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
-                + fcolor_scale * loss_fcolor
-            )
+            total_loss = msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
         else:
+            fcolor_scale = self._ramp(fcolor_scale_cfg, fcolor_ramp, effective_step)
             total_loss = (
                 msg_scale * loss_msg + stn_reg_scale * loss_stn
                 + fcolor_scale * loss_fcolor
