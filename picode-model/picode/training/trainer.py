@@ -707,8 +707,7 @@ class Trainer:
             # Apply distortions (curriculum also ramps from 0)
             decoder_input = self.distortion(encoded_warped, warp_step)
 
-        # Decode — pass mask so decoder zeros out center pixels.
-        # The CNN only sees border signal, avoiding center-pixel noise dilution.
+        # Decode — pass mask for masked average pooling (border-only features).
         decoded_logits = self.decoder(decoder_input, mask=mask)
 
         # Compute losses
@@ -763,7 +762,13 @@ class Trainer:
         # Color loss is delayed until after warmup so the message path establishes
         # first — its direct gradient to the encoder can overwhelm the attenuated
         # message gradient during early training.
-        if self.global_step < self.config.training.warmup_steps:
+        decoder_warmup = self.config.training.decoder_warmup_steps
+        if step < decoder_warmup:
+            # Decoder bootstrap: message-only, no L2.
+            # Lets encoder produce strong border modifications so decoder
+            # has clear signal to learn from.
+            total_loss = msg_scale * loss_msg
+        elif step < self.config.training.warmup_steps:
             total_loss = msg_scale * loss_msg + fl2_scale_cfg * loss_fl2
         else:
             fcolor_scale = self._ramp(fcolor_scale_cfg, fcolor_ramp, effective_step)

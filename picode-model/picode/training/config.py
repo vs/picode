@@ -126,6 +126,7 @@ class TrainingConfig:
     encoder_lr_scale: float = 1.0  # Multiplier for encoder learning rate (decoder uses base lr)
     stn_lr_scale: float = 0.01  # Multiplier for STN linear params (stn_fc_weight, stn_fc_bias)
     no_im_loss_steps: int = 500  # Original: 500 steps message-only training
+    decoder_warmup_steps: int = 0  # Steps with message-loss-only (no frame L2)
     generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
 
     # Pre-encode warp / post-encode unwarp (StegaStamp training strategy)

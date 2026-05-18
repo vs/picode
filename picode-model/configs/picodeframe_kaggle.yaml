@@ -19,6 +19,7 @@ training:
   lr: 0.0003
   num_bits: 96
   image_size: 400
+  decoder_warmup_steps: 3000  # Message-only (no frame L2) — bootstrap decoder
   warmup_steps: 5000      # Long warmup: message-only, no distortions (frame signal is thin)
   no_im_loss_steps: 10000  # Image losses start well after message path is established
   borders: black
@@ -39,7 +40,7 @@ frame:
 
 loss:
   message:
-    scale: 7.0
+    scale: 10.0
     ramp_steps: 1         # No ramp — full gradient from step 0 (border signal needs max strength)
   message_loss_type: bce
   gan_config:
