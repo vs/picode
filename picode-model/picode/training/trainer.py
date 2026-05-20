@@ -707,7 +707,7 @@ class Trainer:
             # Apply distortions (curriculum also ramps from 0)
             decoder_input = self.distortion(encoded_warped, warp_step)
 
-        # Decode — pass mask for masked average pooling (border-only features).
+        # Decode — pass mask as border indicator channel for the CNN.
         decoded_logits = self.decoder(decoder_input, mask=mask)
 
         # Compute losses

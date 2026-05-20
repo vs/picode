@@ -35,18 +35,18 @@ class TestDecoderArchitecture:
         decoder = Decoder(num_bits=96)
         assert decoder.num_bits == 96
 
-    def test_shallow_cnn_stops_at_50x50(self) -> None:
-        """Decoder CNN stops at 50x50 (3 stride-2 convolutions)."""
+    def test_deep_cnn_goes_to_13x13(self) -> None:
+        """Decoder CNN goes to 13x13 (5 stride-2 convolutions)."""
         decoder = Decoder(num_bits=96)
-        # Feed a 400x400 image through just the CNN
-        x = torch.randn(1, 3, 400, 400)
+        # Feed a 400x400 image through just the CNN (4 channels: RGB + border mask)
+        x = torch.randn(1, 4, 400, 400)
         features = decoder.decoder_cnn(x)
-        assert features.shape == (1, 128, 50, 50)
+        assert features.shape == (1, 128, 13, 13)
 
     def test_fc_head_dimensions(self) -> None:
-        """FC head: 128 → 512 → 96."""
+        """FC head: 21632 → 512 → 96."""
         decoder = Decoder(num_bits=96)
-        assert decoder.fc1.in_features == 128
+        assert decoder.fc1.in_features == 128 * 13 * 13  # 21632
         assert decoder.fc1.out_features == 512
         assert decoder.fc2.in_features == 512
         assert decoder.fc2.out_features == 96
@@ -121,33 +121,27 @@ class TestDecoderWithMask:
         result = decoder(sample_image, mask=mask)
         assert result.shape == (2, 96)
 
-    def test_masked_pooling_aggregates_border_only(self) -> None:
-        """Masked pooling uses only border features, ignoring center."""
+    def test_mask_channel_affects_output(self) -> None:
+        """Different masks produce different outputs (CNN uses border indicator)."""
         decoder = Decoder(num_bits=96)
         decoder.eval()
 
-        # Create image where border and center have very different content
         B = 1
         image = torch.rand(B, 3, 400, 400)
-        fw = 20
-        mask = torch.zeros(B, 1, 400, 400)
-        mask[:, :, fw:400 - fw, fw:400 - fw] = 1.0
 
-        # Get output with mask
-        out1 = decoder(image, mask=mask)
+        # Narrow border mask
+        mask_narrow = torch.zeros(B, 1, 400, 400)
+        mask_narrow[:, :, 10:390, 10:390] = 1.0
 
-        # Modify center pixels drastically — should NOT affect masked output
-        image_modified = image.clone()
-        image_modified[:, :, fw + 10:400 - fw - 10, fw + 10:400 - fw - 10] = 1.0 - \
-            image[:, :, fw + 10:400 - fw - 10, fw + 10:400 - fw - 10]
+        # Wide border mask
+        mask_wide = torch.zeros(B, 1, 400, 400)
+        mask_wide[:, :, 80:320, 80:320] = 1.0
 
-        out2 = decoder(image_modified, mask=mask)
+        out_narrow = decoder(image, mask=mask_narrow)
+        out_wide = decoder(image, mask=mask_wide)
 
-        # With border-only pooling, outputs should be very similar
-        # (not identical because STN sees full image, and CNN has some receptive field overlap)
-        diff = (out1 - out2).abs().mean().item()
-        # The diff should be small — center changes have minimal effect through border pooling
-        assert diff < 1.0, f"Center change affected masked output too much: {diff}"
+        # Different masks → different border indicator channels → different outputs
+        assert not torch.allclose(out_narrow, out_wide, atol=1e-4)
 
 
 class TestSTNRegularization:
