@@ -230,8 +230,8 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe"):
-            # StegaStamp and PicodeFrame have STN with separate LR
+        if config.model.type in ("stegastamp", "picodeframe", "picodeine"):
+            # StegaStamp, PicodeFrame, and Picodeine have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
             stn_params = []
@@ -966,12 +966,21 @@ class Trainer:
             l2_scale = self._ramp(loss_cfg.l2.scale, loss_cfg.l2.ramp_steps, effective_step)
             weighted_l2 = l2_scale * loss_l2
 
-        # Start with message and l2 loss
-        total = weighted_msg + weighted_l2
+        # STN regularization (for models with STN: stegastamp, picodeframe, picodeine)
+        if hasattr(self.decoder, "stn_scale_reg"):
+            loss_stn = self.decoder.stn_scale_reg()
+            weighted_stn = 0.1 * loss_stn
+        else:
+            loss_stn = torch.tensor(0.0, device=encoded.device)
+            weighted_stn = 0.0
+
+        # Start with message, l2, and STN reg loss
+        total = weighted_msg + weighted_l2 + weighted_stn
 
         losses: dict[str, Tensor] = {
             "loss_msg": loss_msg,
             "loss_l2": loss_l2,
+            "loss_stn_reg": loss_stn,
         }
 
         # LPIPS loss (optional) - also skipped during no_im_loss_steps

@@ -1,6 +1,7 @@
 """Tests for AdaIN module and MappingNetwork."""
 
 import torch
+import torch.nn as nn
 
 from picode.models.picodeine.adain import AdaIN, MappingNetwork
 
@@ -43,7 +44,7 @@ class TestAdaIN:
 
     def test_identity_at_init(self) -> None:
         """At initialization (gamma=0, beta=0 from zero-init projection),
-        AdaIN should approximate identity (output ≈ instance-normalized input)."""
+        AdaIN should approximate identity (output = instance-normalized input)."""
         adain = AdaIN(mapping_dim=256, num_features=64)
         x = torch.randn(2, 64, 32, 32)
         w = torch.zeros(2, 256)
@@ -54,8 +55,22 @@ class TestAdaIN:
         expected = (x - mean) / std
         assert torch.allclose(out, expected, atol=1e-5)
 
-    def test_modulation_changes_output(self) -> None:
+    def test_identity_for_any_w_at_init(self) -> None:
+        """Zero-init weight means any w produces identity (not just w=0)."""
         adain = AdaIN(mapping_dim=256, num_features=64)
+        x = torch.randn(2, 64, 32, 32)
+        w_random = torch.randn(2, 256)
+        out = adain(x, w_random)
+        mean = x.mean(dim=[2, 3], keepdim=True)
+        std = x.std(dim=[2, 3], keepdim=True) + 1e-8
+        expected = (x - mean) / std
+        assert torch.allclose(out, expected, atol=1e-5)
+
+    def test_modulation_changes_output(self) -> None:
+        """After training (non-zero weights), different w produces different output."""
+        adain = AdaIN(mapping_dim=256, num_features=64)
+        # Simulate trained state with non-zero projection weights
+        nn.init.normal_(adain.projection.weight)
         x = torch.randn(2, 64, 32, 32)
         w_zero = torch.zeros(2, 256)
         w_nonzero = torch.randn(2, 256)

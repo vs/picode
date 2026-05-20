@@ -56,7 +56,8 @@ class AdaIN(nn.Module):
     def __init__(self, mapping_dim: int, num_features: int) -> None:
         super().__init__()
         self.projection = nn.Linear(mapping_dim, 2 * num_features)
-        # Zero-init bias so AdaIN starts as identity when w=0
+        # Zero-init both weight and bias so AdaIN starts as identity for any w
+        nn.init.zeros_(self.projection.weight)
         nn.init.zeros_(self.projection.bias)
 
     def forward(self, x: Tensor, w: Tensor) -> Tensor:
