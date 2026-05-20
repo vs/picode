@@ -15,7 +15,7 @@ data:
   num_workers: 2  # Kaggle has limited CPUs
 
 training:
-  num_steps: 140000
+  num_steps: 230000
   lr: 0.0003
   num_bits: 127
   image_size: 400
@@ -30,9 +30,9 @@ frame:
   min_frame_pct: 0.02
   max_frame_pct: 0.05
   fixed_frame_steps: 20000  # Use max_frame_pct for first N steps, then randomize
-  frame_l2_scale: 1.0       # Reduced from 2.0 — let encoder encode more aggressively
+  frame_l2_scale: 0.5       # Relaxed to let encoder create stronger patterns
   frame_l2_ramp_steps: 1
-  frame_lpips_scale: 0.5    # Reduced from 1.5 — prioritize message over frame quality
+  frame_lpips_scale: 0.25   # Relaxed — greyscale residual already limits artifacts
   frame_lpips_ramp_steps: 10000
   frame_color_scale: 0.0    # Disabled — single-channel residual guarantees greyscale
   frame_color_ramp_steps: 10000
@@ -40,7 +40,7 @@ frame:
 
 loss:
   message:
-    scale: 10.0
+    scale: 15.0
     ramp_steps: 1         # No ramp — full gradient from step 0 (border signal needs max strength)
   message_loss_type: bce
   gan_config:
