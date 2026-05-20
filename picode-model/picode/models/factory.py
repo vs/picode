@@ -5,7 +5,7 @@ based on model configuration. Supported model types:
 
 - **stegastamp**: Original StegaStamp architecture (400x400, 100 bits)
 - **picodelite**: Optimized mobile architecture (800x800 encoder, 320x320 decoder, 63 bits)
-- **picodeframe**: Frame-based encoding (400x400, 96 bits, preserves original image)
+- **picodeframe**: Frame-based encoding (400x400, 127 bits BCH(127,64), preserves original image)
 """
 
 from __future__ import annotations

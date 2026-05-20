@@ -2,7 +2,7 @@
 
 Based on the StegaStamp decoder with STN and CNN architecture.
 Key differences from StegaStamp decoder:
-- 96 output bits instead of 100
+- 127 output bits (BCH(127,64) codeword) instead of 100
 - STN scale regularization to prevent zoom-in that would crop the frame
 - Deep CNN (4ch: RGB + border_mask) with flatten, matching StegaStamp's proven pattern
 """
@@ -24,14 +24,14 @@ class Decoder(BaseDecoder):
     border-aware features without information-destroying average pooling.
 
     Args:
-        num_bits: Number of bits in the message (default: 96).
+        num_bits: Number of bits in the message (default: 127 for BCH(127,64)).
         height: Image height for STN output (default: 400).
         width: Image width for STN output (default: 400).
         freeze_stn_linear: If True, freeze the STN linear transformation parameters.
     """
 
     def __init__(
-        self, num_bits: int = 96, height: int = 400, width: int = 400,
+        self, num_bits: int = 127, height: int = 400, width: int = 400,
         freeze_stn_linear: bool = False,
     ) -> None:
         super().__init__()

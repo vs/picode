@@ -12,8 +12,8 @@ def sample_image() -> torch.Tensor:
 
 @pytest.fixture
 def sample_message() -> torch.Tensor:
-    """Random 96-bit message batch."""
-    return torch.randint(0, 2, (2, 96)).float()
+    """Random 127-bit message batch (BCH(127,64) codeword)."""
+    return torch.randint(0, 2, (2, 127)).float()
 
 
 @pytest.fixture

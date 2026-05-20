@@ -12,26 +12,31 @@ class TestEncoderArchitecture:
 
     def test_no_batchnorm(self) -> None:
         """Encoder has no BatchNorm layers."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         for module in encoder.modules():
             assert not isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)), \
                 f"Found BatchNorm: {module}"
 
     def test_weight_initialization(self) -> None:
         """Weights use Kaiming normal initialization."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         conv_weight = encoder.conv1.weight
         assert conv_weight.std() > 0.01, "Weights appear uninitialized"
 
     def test_seven_channel_input(self) -> None:
         """First conv layer accepts 7 input channels."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         assert encoder.conv1.in_channels == 7
 
     def test_num_bits_attribute(self) -> None:
         """Encoder stores num_bits attribute."""
-        encoder = Encoder(num_bits=96)
-        assert encoder.num_bits == 96
+        encoder = Encoder(num_bits=127)
+        assert encoder.num_bits == 127
+
+    def test_single_channel_residual(self) -> None:
+        """Residual layer outputs 1 channel (greyscale)."""
+        encoder = Encoder(num_bits=127)
+        assert encoder.residual.out_channels == 1
 
 
 class TestMessagePreparation:
@@ -39,7 +44,7 @@ class TestMessagePreparation:
 
     def test_output_shape(self, sample_message: torch.Tensor) -> None:
         """Message prep outputs (B, 3, 400, 400) tensor."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         result = encoder.prepare_message(sample_message)
         assert result.shape == (2, 3, 400, 400)
 
@@ -51,7 +56,7 @@ class TestEncoderForward:
         self, padded_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
     ) -> None:
         """Encoder outputs same shape as input image (400x400)."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         result = encoder(padded_image, sample_message, frame_width=frame_width)
         assert result.shape == padded_image.shape
         assert result.shape == (2, 3, 400, 400)
@@ -60,7 +65,7 @@ class TestEncoderForward:
         self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
     ) -> None:
         """Center pixels are exactly preserved (hard mask guarantee)."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         fw = frame_width
 
         # Extract inner and pad
@@ -81,7 +86,7 @@ class TestEncoderForward:
         self, sample_image: torch.Tensor, sample_message: torch.Tensor, fw: int
     ) -> None:
         """Works with different frame widths."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
 
         inner = sample_image[:, :, fw:-fw, fw:-fw]
         padded = torch.nn.functional.pad(inner, (fw, fw, fw, fw), mode="reflect")
@@ -99,7 +104,7 @@ class TestEncoderForward:
         self, sample_message: torch.Tensor, frame_width: int
     ) -> None:
         """Gradients flow through frame pixels."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         fw = frame_width
 
         image = torch.rand(2, 3, 400, 400, requires_grad=True)
@@ -120,7 +125,7 @@ class TestEncoderForward:
         self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
     ) -> None:
         """Frame pixels should differ from the reflection-padded input."""
-        encoder = Encoder(num_bits=96)
+        encoder = Encoder(num_bits=127)
         fw = frame_width
 
         inner = sample_image[:, :, fw:-fw, fw:-fw]
@@ -133,3 +138,24 @@ class TestEncoderForward:
         frame_mask[:, :, fw:-fw, fw:-fw] = 0
         frame_diff = ((result - padded) * frame_mask).abs().sum()
         assert frame_diff > 0, "Frame pixels are identical to input (no encoding)"
+
+    def test_greyscale_residual(
+        self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
+    ) -> None:
+        """Frame residual is greyscale (equal across R, G, B channels)."""
+        encoder = Encoder(num_bits=127)
+        fw = frame_width
+
+        inner = sample_image[:, :, fw:-fw, fw:-fw]
+        padded = torch.nn.functional.pad(inner, (fw, fw, fw, fw), mode="reflect")
+
+        result = encoder(padded, sample_message, frame_width=fw)
+        residual = result - padded
+
+        # In the frame region, all 3 channels should have identical residual
+        # (using allclose due to float32 rounding in image + residual - image)
+        frame_residual_r = residual[:, 0, :fw, :]
+        frame_residual_g = residual[:, 1, :fw, :]
+        frame_residual_b = residual[:, 2, :fw, :]
+        assert torch.allclose(frame_residual_r, frame_residual_g, atol=1e-6)
+        assert torch.allclose(frame_residual_r, frame_residual_b, atol=1e-6)

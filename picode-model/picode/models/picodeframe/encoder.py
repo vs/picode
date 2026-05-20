@@ -8,6 +8,7 @@ original image.
 Key differences from StegaStamp encoder:
 - 7 input channels (3 image + 1 mask + 3 message) instead of 6
 - Hard mask output: center pixels are never modified
+- Single-channel (greyscale) residual broadcast to RGB — no color artifacts
 - Frame width is variable (passed as parameter)
 """
 
@@ -28,10 +29,10 @@ class Encoder(BaseEncoder):
     A hard mask guarantees the original center pixels are never modified.
 
     Args:
-        num_bits: Number of bits in the message (default: 96).
+        num_bits: Number of bits in the message (default: 127 for BCH(127,64)).
     """
 
-    def __init__(self, num_bits: int = 96) -> None:
+    def __init__(self, num_bits: int = 127) -> None:
         super().__init__()
         self.num_bits = num_bits
 
@@ -56,9 +57,9 @@ class Encoder(BaseEncoder):
         self.up9 = nn.Conv2d(32, 32, 2, padding=0)
         self.conv9 = nn.Conv2d(71, 32, 3, padding=1)  # 32 + 32 + 7 = 71
 
-        # Output layers
+        # Output layers — single-channel residual (greyscale only, no color artifacts)
         self.conv10 = nn.Conv2d(32, 32, 3, padding=1)
-        self.residual = nn.Conv2d(32, 3, 1)
+        self.residual = nn.Conv2d(32, 1, 1)
 
         # Initialize weights (He normal)
         self._init_weights()
@@ -158,9 +159,9 @@ class Encoder(BaseEncoder):
         x = torch.cat([c1, x, inputs], dim=1)  # (B, 71, 400, 400)
         x = F.relu(self.conv9(x))  # (B, 32, 400, 400)
 
-        # Output layers - raw residual
+        # Output layers - single-channel residual broadcast to RGB (greyscale only)
         _ = F.relu(self.conv10(x))  # Computed but not used (matches StegaStamp)
-        residual = self.residual(x)  # (B, 3, 400, 400)
+        residual = self.residual(x).expand(-1, 3, -1, -1)  # (B, 1, H, W) -> (B, 3, H, W)
 
         # Add residual to padded image
         full_output = image + residual
