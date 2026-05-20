@@ -1,0 +1,72 @@
+experiment_name: picodeine_baseline
+
+model:
+  type: picodeine
+  encoder_size: 512
+  decoder_size: 512
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 4
+
+training:
+  num_steps: 140000
+  lr: 0.0001
+  num_bits: 127
+  image_size: 512
+  warmup_steps: 3000
+  no_im_loss_steps: 3000
+  stn_lr_scale: 0.01
+  borders: black
+  rnd_trans: 0.10
+  rnd_trans_ramp: 15000
+
+loss:
+  message:
+    scale: 7.0
+    ramp_steps: 1
+  l2:
+    scale: 1.0
+    ramp_steps: 15000
+  lpips:
+    scale: 1.5
+    ramp_steps: 15000
+  message_loss_type: bce
+  use_border_falloff: false
+  gan_config:
+    enabled: false
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 15000
+  brightness:
+    strength: 0.3
+    ramp_steps: 10000
+  saturation:
+    strength: 1.0
+    ramp_steps: 10000
+  hue:
+    strength: 0.1
+    ramp_steps: 10000
+  noise:
+    strength: 0.02
+    ramp_steps: 10000
+  jpeg_quality:
+    strength: 25
+    ramp_steps: 10000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 3
+
+logging:
+  backends:
+    - console
+    - tensorboard
+  log_every_steps: 100
