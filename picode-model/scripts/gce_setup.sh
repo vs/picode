@@ -12,7 +12,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # VM configuration
 VM_NAME="picode-training"
-ZONE="europe-west4-a"
+ZONE="europe-central2-b"
 MACHINE_TYPE="n1-standard-4"
 GPU_TYPE="nvidia-tesla-t4"
 GPU_COUNT=1
