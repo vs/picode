@@ -1,5 +1,6 @@
 """Tests for Picodeine decoder with STN."""
 
+import pytest
 import torch
 
 from picode.models.picodeine.decoder import Decoder
@@ -24,6 +25,11 @@ class TestDecoderArchitecture:
         expected_bias = torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
         assert torch.allclose(decoder.stn_fc_bias.data, expected_bias)
         assert torch.allclose(decoder.stn_fc_weight.data, torch.zeros(128, 6))
+
+    def test_rejects_non_divisible_input_size(self) -> None:
+        """input_size must be divisible by 32 for stride-2 conv stack."""
+        with pytest.raises(ValueError, match="divisible by 32"):
+            Decoder(num_bits=127, input_size=400)
 
     def test_num_bits_attribute(self) -> None:
         decoder = Decoder(num_bits=127)

@@ -31,6 +31,11 @@ class Decoder(BaseDecoder):
         freeze_stn_linear: bool = False,
     ) -> None:
         super().__init__()
+        if input_size % 32 != 0:
+            raise ValueError(
+                f"Picodeine decoder requires input_size divisible by 32 "
+                f"(5 stride-2 convolutions reduce spatial by 2^5). Got {input_size}."
+            )
         self.num_bits = num_bits
 
         # STN parameter predictor

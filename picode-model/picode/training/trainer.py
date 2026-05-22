@@ -215,8 +215,9 @@ class Trainer:
 
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
+        # Picodeine: uses model.encoder_size/decoder_size (default 512x512)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type == "picodelite":
+        if config.model.type in ("picodelite", "picodeine"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":

@@ -197,6 +197,12 @@ class ModelConfig:
     encoder_size: int = 400
     decoder_size: int = 400
 
+    def __post_init__(self) -> None:
+        """Apply model-specific size defaults when sizes are left at default."""
+        if self.type == "picodeine" and self.encoder_size == 400 and self.decoder_size == 400:
+            self.encoder_size = 512
+            self.decoder_size = 512
+
 
 @dataclass
 class Config:
