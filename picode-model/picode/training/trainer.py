@@ -348,31 +348,49 @@ class Trainer:
         return cls(config)
 
     @classmethod
-    def from_checkpoint(cls, checkpoint_path: str) -> Trainer:
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str,
+        config_path: str | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> Trainer:
         """Create trainer from checkpoint.
 
         Args:
             checkpoint_path: Path to checkpoint file.
+            config_path: Optional YAML config to use instead of checkpoint's saved config.
+                Useful when resuming with updated hyperparameters (e.g., new loss weights).
+            overrides: Optional overrides to apply on top of config.
 
         Returns:
             Trainer with restored state.
         """
         data = torch.load(checkpoint_path, weights_only=False)
 
-        # Reconstruct config
-        config = _dict_to_config(data["config"])
+        # Use provided config or reconstruct from checkpoint
+        if config_path:
+            config = load_config(config_path, overrides)
+        else:
+            config = _dict_to_config(data["config"])
 
         # Create trainer
         trainer = cls(config)
 
         # Restore model states, filtering out shape-mismatched keys
-        trainer.encoder.load_state_dict(
-            _filter_compatible(data["encoder_state"], trainer.encoder), strict=False,
+        enc_filtered = _filter_compatible(data["encoder_state"], trainer.encoder)
+        dec_filtered = _filter_compatible(data["decoder_state"], trainer.decoder)
+        arch_changed = (
+            len(enc_filtered) != len(data["encoder_state"])
+            or len(dec_filtered) != len(data["decoder_state"])
         )
-        trainer.decoder.load_state_dict(
-            _filter_compatible(data["decoder_state"], trainer.decoder), strict=False,
-        )
-        trainer.optimizer.load_state_dict(data["optimizer_state"])
+        trainer.encoder.load_state_dict(enc_filtered, strict=False)
+        trainer.decoder.load_state_dict(dec_filtered, strict=False)
+
+        # Skip optimizer state if architecture changed (Adam buffers have old shapes)
+        if arch_changed:
+            print("  Architecture changed — resetting optimizer state")
+        else:
+            trainer.optimizer.load_state_dict(data["optimizer_state"])
 
         # Restore training state
         trainer.global_step = data["step"]

@@ -166,7 +166,9 @@ overrides = parse_overrides([
 try:
     if resume_checkpoint:
         print(f"\nResuming training from {resume_checkpoint}")
-        trainer = Trainer.from_checkpoint(resume_checkpoint)
+        trainer = Trainer.from_checkpoint(
+            resume_checkpoint, config_path=CONFIG_PATH, overrides=overrides,
+        )
         # Override checkpoint dir to write to /kaggle/working/
         trainer.checkpointer.dir = __import__("pathlib").Path(CHECKPOINT_DIR) / trainer.config.experiment_name
         trainer.checkpointer.dir.mkdir(parents=True, exist_ok=True)
