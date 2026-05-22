@@ -15,13 +15,13 @@ data:
   num_workers: 2  # Kaggle has limited CPUs
 
 training:
-  num_steps: 230000
-  lr: 0.0003
+  num_steps: 140000
+  lr: 0.0001
   num_bits: 127
   image_size: 400
   decoder_warmup_steps: 3000  # Message-only (no frame L2) — bootstrap decoder
   warmup_steps: 5000      # Long warmup: message-only, no distortions (frame signal is thin)
-  no_im_loss_steps: 10000  # Image losses start well after message path is established
+  no_im_loss_steps: 15000  # Image losses start well after message path is established
   borders: black
   rnd_trans: 0.10
   rnd_trans_ramp: 20000    # Slow perspective ramp (starts after warmup)
@@ -31,9 +31,9 @@ frame:
   max_frame_pct: 0.05
   fixed_frame_steps: 20000  # Use max_frame_pct for first N steps, then randomize
   frame_l2_scale: 0.5       # Relaxed to let encoder create stronger patterns
-  frame_l2_ramp_steps: 1
+  frame_l2_ramp_steps: 20000
   frame_lpips_scale: 0.25   # Relaxed — greyscale residual already limits artifacts
-  frame_lpips_ramp_steps: 10000
+  frame_lpips_ramp_steps: 20000
   frame_color_scale: 0.0    # Disabled — single-channel residual guarantees greyscale
   frame_color_ramp_steps: 10000
   stn_reg_scale: 0.1
@@ -53,21 +53,21 @@ distortion:
     ramp_steps: 20000   # Slow ramp (counted from warmup end)
   brightness:
     strength: 0.3
-    ramp_steps: 10000
+    ramp_steps: 20000
   saturation:
     strength: 1.0
-    ramp_steps: 10000
+    ramp_steps: 20000
   hue:
     strength: 0.1
-    ramp_steps: 10000
+    ramp_steps: 20000
   noise:
     strength: 0.02
-    ramp_steps: 10000
+    ramp_steps: 20000
   contrast: [0.5, 1.5]
-  contrast_ramp_steps: 10000
+  contrast_ramp_steps: 20000
   jpeg_quality:
     strength: 25
-    ramp_steps: 10000
+    ramp_steps: 20000
   enable_jpeg: true
   enable_blur: true
 
