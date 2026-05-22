@@ -215,3 +215,73 @@ The `decoder_prob_std` is the earliest indicator - if it collapses to near-zero 
 | Loss scaling | l2=1.5, lpips=1, msg=1 | Configurable |
 | no_im_loss_steps | 500 (default) | Configurable |
 | Result @ 500 steps | ~95% accuracy | ~95% accuracy (with fixes) |
+
+---
+
+## Message Spatial Expansion Artifacts
+
+### The 32x32 Grid Problem (PicodeLite)
+
+PicodeLite's visible blocky artifacts are **NOT** caused by bit-to-region mapping. Each message bit contributes to every spatial position through the linear layer. The artifacts come from **nearest-neighbor upsampling** of the 32x32 intermediate tensor to 512x512 — a 16x stretch that creates a visible grid pattern in the encoded residual.
+
+### AdaIN as Architectural Fix (Picodeine)
+
+Picodeine eliminates the spatial message template entirely by using Adaptive Instance Normalization (AdaIN), inspired by StyleGAN's style injection:
+
+- Message bits (127) pass through a MappingNetwork (MLP: 127→256→256) producing a shared latent vector `w`
+- The U-Net encoder takes only the image (3ch, no message spatial concat)
+- `w` is injected via AdaIN at 4 decoder layers, modulating feature statistics (mean/variance)
+- **Skip bottleneck injection** — injecting at the bottleneck causes global color shifts (a known issue fixed in PicodeLite commit 10f8381)
+
+**AdaIN identity initialization:** Both projection weight and bias must be zero-initialized so that `gamma=0, beta=0` for any input `w`, making AdaIN a no-op at init. The `1+gamma` formulation means the output equals instance-normalized input when gamma=0.
+
+---
+
+## PicodeLite & PicodeFrame Training Techniques
+
+### Ranked by Impact
+
+| Technique | Impact | Source |
+|-----------|--------|--------|
+| STN LR scaling (0.01x) | Critical | PicodeLite STN collapse debugging |
+| Distortion warmup (skip during first N steps) | High | PicodeLite trainer |
+| no_im_loss_steps (message-only phase) | High | StegaStamp original |
+| Loss ramping (L2/LPIPS over 15K-20K steps) | High | StegaStamp original |
+| Flatten + FC decoder (not global avg pooling) | High | PicodeFrame decoder rewrite |
+| STN identity regularization loss | Medium | PicodeFrame |
+| Encoder LR scaling | Medium | PicodeLite |
+| Curriculum distortion strategy | Medium | StegaStamp |
+
+### STN Parameter Group Separation
+
+Any model with STN (StegaStamp, PicodeFrame, Picodeine) **must** have STN parameters (`stn_fc_weight`, `stn_fc_bias`) in a separate optimizer param group with ~100x lower learning rate. The Trainer checks `config.model.type in ("stegastamp", "picodeframe", "picodeine")` for this. Forgetting to add a new model type here will cause STN instability.
+
+### Trainer Image Size Configuration
+
+Models that use `ModelConfig.encoder_size` / `decoder_size` (PicodeLite, Picodeine) must be handled in the Trainer's image size selection logic — the `else` branch uses `training.image_size` which may differ from the model config, causing shape mismatches at decode time.
+
+### Decoder Input Size Constraints
+
+Picodeine's decoder has 5 stride-2 convolutions, so `input_size` must be divisible by 32. The `ModelConfig.__post_init__` defaults to 512x512 for picodeine when sizes are unspecified (avoids the generic 400 default which is invalid).
+
+---
+
+## Diagnostic Quick Reference
+
+### Trivial Solution Indicators
+
+| Metric | Healthy | Collapsed |
+|--------|---------|-----------|
+| `decoder_prob_std` | > 0.1 | < 0.01 |
+| `bit_accuracy` | Improving | ~50% |
+| `loss_msg` (BCE) | Decreasing | ~0.693 |
+| `loss_msg` (MSE) | Decreasing | ~0.250 |
+| `residual_mean` | Near 0 | Drifting |
+
+### Grid Artifact Diagnostic
+
+To check if a model has grid artifacts, generate example images and inspect the residual (10x amplified):
+```bash
+picode -c checkpoint.pt encode input.jpg out.png -m "test" --save-residual residual.png
+```
+If the residual shows a regular grid pattern, the model is using spatial message expansion with nearest-neighbor upsampling.
