@@ -244,13 +244,17 @@ Picodeine eliminates the spatial message template entirely by using Adaptive Ins
 | Technique | Impact | Source |
 |-----------|--------|--------|
 | STN LR scaling (0.01x) | Critical | PicodeLite STN collapse debugging |
+| Single-channel residual (greyscale) | Critical | PicodeFrame color artifact fix |
 | Distortion warmup (skip during first N steps) | High | PicodeLite trainer |
 | no_im_loss_steps (message-only phase) | High | StegaStamp original |
 | Loss ramping (L2/LPIPS over 15K-20K steps) | High | StegaStamp original |
 | Flatten + FC decoder (not global avg pooling) | High | PicodeFrame decoder rewrite |
+| Message scale >> image scale for frame models | High | PicodeFrame 82% plateau fix |
+| Decoder bootstrap phase (warmup before warmup) | High | PicodeFrame training schedule |
 | STN identity regularization loss | Medium | PicodeFrame |
 | Encoder LR scaling | Medium | PicodeLite |
 | Curriculum distortion strategy | Medium | StegaStamp |
+| `_filter_compatible()` for arch migration | Medium | PicodeFrame checkpoint resume |
 
 ### STN Parameter Group Separation
 
@@ -285,3 +289,135 @@ To check if a model has grid artifacts, generate example images and inspect the 
 picode -c checkpoint.pt encode input.jpg out.png -m "test" --save-residual residual.png
 ```
 If the residual shows a regular grid pattern, the model is using spatial message expansion with nearest-neighbor upsampling.
+
+---
+
+## PicodeFrame Greyscale Residual Architecture
+
+### Color Artifact Problem
+
+The original 3-channel residual encoder (`Conv2d(32, 3, 1)`) produced visible color artifacts in the frame border — shifts in hue/saturation that were perceptible even at narrow frame widths. This happened because the network learned to use all three color channels independently, creating chromatic patterns that look unnatural.
+
+### Single-Channel Residual Fix
+
+**Architectural constraint beats loss tuning.** Instead of adding stronger color loss penalties (which only push the problem down, never eliminate it), output a single-channel residual and broadcast to RGB:
+
+```python
+# Output layers — single-channel residual (greyscale only)
+self.residual = nn.Conv2d(32, 1, 1)  # Was Conv2d(32, 3, 1)
+
+# Forward pass — broadcast to 3 channels
+residual = self.residual(x).expand(-1, 3, -1, -1)  # (B,1,H,W) -> (B,3,H,W)
+```
+
+This **architecturally guarantees** greyscale-only modifications — no color loss term needed (set `frame_color_scale: 0.0`). The encoder can only change luminance, never hue or saturation.
+
+**Capacity impact:** At 400×400 with 5% frame border, there are ~30,400 border pixels. With 127-bit messages, that's ~239 pixels per bit — more than enough redundancy even with single-channel encoding.
+
+### BCH(127, 64) for 64-bit Payload
+
+For URL shortener IDs, 64 bits provides 2^64 ≈ 1.8×10^19 unique IDs — sufficient for any practical use. BCH(127, 64) adds 63 parity bits for error correction:
+
+- **Codeword length:** 127 bits (model's `num_bits`)
+- **Payload:** 64 bits
+- **Error correction:** t=10 (corrects up to 10 bit errors, i.e., 7.9% error rate)
+- **Required raw bit accuracy:** ~92% for reliable ECC decoding
+
+---
+
+## PicodeFrame Training Plateau & Loss Rebalancing
+
+### The 82% Plateau
+
+With the greyscale residual architecture, training reached ~82% bit accuracy by step 60K and plateaued through step 92K. BCH(127,64) needs ~92% accuracy, so the model was stuck well below the usability threshold.
+
+**Diagnosis:** Image losses (L2 and LPIPS) were suppressing the encoder's ability to create strong-enough patterns in the frame border. The frame region is only ~10% of total pixels, so even small L2/LPIPS weights create strong pressure to minimize the residual — directly competing with the message loss.
+
+### Loss Rebalancing That Worked
+
+| Parameter | Before (plateau) | After (rebalanced) |
+|-----------|-------------------|---------------------|
+| `message.scale` | 10.0 | 15.0 |
+| `frame_l2_scale` | 1.0 | 0.5 |
+| `frame_lpips_scale` | 0.5 | 0.25 |
+| `num_steps` | 140,000 | 230,000 |
+
+**Principle:** For frame-based models where the encoding region is small relative to the image, message loss must dominate. Image quality losses should be relaxed — the hard mask already guarantees zero modification of the center image, so frame quality is a secondary concern.
+
+### Multi-Phase Training Schedule (PicodeFrame)
+
+```
+Steps 0-3K:       decoder_warmup — message loss only, no frame losses
+                   (bootstrap decoder to recognize patterns)
+Steps 3K-5K:      warmup — message loss only, no distortions
+                   (encoder + decoder co-adapt on clean images)
+Steps 5K-10K:     distortions ramp in, still no image losses
+                   (model learns robustness before being penalized for quality)
+Steps 10K+:       image losses (L2, LPIPS) start ramping in
+                   (refine frame appearance after message path is established)
+```
+
+**Key insight:** The `decoder_warmup_steps` phase (before `warmup_steps`) trains only the decoder on message recovery. This bootstraps the decoder to recognize encoder patterns before the encoder starts adapting to distortions.
+
+---
+
+## Checkpoint Architecture Migration
+
+### `strict=False` Doesn't Handle Shape Mismatches
+
+PyTorch's `load_state_dict(state_dict, strict=False)` only handles **missing keys** and **unexpected keys**. If a key exists in both the checkpoint and the model but with **different shapes**, it still throws a `RuntimeError`.
+
+This means you cannot use `strict=False` alone to migrate between architectures (e.g., 3-channel → 1-channel residual layer).
+
+### `_filter_compatible()` Pattern
+
+Pre-filter the state dict before loading to drop shape-mismatched keys:
+
+```python
+def _filter_compatible(
+    state_dict: dict[str, Tensor], model: nn.Module,
+) -> dict[str, Tensor]:
+    model_state = model.state_dict()
+    filtered = {}
+    for k, v in state_dict.items():
+        if k in model_state and model_state[k].shape == v.shape:
+            filtered[k] = v
+        elif k in model_state:
+            print(f"  Skipping {k}: checkpoint {v.shape} != model {model_state[k].shape}")
+    return filtered
+
+# Usage: preserves all compatible weights, freshly initializes mismatched layers
+model.load_state_dict(_filter_compatible(ckpt_state, model), strict=False)
+```
+
+This allows resuming training from an old architecture checkpoint — all compatible weights (U-Net layers, decoder CNN, STN) are restored, while only the changed layers (e.g., `residual` conv) are freshly initialized.
+
+---
+
+## Kaggle Training Workflow
+
+### Dataset Caching Gotcha
+
+Kaggle caches dataset versions aggressively. After uploading a new version of a dataset (e.g., `picode-source`), the kernel may still use the old cached version for several minutes. Symptoms: error tracebacks reference line numbers from old code.
+
+**Workaround:** Wait 3-5 minutes between `kaggle datasets version` and `kaggle kernels push`. There is no explicit cache invalidation API.
+
+### Kaggle Scripts
+
+Use `scripts/kaggle_setup.sh` for all Kaggle operations:
+```bash
+./scripts/kaggle_setup.sh --model picodeframe upload-code   # Upload source dataset
+./scripts/kaggle_setup.sh --model picodeframe push          # Push kernel
+./scripts/kaggle_setup.sh --model picodeframe status        # Check kernel status
+./scripts/kaggle_setup.sh --model picodeframe output        # Get kernel output/logs
+./scripts/kaggle_setup.sh --model picodeframe resume        # Resume from checkpoint
+```
+
+### Checkpoint Resume Flow
+
+1. Stop running kernel (from Kaggle UI — no CLI stop command)
+2. Download latest checkpoint: `./scripts/kaggle_setup.sh --model picodeframe download-ckpts`
+3. Upload checkpoint to dataset: update `kaggle_ckpts_clean/` and `kaggle datasets version`
+4. Update config (e.g., increase `num_steps`, adjust loss weights)
+5. Upload new code: `upload-code`
+6. Push new kernel: `push`
