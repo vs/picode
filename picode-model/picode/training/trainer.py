@@ -38,6 +38,30 @@ from picode.training.evaluation import (
 from picode.training.logging import CompositeLogger, create_logger
 
 
+def _filter_compatible(
+    state_dict: dict[str, Tensor], model: nn.Module,
+) -> dict[str, Tensor]:
+    """Filter state_dict to only include keys with matching shapes in model.
+
+    Allows resuming from checkpoints with minor architecture changes
+    (e.g. residual layer channel count). Mismatched keys are skipped
+    and logged; the model keeps its initialized weights for those params.
+    """
+    model_state = model.state_dict()
+    filtered = {}
+    for k, v in state_dict.items():
+        if k in model_state and model_state[k].shape == v.shape:
+            filtered[k] = v
+        elif k in model_state:
+            print(f"  Skipping {k}: checkpoint {v.shape} != model {model_state[k].shape}")
+        else:
+            print(f"  Skipping {k}: not in model")
+    skipped = set(model_state) - set(filtered)
+    if skipped:
+        print(f"  Freshly initialized: {sorted(skipped)}")
+    return filtered
+
+
 def rgb_to_yuv(rgb: Tensor) -> Tensor:
     """Convert RGB tensor to YUV color space.
 
@@ -341,9 +365,13 @@ class Trainer:
         # Create trainer
         trainer = cls(config)
 
-        # Restore model states
-        trainer.encoder.load_state_dict(data["encoder_state"])
-        trainer.decoder.load_state_dict(data["decoder_state"])
+        # Restore model states, filtering out shape-mismatched keys
+        trainer.encoder.load_state_dict(
+            _filter_compatible(data["encoder_state"], trainer.encoder), strict=False,
+        )
+        trainer.decoder.load_state_dict(
+            _filter_compatible(data["decoder_state"], trainer.decoder), strict=False,
+        )
         trainer.optimizer.load_state_dict(data["optimizer_state"])
 
         # Restore training state
