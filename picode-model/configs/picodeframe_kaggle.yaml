@@ -16,7 +16,8 @@ data:
 
 training:
   num_steps: 140000
-  lr: 0.0001
+  lr: 0.0003
+  seed: 42
   num_bits: 127
   image_size: 400
   decoder_warmup_steps: 3000  # Message-only (no frame L2) — bootstrap decoder
