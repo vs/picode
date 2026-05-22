@@ -128,6 +128,7 @@ class TrainingConfig:
     no_im_loss_steps: int = 500  # Original: 500 steps message-only training
     decoder_warmup_steps: int = 0  # Steps with message-loss-only (no frame L2)
     generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
+    seed: int | None = None  # Random seed for reproducibility (None = non-deterministic)
 
     # Pre-encode warp / post-encode unwarp (StegaStamp training strategy)
     # This creates a canonical encoding space that is robust to geometric transforms

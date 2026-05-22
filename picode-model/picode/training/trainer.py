@@ -224,6 +224,13 @@ class Trainer:
         """
         self.config = config
 
+        # Seed RNGs for reproducibility
+        if config.training.seed is not None:
+            torch.manual_seed(config.training.seed)
+            np.random.seed(config.training.seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(config.training.seed)
+
         # Set up device (prefer CUDA > MPS > CPU)
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
