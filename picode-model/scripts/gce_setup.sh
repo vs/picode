@@ -17,8 +17,8 @@ MACHINE_TYPE="n1-standard-4"
 GPU_TYPE="nvidia-tesla-t4"
 GPU_COUNT=1
 BOOT_DISK_SIZE="200GB"
-IMAGE_FAMILY="ubuntu-2204-lts"
-IMAGE_PROJECT="ubuntu-os-cloud"
+IMAGE_FAMILY="pytorch-2-7-cu128-ubuntu-2204-nvidia-570"
+IMAGE_PROJECT="deeplearning-platform-release"
 
 # tmux session name for training
 TMUX_SESSION="training"
@@ -186,7 +186,7 @@ cmd_upload_code() {
     gcloud compute scp "$tarball" "$VM_NAME:/tmp/picode_source.tar.gz" --zone="$ZONE"
 
     echo "Extracting on VM..."
-    vm_ssh "cd ~ && rm -rf picode-model && tar -xzf /tmp/picode_source.tar.gz && rm /tmp/picode_source.tar.gz && cd picode-model && pip install -e '.[lpips,kornia]' -q"
+    vm_ssh "export PATH=\$HOME/.local/bin:\$PATH && cd ~ && rm -rf picode-model && tar -xzf /tmp/picode_source.tar.gz && rm /tmp/picode_source.tar.gz && cd picode-model && pip install '.[lpips,kornia]' -q"
 
     echo ""
     echo "Code uploaded and installed!"
@@ -204,8 +204,8 @@ cmd_setup_data() {
             echo 'train/ already exists, skipping download.'; \
             echo \"Images: \$(ls train/ | wc -l)\"; \
         else \
-            echo 'Downloading COCO train2017 from GCS...' && \
-            gsutil -m cp gs://images.cocodataset.org/zips/train2017.zip . && \
+            echo 'Downloading COCO train2017 (~18GB)...' && \
+            wget -q --show-progress http://images.cocodataset.org/zips/train2017.zip && \
             echo 'Extracting...' && \
             unzip -q train2017.zip && \
             mv train2017 train && \

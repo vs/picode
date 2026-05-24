@@ -2,7 +2,8 @@
 # One-time VM setup script for GCE Picode training.
 # Uploaded and executed by `gce_setup.sh setup`.
 #
-# Installs: system deps, NVIDIA drivers, Python 3.10, PyTorch, picode deps.
+# Expects a Deep Learning VM image (PyTorch + CUDA + NVIDIA drivers pre-installed).
+# Installs remaining picode dependencies only.
 
 set -e
 
@@ -12,42 +13,28 @@ echo ""
 # --- System packages ---
 echo "Installing system packages..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq build-essential tmux unzip python3-pip python3-venv gsutil 2>/dev/null
+sudo apt-get install -y -qq tmux unzip 2>/dev/null
 
-# --- NVIDIA driver ---
-# The VM was created with --metadata="install-nvidia-driver=True" which uses
-# the GCE startup script to install drivers. If that hasn't finished yet,
-# or if using a plain Ubuntu image, install manually.
-if ! command -v nvidia-smi >/dev/null 2>&1; then
-    echo "NVIDIA driver not found. Installing..."
-    sudo apt-get install -y -qq linux-headers-$(uname -r)
-    # Install CUDA toolkit (includes driver)
-    wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-    sudo dpkg -i cuda-keyring_1.1-1_all.deb
-    rm cuda-keyring_1.1-1_all.deb
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq cuda-toolkit-12-4 cuda-drivers
-    echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
-    echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-    export PATH=/usr/local/cuda/bin:$PATH
-    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-fi
-
+# --- Verify pre-installed GPU stack ---
 echo ""
 echo "NVIDIA driver status:"
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null || echo "  (driver not yet ready — may need reboot)"
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+
+# --- PATH setup ---
+echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+export PATH=$HOME/.local/bin:$PATH
 
 # --- Python packages ---
 echo ""
-echo "Installing Python packages..."
+echo "Upgrading pip..."
+pip install -q --upgrade pip setuptools
+
+echo "Installing picode dependencies..."
 
 # Install numpy<2.0 and scipy first (pyldpc build deps)
 pip install -q "numpy<2.0" scipy
 
-# Install PyTorch with CUDA
-pip install -q torch torchvision --index-url https://download.pytorch.org/whl/cu124
-
-# Install remaining picode dependencies (matching modal_train.py)
+# Install remaining picode dependencies not in the DLVM base
 pip install -q \
     "torchmetrics>=1.0" \
     "click>=8.0" \
