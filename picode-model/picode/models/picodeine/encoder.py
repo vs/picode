@@ -1,20 +1,19 @@
-"""Picodeine encoder with AdaIN message injection + bottleneck spatial bootstrap.
+"""Picodeine encoder with AdaIN message injection + spatial message paths.
 
 Uses a hybrid message injection strategy:
 1. **Bottleneck spatial** (32ch at H/16): Low-res message expansion concatenated
-   at the U-Net bottleneck. Provides coarse global signal that bootstraps decoder
-   learning from step 0.
-2. **AdaIN at 4 decoder layers** (H/8 → H): Fine-grained per-pixel modulation
+   at the U-Net bottleneck. Provides coarse message structure in deep features.
+2. **Output spatial skip** (32ch at H): Full-res message concatenated at the final
+   decoder stage, giving the message a direct 2-layer path to the output residual.
+   This bootstraps decoder learning (analogous to StegaStamp's inputs skip at conv9).
+3. **AdaIN at 4 decoder layers** (H/8 → H): Fine-grained per-pixel modulation
    that hides the message imperceptibly once training progresses.
-
-The spatial injection is intentionally low-bandwidth (~12% of bottleneck capacity)
-so it cannot encode the full message alone — AdaIN must contribute.
 
 Key differences from PicodeLite/StegaStamp:
 - 3-channel input (image only, no message spatial concat at input)
 - MappingNetwork transforms 127 bits → 256-dim latent w
 - AdaIN at 4 decoder layers for fine-grained modulation
-- Low-res spatial message at bottleneck for training bootstrap
+- Spatial message at bottleneck + output skip for training bootstrap
 - No BatchNorm (AdaIN replaces it in decoder path)
 """
 
@@ -28,14 +27,15 @@ from picode.models.picodeine.adain import AdaIN, MappingNetwork
 
 
 class Encoder(BaseEncoder):
-    """Picodeine encoder — U-Net with AdaIN + bottleneck spatial injection.
+    """Picodeine encoder — U-Net with AdaIN + spatial message skip.
 
     Architecture:
     - MappingNetwork: 127 bits → 256-dim latent w (for AdaIN)
-    - Spatial message: 127 bits → Linear → (32, 8, 8) → interpolate to (32, H/16, W/16)
+    - Spatial message: 127 bits → Linear → (32, 8, 8) → interpolate to target sizes
     - U-Net encoder: 5 levels, 3ch image input (no message concat at input)
     - Bottleneck: concat spatial message (32ch) with c5 (256ch) → 288ch
     - U-Net decoder: 4 levels with AdaIN(w) at each
+    - Output stage: concat spatial message (32ch) at full res for direct message→output path
     - Output: image + residual (no clamping during training)
 
     Attributes:
@@ -73,8 +73,9 @@ class Encoder(BaseEncoder):
         self.conv3d = nn.Conv2d(64, 32, 3, padding=1)
 
         self.up2 = nn.Conv2d(32, 32, 2, padding=0)
-        # After up2: concat with c1 (32) = 64 channels (no inputs skip — no message spatial)
-        self.conv2d = nn.Conv2d(64, 32, 3, padding=1)
+        # After up2: concat c1 (32) + x (32) + msg_fullres (32) = 96 channels
+        # The msg_fullres skip gives message a direct 2-layer path to output
+        self.conv2d = nn.Conv2d(64 + self.secret_channels, 32, 3, padding=1)
 
         # AdaIN at each decoder layer (skip bottleneck)
         self.adain1 = AdaIN(mapping_dim, 128)  # After conv5d
@@ -110,25 +111,8 @@ class Encoder(BaseEncoder):
                 nn.init.zeros_(m.projection.weight)
                 nn.init.zeros_(m.projection.bias)
 
-    def prepare_message(self, message_norm: Tensor, target_h: int, target_w: int) -> Tensor:
-        """Expand message bits to low-res spatial tensor for bottleneck injection.
-
-        Args:
-            message_norm: (B, num_bits) normalized message (centered at 0).
-            target_h: Target height (H/16 of input image).
-            target_w: Target width (W/16 of input image).
-
-        Returns:
-            (B, secret_channels, target_h, target_w) spatial message tensor.
-        """
-        x = F.relu(self.secret_dense(message_norm))  # (B, 32*8*8)
-        x = x.view(-1, self.secret_channels, 8, 8)   # (B, 32, 8, 8)
-        if x.shape[2] != target_h or x.shape[3] != target_w:
-            x = F.interpolate(x, size=(target_h, target_w), mode="bilinear", align_corners=False)
-        return x
-
     def forward(self, image: Tensor, message: Tensor) -> Tensor:
-        """Encode message into image using bottleneck spatial + AdaIN injection.
+        """Encode message into image using spatial skip + bottleneck + AdaIN injection.
 
         Args:
             image: (B, 3, H, W) in [0, 1] — must be divisible by 16.
@@ -140,11 +124,11 @@ class Encoder(BaseEncoder):
         Raises:
             ValueError: If image dimensions are not divisible by 16.
         """
-        h, w = image.shape[2], image.shape[3]
-        if h % 16 != 0 or w % 16 != 0:
+        img_h, img_w = image.shape[2], image.shape[3]
+        if img_h % 16 != 0 or img_w % 16 != 0:
             raise ValueError(
                 f"Picodeine encoder requires image dimensions divisible by 16 "
-                f"(for U-Net skip connections). Got {h}x{w}."
+                f"(for U-Net skip connections). Got {img_h}x{img_w}."
             )
 
         # Normalize inputs
@@ -161,9 +145,21 @@ class Encoder(BaseEncoder):
         c4 = F.relu(self.conv4(c3))          # (B, 128, H/8)
         c5 = F.relu(self.conv5(c4))          # (B, 256, H/16) bottleneck
 
-        # Spatial message injection at bottleneck
-        msg_spatial = self.prepare_message(message_norm, c5.shape[2], c5.shape[3])
-        c5 = torch.cat([c5, msg_spatial], dim=1)  # (B, 288, H/16, W/16)
+        # Spatial message: compute once at base resolution, interpolate for each level
+        msg_base = F.relu(self.secret_dense(message_norm))  # (B, 32*8*8)
+        msg_base = msg_base.view(-1, self.secret_channels, 8, 8)  # (B, 32, 8, 8)
+
+        # Bottleneck injection (H/16)
+        msg_bottleneck = F.interpolate(
+            msg_base, size=(c5.shape[2], c5.shape[3]),
+            mode="bilinear", align_corners=False,
+        )
+        c5 = torch.cat([c5, msg_bottleneck], dim=1)  # (B, 288, H/16, W/16)
+
+        # Full-res skip for output stage (H)
+        msg_fullres = F.interpolate(
+            msg_base, size=(img_h, img_w), mode="bilinear", align_corners=False,
+        )
 
         # Decoder path with skip connections + AdaIN
 
@@ -188,10 +184,10 @@ class Encoder(BaseEncoder):
         x = F.relu(self.conv3d(x))
         x = self.adain3(x, w)
 
-        # up2: concat with c1 → AdaIN
+        # up2: concat with c1 + msg_fullres skip → AdaIN
         x = F.interpolate(x, scale_factor=2, mode="nearest")
         x = F.relu(self.up2(F.pad(x, (0, 1, 0, 1))))
-        x = torch.cat([c1, x], dim=1)
+        x = torch.cat([c1, x, msg_fullres], dim=1)  # (B, 96, H, W)
         x = F.relu(self.conv2d(x))
         x = self.adain4(x, w)
 
