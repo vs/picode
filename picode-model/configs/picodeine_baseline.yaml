@@ -24,7 +24,7 @@ training:
 
 loss:
   message:
-    scale: 1.0
+    scale: 7.0
     ramp_steps: 1
   l2:
     scale: 1.0
