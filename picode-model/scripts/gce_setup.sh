@@ -235,7 +235,7 @@ cmd_train() {
     # Build the training command with overrides for GCE paths
     # CLI: picode-train CONFIG [--resume PATH] [key=value overrides...]
     # Note: \$HOME is escaped so it expands on the VM, not locally
-    train_cmd="cd ~/picode-model && picode-train \
+    train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && picode-train \
         configs/picodeine_baseline.yaml \
         $resume \
         checkpoint.dir=\$HOME/checkpoints \
