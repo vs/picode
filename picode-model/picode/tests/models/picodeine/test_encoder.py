@@ -42,6 +42,14 @@ class TestEncoderArchitecture:
         assert hasattr(encoder, "adain3")
         assert hasattr(encoder, "adain4")
 
+    def test_has_secret_dense(self) -> None:
+        """Encoder has spatial message expansion layer for bottleneck injection."""
+        encoder = Encoder(num_bits=127)
+        assert hasattr(encoder, "secret_dense")
+        assert isinstance(encoder.secret_dense, torch.nn.Linear)
+        assert encoder.secret_dense.in_features == 127
+        assert encoder.secret_dense.out_features == 32 * 8 * 8
+
 
 class TestEncoderForward:
     """Test encoder forward pass behavior."""
@@ -60,12 +68,8 @@ class TestEncoderForward:
         assert sample_image.grad.abs().sum() > 0
 
     def test_message_affects_output(self, sample_image: torch.Tensor) -> None:
-        """Different messages produce different encoded images after training."""
+        """Different messages produce different outputs at init (bottleneck spatial)."""
         encoder = Encoder(num_bits=127)
-        # Initialize AdaIN projections with non-zero weights to simulate training
-        for m in encoder.modules():
-            if hasattr(m, "projection") and isinstance(m.projection, torch.nn.Linear):
-                torch.nn.init.normal_(m.projection.weight, std=0.1)
         m1 = torch.zeros(2, 127)
         m2 = torch.ones(2, 127)
         out1 = encoder(sample_image, m1)
