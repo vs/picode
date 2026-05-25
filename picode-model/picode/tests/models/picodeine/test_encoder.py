@@ -1,4 +1,4 @@
-"""Tests for Picodeine encoder with AdaIN message injection."""
+"""Tests for Picodeine encoder with input spatial + AdaIN injection."""
 
 import torch
 
@@ -22,10 +22,10 @@ class TestEncoderArchitecture:
                     continue
                 assert param.std() > 0.01, f"{name} appears uninitialized"
 
-    def test_three_channel_input(self) -> None:
-        """Encoder takes 3ch image input (no message spatial concat)."""
+    def test_six_channel_input(self) -> None:
+        """Encoder takes 6ch input (3 image + 3 message spatial)."""
         encoder = Encoder(num_bits=127)
-        assert encoder.conv1.in_channels == 3
+        assert encoder.conv1.in_channels == 6
 
     def test_num_bits_attribute(self) -> None:
         encoder = Encoder(num_bits=127)
@@ -43,12 +43,17 @@ class TestEncoderArchitecture:
         assert hasattr(encoder, "adain4")
 
     def test_has_secret_dense(self) -> None:
-        """Encoder has spatial message expansion layer for bottleneck injection."""
+        """Encoder has spatial message expansion layer (StegaStamp-style 3ch)."""
         encoder = Encoder(num_bits=127)
         assert hasattr(encoder, "secret_dense")
         assert isinstance(encoder.secret_dense, torch.nn.Linear)
         assert encoder.secret_dense.in_features == 127
-        assert encoder.secret_dense.out_features == 32 * 8 * 8
+        assert encoder.secret_dense.out_features == 7500
+
+    def test_output_skip_channels(self) -> None:
+        """Final conv2d takes 70ch: c1(32) + x(32) + inputs(6)."""
+        encoder = Encoder(num_bits=127)
+        assert encoder.conv2d.in_channels == 70
 
 
 class TestEncoderForward:
@@ -68,7 +73,7 @@ class TestEncoderForward:
         assert sample_image.grad.abs().sum() > 0
 
     def test_message_affects_output(self, sample_image: torch.Tensor) -> None:
-        """Different messages produce different outputs at init (bottleneck spatial)."""
+        """Different messages produce different outputs at init (input spatial)."""
         encoder = Encoder(num_bits=127)
         m1 = torch.zeros(2, 127)
         m2 = torch.ones(2, 127)
@@ -79,7 +84,7 @@ class TestEncoderForward:
     def test_residual_is_small_at_init(
         self, sample_image: torch.Tensor, sample_message: torch.Tensor
     ) -> None:
-        """At initialization, residual should be small (AdaIN starts as identity)."""
+        """At initialization, residual should be modest."""
         encoder = Encoder(num_bits=127)
         output = encoder(sample_image, sample_message)
         residual = (output - sample_image).abs().mean()
