@@ -25,7 +25,7 @@ training:
 
 loss:
   message:
-    scale: 1.0            # StegaStamp default
+    scale: 5.0            # Must dominate image losses at full ramp
     ramp_steps: 1
   l2:
     scale: 1.5            # StegaStamp default
@@ -38,7 +38,7 @@ loss:
     scale: 1.0            # TrustMark enhancement
     ramp_steps: 20000
     delay_steps: 20000
-  message_loss_type: bce
+  message_loss_type: mse       # MSE avoids trivial 0.5 collapse that BCE allows
   use_border_falloff: true  # StegaStamp default
   gan_config:
     enabled: true           # TrustMark enhancement
