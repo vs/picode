@@ -11,27 +11,32 @@ data:
   batch_size: 4
 
 training:
-  num_steps: 140000
+  num_steps: 200000
   lr: 0.0001
   num_bits: 127
   image_size: 512
   warmup_steps: 0
-  no_im_loss_steps: 3000
+  no_im_loss_steps: 0
+  generator_grad_clip: 0.25
   stn_lr_scale: 0.01
   borders: black
   rnd_trans: 0.10
-  rnd_trans_ramp: 15000
+  rnd_trans_ramp: 1
 
 loss:
   message:
-    scale: 7.0
+    scale: 2.0
     ramp_steps: 1
   l2:
-    scale: 1.0
-    ramp_steps: 15000
+    scale: 1.5
+    ramp_steps: 1
   lpips:
     scale: 1.5
-    ramp_steps: 15000
+    ramp_steps: 1
+  chroma:
+    scale: 0.0
+    ramp_steps: 1
+  yuv_weights: [1, 100, 100]
   message_loss_type: bce
   use_border_falloff: false
   gan_config:
@@ -41,22 +46,22 @@ distortion:
   strategy: curriculum
   perspective:
     strength: 0.1
-    ramp_steps: 15000
+    ramp_steps: 1
   brightness:
     strength: 0.3
-    ramp_steps: 10000
+    ramp_steps: 1
   saturation:
     strength: 1.0
-    ramp_steps: 10000
+    ramp_steps: 1
   hue:
     strength: 0.1
-    ramp_steps: 10000
+    ramp_steps: 1
   noise:
     strength: 0.02
-    ramp_steps: 10000
+    ramp_steps: 1
   jpeg_quality:
     strength: 25
-    ramp_steps: 10000
+    ramp_steps: 1
   enable_jpeg: true
   enable_blur: true
 
