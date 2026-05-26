@@ -1,20 +1,20 @@
-experiment_name: picodeine_baseline
+experiment_name: picotrust_baseline
 
 model:
-  type: picodeine
-  encoder_size: 512
-  decoder_size: 512
+  type: picotrust
+  encoder_size: 256
+  decoder_size: 256
 
 data:
   source: folder
   path: ./data/train
-  batch_size: 4
+  batch_size: 8          # Smaller images -> larger batch
 
 training:
   num_steps: 200000
   lr: 0.0001
-  num_bits: 127
-  image_size: 512
+  num_bits: 100
+  image_size: 256
   warmup_steps: 500
   no_im_loss_steps: 500
   generator_grad_clip: 0.25
@@ -25,26 +25,26 @@ training:
 
 loss:
   message:
-    scale: 2.0
+    scale: 1.0            # StegaStamp default
     ramp_steps: 1
   l2:
-    scale: 1.5
+    scale: 1.5            # StegaStamp default
     ramp_steps: 20000
   lpips:
-    scale: 1.5
+    scale: 1.0            # StegaStamp default
     ramp_steps: 20000
-  chroma:
-    scale: 0.0
-    ramp_steps: 1
-  yuv_weights: [1, 100, 100]
+  yuv_weights: [1, 1, 1]  # No chrominance penalty
   ffl:
-    scale: 0.0
+    scale: 1.0            # TrustMark enhancement
     ramp_steps: 20000
     delay_steps: 20000
   message_loss_type: bce
-  use_border_falloff: false
+  use_border_falloff: true  # StegaStamp default
   gan_config:
-    enabled: false
+    enabled: true           # TrustMark enhancement
+    discriminator_lr: 0.00001
+    g_loss_scale: 1.0
+    g_loss_ramp_steps: 20000
 
 distortion:
   strategy: curriculum
@@ -75,7 +75,5 @@ checkpoint:
   keep_last: 3
 
 logging:
-  backends:
-    - console
-    - tensorboard
+  backends: [console, tensorboard]
   log_every_steps: 100

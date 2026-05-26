@@ -248,7 +248,7 @@ class Trainer:
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # Picodeine: uses model.encoder_size/decoder_size (default 512x512)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type in ("picodelite", "picodeine"):
+        if config.model.type in ("picodelite", "picodeine", "picotrust"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":
@@ -262,8 +262,8 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe", "picodeine"):
-            # StegaStamp, PicodeFrame, and Picodeine have STN with separate LR
+        if config.model.type in ("stegastamp", "picodeframe", "picodeine", "picotrust"):
+            # StegaStamp, PicodeFrame, Picodeine, and PicoTrust have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
             stn_params = []
@@ -1066,6 +1066,15 @@ class Trainer:
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
 
+        # Focal Frequency Loss (FFL) — penalizes per-frequency reconstruction error.
+        # Targets periodic wave artifacts by weighting hard-to-reconstruct frequencies.
+        if not skip_image_loss and loss_cfg.ffl is not None:
+            ffl_scale = self._delayed_ramp(loss_cfg.ffl, effective_step)
+            if ffl_scale > 0:
+                loss_ffl = self._compute_ffl(original, encoded)
+                total = total + ffl_scale * loss_ffl
+                losses["loss_ffl"] = loss_ffl
+
         # GAN generator loss (if enabled)
         if (
             not skip_image_loss
@@ -1201,6 +1210,37 @@ class Trainer:
             except ImportError:
                 pass
         return self._lpips_fn
+
+    @staticmethod
+    def _compute_ffl(original: Tensor, encoded: Tensor, alpha: float = 1.0) -> Tensor:
+        """Compute Focal Frequency Loss (Jiang et al., 2021).
+
+        Penalizes per-frequency reconstruction error in the 2D FFT domain,
+        with adaptive weighting that focuses on hard-to-reconstruct frequencies.
+        This directly targets periodic wave artifacts.
+
+        Args:
+            original: Original images (B, C, H, W) in [0, 1].
+            encoded: Encoded images (B, C, H, W) in [0, 1].
+            alpha: Focal exponent — higher values focus more on hard frequencies.
+
+        Returns:
+            Scalar FFL loss.
+        """
+        # 2D FFT of both images
+        freq_orig = torch.fft.rfft2(original, norm="ortho")
+        freq_enc = torch.fft.rfft2(encoded, norm="ortho")
+
+        # Per-frequency L2 distance (on complex magnitudes)
+        diff = torch.abs(freq_orig - freq_enc)  # (B, C, H, W//2+1)
+
+        # Focal weight: frequencies with larger error get higher weight
+        # Detach so weights don't contribute gradients (like focal loss)
+        weight = diff.detach() ** alpha
+        # Normalize weights to [0, 1] per sample
+        weight = weight / (weight.amax(dim=(-2, -1), keepdim=True) + 1e-8)
+
+        return (weight * diff).mean()
 
     def _compute_lpips(self, original: Tensor, encoded: Tensor) -> Tensor:
         """Compute LPIPS loss.

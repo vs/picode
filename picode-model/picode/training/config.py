@@ -193,12 +193,12 @@ class ModelConfig:
     """Model architecture configuration.
 
     Attributes:
-        type: Model type: "stegastamp", "picodelite", "picodeframe", or "picodeine".
-        encoder_size: Image size for the encoder (e.g., 400 for StegaStamp, 512 for Picodeine).
-        decoder_size: Image size for the decoder (e.g., 400 for StegaStamp, 512 for Picodeine).
+        type: Model type: "stegastamp", "picodelite", "picodeframe", "picodeine", or "picotrust".
+        encoder_size: Image size for the encoder (e.g., 400 for StegaStamp, 256 for PicoTrust).
+        decoder_size: Image size for the decoder (e.g., 400 for StegaStamp, 256 for PicoTrust).
     """
 
-    type: str = "stegastamp"  # stegastamp, picodelite, picodeframe, or picodeine
+    type: str = "stegastamp"  # stegastamp, picodelite, picodeframe, picodeine, or picotrust
     encoder_size: int = 400
     decoder_size: int = 400
 
@@ -207,6 +207,9 @@ class ModelConfig:
         if self.type == "picodeine" and self.encoder_size == 400 and self.decoder_size == 400:
             self.encoder_size = 512
             self.decoder_size = 512
+        elif self.type == "picotrust" and self.encoder_size == 400 and self.decoder_size == 400:
+            self.encoder_size = 256
+            self.decoder_size = 256
 
 
 @dataclass

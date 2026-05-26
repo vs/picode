@@ -7,6 +7,7 @@ based on model configuration. Supported model types:
 - **picodelite**: Optimized mobile architecture (800x800 encoder, 320x320 decoder, 63 bits)
 - **picodeframe**: Frame-based encoding (400x400, 127 bits BCH(127,64), preserves original image)
 - **picodeine**: AdaIN message injection (512x512, 127 bits BCH(127,64), no grid artifacts)
+- **picotrust**: StegaStamp U-Net + TrustMark enhancements (256x256, 100 bits, ResNet50 decoder)
 """
 
 from __future__ import annotations
@@ -59,6 +60,10 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
         from picode.models.picodeine import Encoder as PicodeineEncoder
 
         return PicodeineEncoder(num_bits=num_bits)
+    elif config.type == "picotrust":
+        from picode.models.picotrust import Encoder as PicoTrustEncoder
+
+        return PicoTrustEncoder(num_bits=num_bits, image_size=config.encoder_size)
     else:
         raise ValueError(f"Unknown model type: {config.type}")
 
@@ -102,5 +107,9 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
         from picode.models.picodeine import Decoder as PicodeineDecoder
 
         return PicodeineDecoder(num_bits=num_bits, input_size=config.decoder_size)
+    elif config.type == "picotrust":
+        from picode.models.picotrust import Decoder as PicoTrustDecoder
+
+        return PicoTrustDecoder(num_bits=num_bits)
     else:
         raise ValueError(f"Unknown model type: {config.type}")
