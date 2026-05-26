@@ -302,9 +302,13 @@ class Trainer:
         self.checkpointer = Checkpointer(config.checkpoint, config.experiment_name)
 
         # Create evaluator
+        frame_pct: float | None = None
+        if config.model.type == "picodeframe" and config.frame is not None:
+            frame_pct = config.frame.max_frame_pct
         self.evaluator = Evaluator(
             self.encoder, self.decoder, self.device,
             decoder_size=self._decoder_size,
+            frame_pct=frame_pct,
         )
 
         # Create discriminator if GAN training enabled
@@ -1036,6 +1040,18 @@ class Trainer:
             "loss_l2": loss_l2,
             "loss_stn_reg": loss_stn,
         }
+
+        # Chrominance loss — penalise cross-channel variance of the residual.
+        # Zero when R=G=B delta (pure luminance); positive on colour shifts.
+        if not skip_image_loss and loss_cfg.chroma is not None:
+            chroma_scale = self._ramp(
+                loss_cfg.chroma.scale, loss_cfg.chroma.ramp_steps, effective_step
+            )
+            if chroma_scale > 0:
+                residual = encoded - original                      # (B, 3, H, W)
+                loss_chroma = residual.var(dim=1).mean()           # scalar
+                total = total + chroma_scale * loss_chroma
+                losses["loss_chroma"] = loss_chroma
 
         # LPIPS loss (optional) - also skipped during no_im_loss_steps
         if skip_image_loss:

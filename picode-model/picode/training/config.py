@@ -79,6 +79,10 @@ class LossConfig:
 
     yuv_weights: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
+    # Chrominance preservation loss — penalizes cross-channel residual variance.
+    # Keeps colour shifts imperceptible while allowing full 3ch residual capacity.
+    chroma: LossRamp | None = None
+
     # Focal Frequency Loss (FFL) - reduces frequency-domain artifacts
     # delay 20k, ramp 20k→60k
     ffl: DelayedLossRamp | None = None
@@ -254,7 +258,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     if "loss" in data:
         loss_data = data["loss"]
         # Standard LossRamp fields
-        for key in ["message", "l2", "lpips"]:
+        for key in ["message", "l2", "lpips", "chroma"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
         # DelayedLossRamp fields (ffl, gan)
