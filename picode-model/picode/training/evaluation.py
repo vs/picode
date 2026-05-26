@@ -61,6 +61,7 @@ class Evaluator:
         device: torch.device,
         lpips_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
         decoder_size: int | None = None,
+        frame_pct: float | None = None,
     ) -> None:
         """Initialize evaluator.
 
@@ -71,12 +72,15 @@ class Evaluator:
             lpips_fn: Optional LPIPS function for perceptual quality.
             decoder_size: If set, resize encoded images to this size before decoding.
                 Used for PicodeLite where decoder_size < encoder_size.
+            frame_pct: Frame width as fraction of image size. When set, uses
+                PicodeFrame encode/decode flow (reflection padding, mask).
         """
         self.encoder = encoder
         self.decoder = decoder
         self.device = device
         self.lpips_fn = lpips_fn
         self.decoder_size = decoder_size
+        self.frame_pct = frame_pct
 
     def _resize_for_decoder(self, images: Tensor) -> Tensor:
         """Resize images to decoder_size if configured and sizes differ."""
@@ -88,6 +92,50 @@ class Evaluator:
                 align_corners=False,
             )
         return images
+
+    def _encode_picodeframe(
+        self, images: Tensor, messages: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Encode using PicodeFrame flow: extract inner, pad, encode with mask.
+
+        Args:
+            images: (B, C, H, W) images in [0, 1].
+            messages: (B, num_bits) binary messages.
+
+        Returns:
+            Tuple of (encoded, mask, padded_inner) where mask is (B, 1, H, W)
+            with 1 in center, 0 in border.
+        """
+        assert self.frame_pct is not None
+        image_size = images.shape[-1]
+        fw = int(self.frame_pct * image_size)
+
+        inner = images[:, :, fw:image_size - fw, fw:image_size - fw]
+        padded_inner = F.pad(inner, (fw, fw, fw, fw), mode="reflect")
+
+        mask = torch.zeros(
+            images.shape[0], 1, image_size, image_size,
+            device=self.device, dtype=images.dtype,
+        )
+        mask[:, :, fw:image_size - fw, fw:image_size - fw] = 1.0
+
+        encoded = self.encoder(padded_inner, messages, frame_width=fw).clamp(0.0, 1.0)
+        return encoded, mask, padded_inner
+
+    def _decode_picodeframe(
+        self, images: Tensor, mask: Tensor,
+    ) -> Tensor:
+        """Decode PicodeFrame output with border mask.
+
+        Args:
+            images: (B, C, H, W) encoded (possibly distorted) images.
+            mask: (B, 1, H, W) center mask (1=center, 0=border).
+
+        Returns:
+            Decoded logits (B, num_bits).
+        """
+        decoder_input = self._resize_for_decoder(images)
+        return self.decoder(decoder_input, mask=mask)
 
     @torch.no_grad()
     def evaluate(
@@ -124,10 +172,17 @@ class Evaluator:
                 0, 2, (images.shape[0], num_bits), device=self.device
             ).float()
 
-            encoded = self.encoder(images, messages)
-            decoder_input = self._resize_for_decoder(encoded)
-            decoded_logits = self.decoder(decoder_input)
-            decoded_binary = (decoded_logits > 0).float()  # Logits: > 0 means > 0.5 probability
+            if self.frame_pct is not None:
+                encoded, mask, padded_inner = self._encode_picodeframe(
+                    images, messages,
+                )
+                decoded_logits = self._decode_picodeframe(encoded, mask)
+            else:
+                encoded = self.encoder(images, messages).clamp(0.0, 1.0)
+                decoder_input = self._resize_for_decoder(encoded)
+                decoded_logits = self.decoder(decoder_input)
+
+            decoded_binary = (decoded_logits > 0).float()
 
             # Message metrics
             bit_acc = (decoded_binary == messages).float().mean()
@@ -173,16 +228,24 @@ class Evaluator:
         messages = messages.to(self.device)
 
         results: list[RobustnessResult] = []
-        encoded = self.encoder(images, messages)
+
+        if self.frame_pct is not None:
+            encoded, mask, _ = self._encode_picodeframe(images, messages)
+        else:
+            encoded = self.encoder(images, messages).clamp(0.0, 1.0)
+            mask = None
 
         for name, strengths in distortions.items():
             for strength in strengths:
                 distortion = self._create_distortion(name, strength)
                 distorted = distortion(encoded)
 
-                decoder_input = self._resize_for_decoder(distorted)
-                decoded_logits = self.decoder(decoder_input)
-                decoded_binary = (decoded_logits > 0).float()  # Logits threshold
+                if mask is not None:
+                    decoded_logits = self._decode_picodeframe(distorted, mask)
+                else:
+                    decoder_input = self._resize_for_decoder(distorted)
+                    decoded_logits = self.decoder(decoder_input)
+                decoded_binary = (decoded_logits > 0).float()
 
                 bit_acc = (decoded_binary == messages).float().mean().item()
                 msg_acc = (decoded_binary == messages).all(dim=1).float().mean().item()

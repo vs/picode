@@ -73,7 +73,7 @@ def evaluate_single_image(
             padded = F.pad(inner_tensor, (frame_width,) * 4, mode="reflect")
 
             # Encode with frame_width
-            encoded = encoder(padded, message, frame_width=frame_width)
+            encoded = encoder(padded, message, frame_width=frame_width).clamp(0.0, 1.0)
 
             # Decode with mask
             mask = torch.zeros(1, 1, image_size, image_size, device=device)
@@ -91,7 +91,7 @@ def evaluate_single_image(
             image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
             image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
-            encoded = encoder(image_tensor, message)
+            encoded = encoder(image_tensor, message).clamp(0.0, 1.0)
             decoded_logits = decoder(encoded)
             decoded = (decoded_logits > 0).float()
             mse = ((encoded - image_tensor) ** 2).mean().item()
@@ -137,7 +137,7 @@ def run_robustness_sweep(
         from picode.training.evaluation import RobustnessResult
         results: list = []
         with torch.no_grad():
-            encoded = encoder(padded, message, frame_width=frame_width)
+            encoded = encoder(padded, message, frame_width=frame_width).clamp(0.0, 1.0)
             evaluator = Evaluator(encoder, decoder, device)
             for name, strengths in DEFAULT_ROBUSTNESS_SWEEP.items():
                 for strength in strengths:
