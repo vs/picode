@@ -1,0 +1,365 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 3000" font-family="'SF Mono', 'Cascadia Code', 'Fira Code', monospace">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6B7280"/>
+    </marker>
+    <marker id="arrow-skip" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#F59E0B"/>
+    </marker>
+    <marker id="arrow-adain" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#A855F7"/>
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.1"/>
+    </filter>
+    <linearGradient id="header-bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4C1D95"/>
+      <stop offset="100%" stop-color="#6D28D9"/>
+    </linearGradient>
+    <linearGradient id="adain-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="3000" fill="#FFFFFF"/>
+
+  <!-- ==================== HEADER ==================== -->
+  <rect x="0" y="0" width="1400" height="75" fill="url(#header-bg)"/>
+  <text x="30" y="35" fill="white" font-size="24" font-weight="bold">Picodeine Architecture</text>
+  <text x="30" y="58" fill="#C4B5FD" font-size="13">Dual message injection: Input Spatial (StegaStamp-style) + AdaIN Modulation · Flexible H×W (÷16) · 127 bits · CNN+STN Decoder</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="20" y="85" width="1360" height="40" rx="6" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <rect x="35" y="97" width="14" height="14" rx="3" fill="#3B82F6"/><text x="55" y="108" fill="#374151" font-size="11">Conv2d</text>
+  <rect x="130" y="97" width="14" height="14" rx="3" fill="#8B5CF6"/><text x="150" y="108" fill="#374151" font-size="11">Linear/FC</text>
+  <rect x="230" y="97" width="14" height="14" rx="3" fill="#A855F7"/><text x="250" y="108" fill="#374151" font-size="11">AdaIN</text>
+  <rect x="320" y="97" width="14" height="14" rx="3" fill="#EC4899"/><text x="340" y="108" fill="#374151" font-size="11">Concat</text>
+  <rect x="410" y="97" width="14" height="14" rx="3" fill="#EF4444"/><text x="430" y="108" fill="#374151" font-size="11">Output</text>
+  <rect x="500" y="97" width="14" height="14" rx="3" fill="#F59E0B"/><text x="520" y="108" fill="#374151" font-size="11">Skip</text>
+  <rect x="590" y="97" width="14" height="14" rx="3" fill="#6366F1"/><text x="610" y="108" fill="#374151" font-size="11">Reshape</text>
+  <rect x="690" y="97" width="14" height="14" rx="3" fill="#14B8A6"/><text x="710" y="108" fill="#374151" font-size="11">STN</text>
+  <rect x="780" y="97" width="14" height="14" rx="3" fill="#D946EF"/><text x="800" y="108" fill="#374151" font-size="11">MappingNet</text>
+  <text x="910" y="108" fill="#6B7280" font-size="11">All activations: ReLU · Init: Kaiming He</text>
+
+  <!-- ==================== DUAL INJECTION CONCEPT ==================== -->
+  <rect x="20" y="135" width="1360" height="80" rx="4" fill="#F5F3FF" stroke="#C4B5FD"/>
+  <text x="35" y="157" fill="#5B21B6" font-size="14" font-weight="bold">DUAL MESSAGE INJECTION STRATEGY</text>
+  <text x="35" y="177" fill="#6D28D9" font-size="11">Path 1 (Spatial): message → Linear → Reshape(3,50,50) → Upsample(H,W) → Concat with image at encoder INPUT</text>
+  <text x="35" y="195" fill="#6D28D9" font-size="11">Path 2 (Latent):  message → MappingNetwork(2×Linear+ReLU) → w(256) → AdaIN modulation at 4 decoder stages</text>
+  <text x="35" y="210" fill="#7C3AED" font-size="10">Key insight: message enters at input so ALL U-Net features are message-dependent (not diluted by image-only skip connections)</text>
+
+  <!-- ==================== ENCODER SECTION ==================== -->
+  <rect x="20" y="230" width="1360" height="30" rx="4" fill="#EDE9FE"/>
+  <text x="35" y="251" fill="#5B21B6" font-size="15" font-weight="bold">ENCODER (U-Net + AdaIN)</text>
+  <text x="310" y="251" fill="#7C3AED" font-size="12">Input: image (3×H×W) + message (127 bits) → Output: encoded image (3×H×W) · Requires H,W divisible by 16</text>
+
+  <!-- ===== TWO MESSAGE PATHS ===== -->
+
+  <!-- Path 1: Spatial (Left) -->
+  <rect x="50" y="278" width="280" height="22" rx="3" fill="#F0FDF4"/>
+  <text x="60" y="294" fill="#166534" font-size="11" font-weight="bold">Path 1: Spatial Message Injection</text>
+
+  <rect x="50" y="306" width="280" height="42" rx="5" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="60" y="324" fill="white" font-size="11" font-weight="bold">Linear(127 → 7500) + ReLU</text>
+  <text x="60" y="340" fill="#DDD6FE" font-size="10">Output: 7500</text>
+
+  <line x1="190" y1="348" x2="190" y2="358" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="360" width="280" height="42" rx="5" fill="#6366F1" filter="url(#shadow)"/>
+  <text x="60" y="378" fill="white" font-size="11" font-weight="bold">Reshape → Upsample (nearest)</text>
+  <text x="60" y="394" fill="#C7D2FE" font-size="10">7500 → (3, 50, 50) → (3, H, W)</text>
+
+  <line x1="190" y1="402" x2="190" y2="414" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Path 2: MappingNetwork (Right) -->
+  <rect x="500" y="278" width="280" height="22" rx="3" fill="#FDF4FF"/>
+  <text x="510" y="294" fill="#86198F" font-size="11" font-weight="bold">Path 2: Latent MappingNetwork</text>
+
+  <rect x="500" y="306" width="340" height="42" rx="5" fill="#D946EF" filter="url(#shadow)"/>
+  <text x="510" y="324" fill="white" font-size="11" font-weight="bold">Linear(127 → 256) + ReLU</text>
+  <text x="510" y="340" fill="#F5D0FE" font-size="10">First mapping layer</text>
+
+  <line x1="670" y1="348" x2="670" y2="358" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="500" y="360" width="340" height="48" rx="5" fill="#D946EF" filter="url(#shadow)"/>
+  <text x="510" y="378" fill="white" font-size="11" font-weight="bold">Linear(256 → 256) + ReLU</text>
+  <text x="510" y="398" fill="#F5D0FE" font-size="10">Output: w latent vector (256) → feeds all 4 AdaIN layers</text>
+
+  <!-- Arrow from mapping to AdaIN layers (will be connected below) -->
+  <path d="M 840 384 L 900 384 L 900 480" stroke="#A855F7" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="908" y="440" fill="#7C3AED" font-size="10">w(256) →</text>
+  <text x="908" y="455" fill="#7C3AED" font-size="10">4× AdaIN</text>
+
+  <!-- Input Concat -->
+  <rect x="50" y="416" width="280" height="42" rx="5" fill="#EC4899" filter="url(#shadow)"/>
+  <text x="60" y="434" fill="white" font-size="11" font-weight="bold">Concat [msg(3ch), img(3ch)]</text>
+  <text x="60" y="450" fill="#FBCFE8" font-size="10">Normalize: x - 0.5 → Output: 6 × H × W</text>
+
+  <text x="365" y="437" fill="#6B7280" font-size="10">← image (3×H×W)</text>
+
+  <!-- ===== ENCODER PATH (Left Column) ===== -->
+  <line x1="190" y1="458" x2="190" y2="472" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="474" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="494" fill="white" font-size="11" font-weight="bold">conv1: Conv2d(6→32, 3×3, s=1, p=1)</text>
+  <text x="60" y="512" fill="#BFDBFE" font-size="10">+ ReLU · Output: 32 × H × W</text>
+
+  <line x1="190" y1="522" x2="190" y2="536" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="538" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="558" fill="white" font-size="11" font-weight="bold">conv2: Conv2d(32→32, 3×3, s=2, p=1)</text>
+  <text x="60" y="576" fill="#BFDBFE" font-size="10">+ ReLU · Output: 32 × H/2 × W/2 (↓2×)</text>
+
+  <line x1="190" y1="586" x2="190" y2="600" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="602" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="622" fill="white" font-size="11" font-weight="bold">conv3: Conv2d(32→64, 3×3, s=2, p=1)</text>
+  <text x="60" y="640" fill="#BFDBFE" font-size="10">+ ReLU · Output: 64 × H/4 × W/4 (↓2×)</text>
+
+  <line x1="190" y1="650" x2="190" y2="664" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="666" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="686" fill="white" font-size="11" font-weight="bold">conv4: Conv2d(64→128, 3×3, s=2, p=1)</text>
+  <text x="60" y="704" fill="#BFDBFE" font-size="10">+ ReLU · Output: 128 × H/8 × W/8 (↓2×)</text>
+
+  <line x1="190" y1="714" x2="190" y2="730" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Bottleneck -->
+  <rect x="200" y="745" width="300" height="55" rx="5" fill="#1D4ED8" filter="url(#shadow)" stroke="#FCD34D" stroke-width="2"/>
+  <text x="210" y="765" fill="white" font-size="12" font-weight="bold">conv5: Conv2d(128→256, 3×3, s=2, p=1)</text>
+  <text x="210" y="785" fill="#93C5FD" font-size="11">+ ReLU · Output: 256 × H/16 × W/16 · BOTTLENECK</text>
+
+  <path d="M 500 772 L 560 772" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== DECODER PATH (Right Column) with AdaIN ===== -->
+
+  <!-- Stage 5d (up from bottleneck) + AdaIN1 -->
+  <rect x="570" y="660" width="370" height="85" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="678" fill="white" font-size="11" font-weight="bold">up5: Upsample(2×) → Pad → Conv2d(256→128, 2×2)</text>
+  <text x="580" y="694" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c4(128), x(128)] = 256ch</text>
+  <text x="580" y="710" fill="#BFDBFE" font-size="10">conv5d: Conv2d(256→128, 3×3, p=1) + ReLU → 128×H/8</text>
+  <!-- AdaIN block -->
+  <rect x="590" y="718" width="340" height="22" rx="3" fill="url(#adain-grad)"/>
+  <text x="600" y="734" fill="white" font-size="10" font-weight="bold">adain1: AdaIN(w_dim=256, channels=128) · γ,β from w</text>
+
+  <path d="M 745 745 L 745 733" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="330" y1="690" x2="568" y2="690" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="684" fill="#D97706" font-size="9">skip (128ch)</text>
+
+  <!-- AdaIN arrow from mapping network -->
+  <path d="M 900 480 L 900 730 L 932 730" stroke="#A855F7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow-adain)"/>
+
+  <line x1="755" y1="660" x2="755" y2="645" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 4d + AdaIN2 -->
+  <rect x="570" y="562" width="370" height="80" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="580" fill="white" font-size="11" font-weight="bold">up4: Upsample(2×) → Pad → Conv2d(128→64, 2×2)</text>
+  <text x="580" y="596" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c3(64), x(64)] = 128ch</text>
+  <text x="580" y="612" fill="#BFDBFE" font-size="10">conv4d: Conv2d(128→64, 3×3, p=1) + ReLU → 64×H/4</text>
+  <rect x="590" y="620" width="340" height="22" rx="3" fill="url(#adain-grad)"/>
+  <text x="600" y="636" fill="white" font-size="10" font-weight="bold">adain2: AdaIN(w_dim=256, channels=64) · γ,β from w</text>
+
+  <line x1="330" y1="626" x2="568" y2="596" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="606" fill="#D97706" font-size="9">skip (64ch)</text>
+
+  <!-- AdaIN arrow -->
+  <line x1="900" y1="632" x2="932" y2="632" stroke="#A855F7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow-adain)"/>
+
+  <line x1="755" y1="562" x2="755" y2="547" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 3d + AdaIN3 -->
+  <rect x="570" y="464" width="370" height="80" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="482" fill="white" font-size="11" font-weight="bold">up3: Upsample(2×) → Pad → Conv2d(64→32, 2×2)</text>
+  <text x="580" y="498" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c2(32), x(32)] = 64ch</text>
+  <text x="580" y="514" fill="#BFDBFE" font-size="10">conv3d: Conv2d(64→32, 3×3, p=1) + ReLU → 32×H/2</text>
+  <rect x="590" y="522" width="340" height="22" rx="3" fill="url(#adain-grad)"/>
+  <text x="600" y="538" fill="white" font-size="10" font-weight="bold">adain3: AdaIN(w_dim=256, channels=32) · γ,β from w</text>
+
+  <line x1="330" y1="562" x2="568" y2="500" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="525" fill="#D97706" font-size="9">skip (32ch)</text>
+
+  <line x1="900" y1="534" x2="932" y2="534" stroke="#A855F7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow-adain)"/>
+
+  <line x1="755" y1="464" x2="755" y2="449" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 2d + AdaIN4 -->
+  <rect x="570" y="358" width="370" height="88" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="376" fill="white" font-size="11" font-weight="bold">up2: Upsample(2×) → Pad → Conv2d(32→32, 2×2)</text>
+  <text x="580" y="392" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c1(32), x(32), inputs(6)] = 70ch</text>
+  <text x="580" y="408" fill="#BFDBFE" font-size="10">conv2d: Conv2d(70→32, 3×3, p=1) + ReLU → 32×H×W</text>
+  <rect x="590" y="416" width="340" height="22" rx="3" fill="url(#adain-grad)"/>
+  <text x="600" y="432" fill="white" font-size="10" font-weight="bold">adain4: AdaIN(w_dim=256, channels=32) · γ,β from w</text>
+
+  <line x1="330" y1="498" x2="568" y2="400" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="442" fill="#D97706" font-size="9">skip (32ch + 6ch inputs)</text>
+
+  <line x1="900" y1="428" x2="932" y2="428" stroke="#A855F7" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow-adain)"/>
+
+  <line x1="755" y1="358" x2="755" y2="338" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Output -->
+  <rect x="570" y="280" width="370" height="55" rx="5" fill="#EF4444" filter="url(#shadow)"/>
+  <text x="580" y="300" fill="white" font-size="11" font-weight="bold">residual: Conv2d(32→3, 1×1) (no activation)</text>
+  <text x="580" y="320" fill="#FECACA" font-size="10">encoded = image + residual · Output: 3 × H × W</text>
+
+  <!-- ==================== AdaIN DETAIL SECTION ==================== -->
+  <rect x="20" y="820" width="1360" height="30" rx="4" fill="#FAF5FF"/>
+  <text x="35" y="841" fill="#7C3AED" font-size="15" font-weight="bold">AdaIN (Adaptive Instance Normalization) — Detailed Operation</text>
+
+  <rect x="50" y="868" width="600" height="140" rx="6" fill="#F5F3FF" stroke="#C4B5FD"/>
+
+  <text x="65" y="890" fill="#5B21B6" font-size="12" font-weight="bold">AdaIN Layer Architecture (each instance):</text>
+  <text x="65" y="912" fill="#6D28D9" font-size="11">projection: Linear(mapping_dim → 2 × num_features)</text>
+  <text x="65" y="930" fill="#6D28D9" font-size="11">  → Initialized to ZEROS (identity modulation at start)</text>
+  <text x="65" y="955" fill="#5B21B6" font-size="12" font-weight="bold">Forward Operation:</text>
+  <text x="65" y="975" fill="#6D28D9" font-size="11">1. gamma_beta = projection(w)  →  split into gamma(C), beta(C)</text>
+  <text x="65" y="993" fill="#6D28D9" font-size="11">2. x_norm = (x - mean) / (std + eps)  per-instance normalization</text>
+
+  <rect x="700" y="868" width="400" height="140" rx="6" fill="#F5F3FF" stroke="#C4B5FD"/>
+  <text x="715" y="890" fill="#5B21B6" font-size="12" font-weight="bold">Modulation Formula:</text>
+  <text x="715" y="918" fill="#6D28D9" font-size="14" font-weight="bold">output = x_norm × (1 + γ) + β</text>
+  <text x="715" y="942" fill="#7C3AED" font-size="11">The (1 + γ) formulation ensures identity at init:</text>
+  <text x="715" y="960" fill="#7C3AED" font-size="11">When γ=0, β=0: output = x_norm × 1 + 0 = x_norm</text>
+  <text x="715" y="985" fill="#5B21B6" font-size="12" font-weight="bold">4 AdaIN Instances:</text>
+  <text x="715" y="1002" fill="#7C3AED" font-size="10">adain1(256→128) · adain2(256→64) · adain3(256→32) · adain4(256→32)</text>
+
+  <!-- ==================== DECODER SECTION ==================== -->
+  <rect x="20" y="1030" width="1360" height="30" rx="4" fill="#F3E8FF"/>
+  <text x="35" y="1051" fill="#6B21A8" font-size="15" font-weight="bold">DECODER (CNN + STN)</text>
+  <text x="310" y="1051" fill="#7C3AED" font-size="12">Input: encoded image (3×H×W) → Output: decoded bits (127 logits) · STN with scale regularization</text>
+
+  <!-- Input -->
+  <rect x="350" y="1080" width="340" height="35" rx="5" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="360" y="1103" fill="#475569" font-size="11">Input: encoded image (3×H×W) · Normalize: x - 0.5</text>
+
+  <line x1="420" y1="1115" x2="420" y2="1135" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="580" y1="1115" x2="580" y2="1135" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- STN Branch (Left) -->
+  <rect x="50" y="1130" width="200" height="22" rx="3" fill="#F0FDFA"/>
+  <text x="60" y="1146" fill="#0F766E" font-size="11" font-weight="bold">STN Branch</text>
+
+  <rect x="50" y="1158" width="310" height="42" rx="5" fill="#14B8A6" filter="url(#shadow)"/>
+  <text x="60" y="1176" fill="white" font-size="11" font-weight="bold">Conv2d(3→32, 3×3, s=2, p=1) + ReLU</text>
+  <text x="60" y="1192" fill="#CCFBF1" font-size="10">Output: 32 × H/2 × W/2</text>
+
+  <line x1="205" y1="1200" x2="205" y2="1210" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="1212" width="310" height="42" rx="5" fill="#14B8A6" filter="url(#shadow)"/>
+  <text x="60" y="1230" fill="white" font-size="11" font-weight="bold">Conv2d(32→64, 3×3, s=2, p=1) + ReLU</text>
+  <text x="60" y="1246" fill="#CCFBF1" font-size="10">Output: 64 × H/4 × W/4</text>
+
+  <line x1="205" y1="1254" x2="205" y2="1264" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="1266" width="310" height="42" rx="5" fill="#14B8A6" filter="url(#shadow)"/>
+  <text x="60" y="1284" fill="white" font-size="11" font-weight="bold">Conv2d(64→128, 3×3, s=2, p=1) + ReLU</text>
+  <text x="60" y="1300" fill="#CCFBF1" font-size="10">Output: 128 × H/8 × W/8</text>
+
+  <line x1="205" y1="1308" x2="205" y2="1318" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="1320" width="310" height="48" rx="5" fill="#6366F1" filter="url(#shadow)"/>
+  <text x="60" y="1338" fill="white" font-size="11" font-weight="bold">Flatten(128 × (H/8)² )</text>
+  <text x="60" y="1358" fill="#C7D2FE" font-size="10">For 512: 128×64×64 = 524,288 → Linear(→128) + ReLU</text>
+
+  <line x1="205" y1="1368" x2="205" y2="1378" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="1380" width="310" height="58" rx="5" fill="#14B8A6" filter="url(#shadow)"/>
+  <text x="60" y="1398" fill="white" font-size="11" font-weight="bold">Affine Transform: θ = f·W + b</text>
+  <text x="60" y="1414" fill="#CCFBF1" font-size="10">W: (128,6) init=zeros, b: (6) init=[1,0,0,0,1,0]</text>
+  <text x="60" y="1430" fill="#CCFBF1" font-size="9">→ θ(2×3) → affine_grid → grid_sample(bilinear)</text>
+
+  <path d="M 360 1409 L 430 1409 L 430 1150 L 480 1150" stroke="#14B8A6" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="440" y="1270" fill="#0F766E" font-size="9" transform="rotate(-90,440,1270)">warp image</text>
+
+  <!-- STN Scale Reg -->
+  <rect x="50" y="1446" width="310" height="40" rx="5" fill="#0D9488" filter="url(#shadow)"/>
+  <text x="60" y="1464" fill="white" font-size="11" font-weight="bold">STN Scale Regularization Loss</text>
+  <text x="60" y="1478" fill="#CCFBF1" font-size="10">bias_reg = MSE(b, identity) + weight_reg = mean(W²)</text>
+
+  <!-- Main CNN (Right) -->
+  <rect x="490" y="1130" width="200" height="22" rx="3" fill="#EFF6FF"/>
+  <text x="500" y="1146" fill="#1E40AF" font-size="11" font-weight="bold">Main CNN Backbone</text>
+
+  <rect x="490" y="1158" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1176" fill="white" font-size="11" font-weight="bold">Conv2d(3→32, 3×3, s=2, p=1) + ReLU</text>
+  <text x="500" y="1192" fill="#BFDBFE" font-size="10">Output: 32 × H/2 × W/2</text>
+
+  <line x1="660" y1="1200" x2="660" y2="1210" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1212" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1230" fill="white" font-size="11" font-weight="bold">Conv2d(32→32, 3×3, s=1, p=1) + ReLU</text>
+  <text x="500" y="1246" fill="#BFDBFE" font-size="10">Output: 32 × H/2 × W/2</text>
+
+  <line x1="660" y1="1254" x2="660" y2="1264" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1266" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1284" fill="white" font-size="11" font-weight="bold">Conv2d(32→64, 3×3, s=2, p=1) + ReLU</text>
+  <text x="500" y="1300" fill="#BFDBFE" font-size="10">Output: 64 × H/4 × W/4</text>
+
+  <line x1="660" y1="1308" x2="660" y2="1318" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1320" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1338" fill="white" font-size="11" font-weight="bold">Conv2d(64→64, 3×3, s=1, p=1) + ReLU</text>
+  <text x="500" y="1354" fill="#BFDBFE" font-size="10">Output: 64 × H/4 × W/4</text>
+
+  <line x1="660" y1="1362" x2="660" y2="1372" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1374" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1392" fill="white" font-size="11" font-weight="bold">Conv2d(64→64, 3×3, s=2, p=1) + ReLU</text>
+  <text x="500" y="1408" fill="#BFDBFE" font-size="10">Output: 64 × H/8 × W/8</text>
+
+  <line x1="660" y1="1416" x2="660" y2="1426" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1428" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1446" fill="white" font-size="11" font-weight="bold">Conv2d(64→128, 3×3, s=2, p=1) + ReLU</text>
+  <text x="500" y="1462" fill="#BFDBFE" font-size="10">Output: 128 × H/16 × W/16</text>
+
+  <line x1="660" y1="1470" x2="660" y2="1480" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1482" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="500" y="1500" fill="white" font-size="11" font-weight="bold">Conv2d(128→128, 3×3, s=2, p=1) + ReLU</text>
+  <text x="500" y="1516" fill="#BFDBFE" font-size="10">Output: 128 × H/32 × W/32</text>
+
+  <line x1="660" y1="1524" x2="660" y2="1534" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Flatten + FC -->
+  <rect x="490" y="1536" width="340" height="48" rx="5" fill="#6366F1" filter="url(#shadow)"/>
+  <text x="500" y="1554" fill="white" font-size="11" font-weight="bold">Flatten(128 × (H/32) × (W/32))</text>
+  <text x="500" y="1574" fill="#C7D2FE" font-size="10">For 512×512: 128×16×16 = 32,768</text>
+
+  <line x1="660" y1="1584" x2="660" y2="1594" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1596" width="340" height="42" rx="5" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="500" y="1614" fill="white" font-size="11" font-weight="bold">Linear(flatten_size → 512) + ReLU</text>
+  <text x="500" y="1630" fill="#DDD6FE" font-size="10">Hidden layer</text>
+
+  <line x1="660" y1="1638" x2="660" y2="1648" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="490" y="1650" width="340" height="48" rx="5" fill="#EF4444" filter="url(#shadow)"/>
+  <text x="500" y="1670" fill="white" font-size="11" font-weight="bold">Linear(512 → 127) — NO activation</text>
+  <text x="500" y="1688" fill="#FECACA" font-size="10">Output: raw logits · sigmoid for training</text>
+
+  <!-- ==================== ARCHITECTURE COMPARISON ==================== -->
+  <rect x="20" y="1730" width="1360" height="30" rx="4" fill="#ECFDF5"/>
+  <text x="35" y="1751" fill="#065F46" font-size="15" font-weight="bold">PICODEINE vs OTHER MODELS — KEY DIFFERENCES</text>
+
+  <text x="50" y="1785" fill="#374151" font-size="12" font-weight="bold">Unique to Picodeine:</text>
+  <text x="50" y="1805" fill="#7C3AED" font-size="11">1. DUAL message injection: spatial at input (like StegaStamp) + latent via AdaIN at decoder (unique to Picodeine)</text>
+  <text x="50" y="1825" fill="#7C3AED" font-size="11">2. MappingNetwork: 2-layer MLP (127→256→256) producing style vector w that conditions all 4 AdaIN layers</text>
+  <text x="50" y="1845" fill="#7C3AED" font-size="11">3. AdaIN modulation: instance-norm + affine from w, with (1+γ) formulation for identity-init stability</text>
+  <text x="50" y="1865" fill="#7C3AED" font-size="11">4. Zero-initialized AdaIN projections: modulation starts as identity, gradually learns to condition features</text>
+  <text x="50" y="1885" fill="#7C3AED" font-size="11">5. STN flatten size = 128×(H/8)² (only ÷8 not ÷32) — larger STN than StegaStamp's fixed 320K params</text>
+
+  <text x="50" y="1920" fill="#374151" font-size="12" font-weight="bold">Shared with StegaStamp:</text>
+  <text x="50" y="1940" fill="#6B7280" font-size="11">• Same U-Net encoder topology (5 encoder + 4 decoder levels, same channel widths)</text>
+  <text x="50" y="1960" fill="#6B7280" font-size="11">• Same spatial message prep: Linear→ReLU→Reshape(3,50,50)→Upsample(H,W)</text>
+  <text x="50" y="1980" fill="#6B7280" font-size="11">• Same residual learning, no BatchNorm, Kaiming He init, all ReLU</text>
+
+  <text x="50" y="2015" fill="#374151" font-size="12" font-weight="bold">Training Collapse History (see picodeine-debugging.md):</text>
+  <text x="50" y="2035" fill="#DC2626" font-size="11">• v1: AdaIN-only (bottleneck) → COLLAPSED: message diluted by image-only skip connections</text>
+  <text x="50" y="2055" fill="#DC2626" font-size="11">• v2: Added bottleneck spatial injection → COLLAPSED: too deep, still diluted</text>
+  <text x="50" y="2075" fill="#DC2626" font-size="11">• v3: Added full-res message skip at output → COLLAPSED: skip bypassed decoder</text>
+  <text x="50" y="2095" fill="#059669" font-size="11">• v4 (current): Input-level spatial + AdaIN → DESIGNED to prevent collapse via input-level message dependency</text>
+</svg>

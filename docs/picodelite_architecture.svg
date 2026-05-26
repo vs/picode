@@ -1,0 +1,251 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 2200" font-family="'SF Mono', 'Cascadia Code', 'Fira Code', monospace">
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#6B7280"/>
+    </marker>
+    <marker id="arrow-skip" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#F59E0B"/>
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.1"/>
+    </filter>
+    <linearGradient id="header-bg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#14532D"/>
+      <stop offset="100%" stop-color="#166534"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="2200" fill="#FFFFFF"/>
+
+  <!-- ==================== HEADER ==================== -->
+  <rect x="0" y="0" width="1400" height="75" fill="url(#header-bg)"/>
+  <text x="30" y="35" fill="white" font-size="24" font-weight="bold">PicodeLite Architecture</text>
+  <text x="30" y="58" fill="#86EFAC" font-size="13">Lightweight variant · Flexible H×W (÷16) · 63 bits · U-Net Encoder (no BatchNorm) + CNN Decoder (no STN)</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="20" y="85" width="1360" height="40" rx="6" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <rect x="35" y="97" width="14" height="14" rx="3" fill="#3B82F6"/><text x="55" y="108" fill="#374151" font-size="11">Conv2d</text>
+  <rect x="130" y="97" width="14" height="14" rx="3" fill="#8B5CF6"/><text x="150" y="108" fill="#374151" font-size="11">Linear/FC</text>
+  <rect x="230" y="97" width="14" height="14" rx="3" fill="#10B981"/><text x="250" y="108" fill="#374151" font-size="11">Upsample</text>
+  <rect x="340" y="97" width="14" height="14" rx="3" fill="#EC4899"/><text x="360" y="108" fill="#374151" font-size="11">Concat</text>
+  <rect x="430" y="97" width="14" height="14" rx="3" fill="#EF4444"/><text x="450" y="108" fill="#374151" font-size="11">Output</text>
+  <rect x="520" y="97" width="14" height="14" rx="3" fill="#F59E0B"/><text x="540" y="108" fill="#374151" font-size="11">Skip Connection</text>
+  <rect x="670" y="97" width="14" height="14" rx="3" fill="#6366F1"/><text x="690" y="108" fill="#374151" font-size="11">Reshape/Flatten</text>
+  <text x="820" y="108" fill="#6B7280" font-size="11">All activations: ReLU · Init: Kaiming He normal · No STN · No Discriminator</text>
+
+  <!-- ==================== ENCODER SECTION ==================== -->
+  <rect x="20" y="140" width="1360" height="30" rx="4" fill="#DCFCE7"/>
+  <text x="35" y="161" fill="#166534" font-size="15" font-weight="bold">ENCODER (U-Net)</text>
+  <text x="280" y="161" fill="#22C55E" font-size="12">Input: image (3×H×W) + message (63 bits) → Output: encoded image (3×H×W) · Requires H,W divisible by 16</text>
+
+  <!-- Message Preparation -->
+  <rect x="50" y="190" width="280" height="22" rx="3" fill="#F0FDF4"/>
+  <text x="60" y="206" fill="#166534" font-size="11" font-weight="bold">Message Preparation</text>
+
+  <rect x="50" y="218" width="280" height="42" rx="5" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="60" y="236" fill="white" font-size="11" font-weight="bold">Linear(63 → 3072) + ReLU</text>
+  <text x="60" y="252" fill="#DDD6FE" font-size="10">Output: 3072 (= 3 × 32 × 32)</text>
+
+  <line x1="190" y1="260" x2="190" y2="272" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="274" width="280" height="42" rx="5" fill="#6366F1" filter="url(#shadow)"/>
+  <text x="60" y="292" fill="white" font-size="11" font-weight="bold">Reshape → Upsample (nearest)</text>
+  <text x="60" y="308" fill="#C7D2FE" font-size="10">3072 → (3, 32, 32) → (3, H, W)</text>
+
+  <line x1="190" y1="316" x2="190" y2="328" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Input Concat -->
+  <rect x="50" y="330" width="280" height="42" rx="5" fill="#EC4899" filter="url(#shadow)"/>
+  <text x="60" y="348" fill="white" font-size="11" font-weight="bold">Concat [msg(3ch), img(3ch)]</text>
+  <text x="60" y="364" fill="#FBCFE8" font-size="10">Normalize: x - 0.5 → Output: 6 × H × W</text>
+
+  <text x="365" y="355" fill="#6B7280" font-size="10">← image (3×H×W)</text>
+
+  <!-- ===== ENCODER PATH (Left Column) ===== -->
+  <line x1="190" y1="372" x2="190" y2="388" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="390" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="410" fill="white" font-size="11" font-weight="bold">conv1: Conv2d(6→32, 3×3, s=1, p=1)</text>
+  <text x="60" y="428" fill="#BFDBFE" font-size="10">+ ReLU · Output: 32 × H × W</text>
+
+  <line x1="190" y1="438" x2="190" y2="452" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="454" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="474" fill="white" font-size="11" font-weight="bold">conv2: Conv2d(32→32, 3×3, s=2, p=1)</text>
+  <text x="60" y="492" fill="#BFDBFE" font-size="10">+ ReLU · Output: 32 × H/2 × W/2 (↓2×)</text>
+
+  <line x1="190" y1="502" x2="190" y2="516" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="518" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="538" fill="white" font-size="11" font-weight="bold">conv3: Conv2d(32→64, 3×3, s=2, p=1)</text>
+  <text x="60" y="556" fill="#BFDBFE" font-size="10">+ ReLU · Output: 64 × H/4 × W/4 (↓2×)</text>
+
+  <line x1="190" y1="566" x2="190" y2="580" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="50" y="582" width="280" height="48" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="60" y="602" fill="white" font-size="11" font-weight="bold">conv4: Conv2d(64→128, 3×3, s=2, p=1)</text>
+  <text x="60" y="620" fill="#BFDBFE" font-size="10">+ ReLU · Output: 128 × H/8 × W/8 (↓2×)</text>
+
+  <line x1="190" y1="630" x2="190" y2="644" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Bottleneck -->
+  <rect x="200" y="660" width="300" height="55" rx="5" fill="#1D4ED8" filter="url(#shadow)" stroke="#FCD34D" stroke-width="2"/>
+  <text x="210" y="680" fill="white" font-size="12" font-weight="bold">conv5: Conv2d(128→256, 3×3, s=2, p=1)</text>
+  <text x="210" y="700" fill="#93C5FD" font-size="11">+ ReLU · Output: 256 × H/16 × W/16 · BOTTLENECK</text>
+
+  <path d="M 500 688 L 560 688" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== DECODER PATH (Right Column) ===== -->
+
+  <!-- Stage 5d (up from bottleneck) -->
+  <rect x="570" y="582" width="350" height="65" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="600" fill="white" font-size="11" font-weight="bold">up5: Upsample(2×) → Pad → Conv2d(256→128, 2×2)</text>
+  <text x="580" y="616" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c4(128), x(128)] = 256ch</text>
+  <text x="580" y="632" fill="#BFDBFE" font-size="10">conv5d: Conv2d(256→128, 3×3, p=1) + ReLU → 128×H/8×W/8</text>
+
+  <path d="M 745 660 L 745 647" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Skip: conv4 → stage5d -->
+  <line x1="330" y1="606" x2="568" y2="606" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="600" fill="#D97706" font-size="9">skip (128ch)</text>
+
+  <line x1="745" y1="582" x2="745" y2="567" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 4d -->
+  <rect x="570" y="500" width="350" height="65" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="518" fill="white" font-size="11" font-weight="bold">up4: Upsample(2×) → Pad → Conv2d(128→64, 2×2)</text>
+  <text x="580" y="534" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c3(64), x(64)] = 128ch</text>
+  <text x="580" y="550" fill="#BFDBFE" font-size="10">conv4d: Conv2d(128→64, 3×3, p=1) + ReLU → 64×H/4×W/4</text>
+
+  <line x1="330" y1="542" x2="568" y2="530" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="530" fill="#D97706" font-size="9">skip (64ch)</text>
+
+  <line x1="745" y1="500" x2="745" y2="485" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 3d -->
+  <rect x="570" y="418" width="350" height="65" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="436" fill="white" font-size="11" font-weight="bold">up3: Upsample(2×) → Pad → Conv2d(64→32, 2×2)</text>
+  <text x="580" y="452" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c2(32), x(32)] = 64ch</text>
+  <text x="580" y="468" fill="#BFDBFE" font-size="10">conv3d: Conv2d(64→32, 3×3, p=1) + ReLU → 32×H/2×W/2</text>
+
+  <line x1="330" y1="478" x2="568" y2="452" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="460" fill="#D97706" font-size="9">skip (32ch)</text>
+
+  <line x1="745" y1="418" x2="745" y2="403" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 2d -->
+  <rect x="570" y="328" width="350" height="73" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="580" y="346" fill="white" font-size="11" font-weight="bold">up2: Upsample(2×) → Pad → Conv2d(32→32, 2×2)</text>
+  <text x="580" y="362" fill="#BFDBFE" font-size="10">+ ReLU → Concat[c1(32), x(32), inputs(6)] = 70ch</text>
+  <text x="580" y="378" fill="#BFDBFE" font-size="10">conv2d: Conv2d(70→32, 3×3, p=1) + ReLU → 32×H×W</text>
+  <text x="580" y="393" fill="#86EFAC" font-size="9">✓ No unused conv10 layer (cleaner than StegaStamp)</text>
+
+  <line x1="330" y1="414" x2="568" y2="370" stroke="#F59E0B" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-skip)"/>
+  <text x="410" y="386" fill="#D97706" font-size="9">skip (32ch + 6ch inputs)</text>
+
+  <line x1="745" y1="328" x2="745" y2="305" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Output -->
+  <rect x="570" y="250" width="350" height="53" rx="5" fill="#EF4444" filter="url(#shadow)"/>
+  <text x="580" y="270" fill="white" font-size="11" font-weight="bold">residual: Conv2d(32→3, 1×1) (no activation)</text>
+  <text x="580" y="290" fill="#FECACA" font-size="10">encoded = image + residual · Output: 3 × H × W</text>
+
+  <!-- ==================== DECODER SECTION ==================== -->
+  <rect x="20" y="740" width="1360" height="30" rx="4" fill="#F3E8FF"/>
+  <text x="35" y="761" fill="#6B21A8" font-size="15" font-weight="bold">DECODER (Pure CNN — No STN)</text>
+  <text x="380" y="761" fill="#7C3AED" font-size="12">Input: encoded image (3×H×W) → Output: decoded bits (63 logits)</text>
+
+  <!-- Input -->
+  <rect x="350" y="790" width="340" height="35" rx="5" fill="#F1F5F9" stroke="#CBD5E1"/>
+  <text x="360" y="813" fill="#475569" font-size="11">Input: encoded image (3×H×W) · Normalize: x - 0.5 · No STN warping</text>
+
+  <line x1="520" y1="825" x2="520" y2="845" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- CNN Backbone -->
+  <rect x="350" y="840" width="200" height="22" rx="3" fill="#EFF6FF"/>
+  <text x="360" y="856" fill="#1E40AF" font-size="11" font-weight="bold">CNN Backbone (7 layers)</text>
+
+  <rect x="350" y="868" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="886" fill="white" font-size="11" font-weight="bold">Conv2d(3→32, 3×3, s=2, p=1) + ReLU</text>
+  <text x="360" y="902" fill="#BFDBFE" font-size="10">Output: 32 × H/2 × W/2</text>
+
+  <line x1="520" y1="910" x2="520" y2="920" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="922" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="940" fill="white" font-size="11" font-weight="bold">Conv2d(32→32, 3×3, s=1, p=1) + ReLU</text>
+  <text x="360" y="956" fill="#BFDBFE" font-size="10">Output: 32 × H/2 × W/2</text>
+
+  <line x1="520" y1="964" x2="520" y2="974" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="976" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="994" fill="white" font-size="11" font-weight="bold">Conv2d(32→64, 3×3, s=2, p=1) + ReLU</text>
+  <text x="360" y="1010" fill="#BFDBFE" font-size="10">Output: 64 × H/4 × W/4</text>
+
+  <line x1="520" y1="1018" x2="520" y2="1028" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1030" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="1048" fill="white" font-size="11" font-weight="bold">Conv2d(64→64, 3×3, s=1, p=1) + ReLU</text>
+  <text x="360" y="1064" fill="#BFDBFE" font-size="10">Output: 64 × H/4 × W/4</text>
+
+  <line x1="520" y1="1072" x2="520" y2="1082" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1084" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="1102" fill="white" font-size="11" font-weight="bold">Conv2d(64→64, 3×3, s=2, p=1) + ReLU</text>
+  <text x="360" y="1118" fill="#BFDBFE" font-size="10">Output: 64 × H/8 × W/8</text>
+
+  <line x1="520" y1="1126" x2="520" y2="1136" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1138" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="1156" fill="white" font-size="11" font-weight="bold">Conv2d(64→128, 3×3, s=2, p=1) + ReLU</text>
+  <text x="360" y="1172" fill="#BFDBFE" font-size="10">Output: 128 × H/16 × W/16</text>
+
+  <line x1="520" y1="1180" x2="520" y2="1190" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1192" width="340" height="42" rx="5" fill="#3B82F6" filter="url(#shadow)"/>
+  <text x="360" y="1210" fill="white" font-size="11" font-weight="bold">Conv2d(128→128, 3×3, s=2, p=1) + ReLU</text>
+  <text x="360" y="1226" fill="#BFDBFE" font-size="10">Output: 128 × H/32 × W/32</text>
+
+  <line x1="520" y1="1234" x2="520" y2="1244" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Flatten + FC -->
+  <rect x="350" y="1246" width="340" height="48" rx="5" fill="#6366F1" filter="url(#shadow)"/>
+  <text x="360" y="1264" fill="white" font-size="11" font-weight="bold">Flatten(128 × (H/32) × (W/32))</text>
+  <text x="360" y="1284" fill="#C7D2FE" font-size="10">For 512×512: 128×16×16 = 32,768 · Dynamic based on input</text>
+
+  <line x1="520" y1="1294" x2="520" y2="1304" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1306" width="340" height="42" rx="5" fill="#8B5CF6" filter="url(#shadow)"/>
+  <text x="360" y="1324" fill="white" font-size="11" font-weight="bold">Linear(flatten_size → 512) + ReLU</text>
+  <text x="360" y="1340" fill="#DDD6FE" font-size="10">Hidden layer</text>
+
+  <line x1="520" y1="1348" x2="520" y2="1358" stroke="#6B7280" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="1360" width="340" height="48" rx="5" fill="#EF4444" filter="url(#shadow)"/>
+  <text x="360" y="1380" fill="white" font-size="11" font-weight="bold">Linear(512 → 63) — NO activation</text>
+  <text x="360" y="1398" fill="#FECACA" font-size="10">Output: raw logits · sigmoid applied for training loss</text>
+
+  <!-- ==================== COMPARISON VS STEGASTAMP ==================== -->
+  <rect x="20" y="1440" width="1360" height="30" rx="4" fill="#FEF3C7"/>
+  <text x="35" y="1461" fill="#92400E" font-size="15" font-weight="bold">DIFFERENCES FROM STEGASTAMP</text>
+
+  <text x="50" y="1495" fill="#374151" font-size="12" font-weight="bold">Simplifications:</text>
+  <text x="50" y="1515" fill="#059669" font-size="11">✓ Flexible input size (any H×W divisible by 16, not fixed 400×400)</text>
+  <text x="50" y="1535" fill="#059669" font-size="11">✓ No STN in decoder — simpler, fewer parameters, no geometric correction</text>
+  <text x="50" y="1555" fill="#059669" font-size="11">✓ No unused conv10 layer — cleaner code path</text>
+  <text x="50" y="1575" fill="#059669" font-size="11">✓ No WGAN discriminator — pure encoder-decoder training</text>
+  <text x="50" y="1595" fill="#059669" font-size="11">✓ Smaller message spatial: 32×32 grid (vs 50×50 in StegaStamp)</text>
+  <text x="50" y="1615" fill="#059669" font-size="11">✓ Fewer bits: 63 (BCH-friendly) vs 100</text>
+
+  <text x="50" y="1650" fill="#374151" font-size="12" font-weight="bold">Identical to StegaStamp:</text>
+  <text x="50" y="1670" fill="#6B7280" font-size="11">• Same U-Net encoder topology (5 encoder + 4 decoder levels)</text>
+  <text x="50" y="1690" fill="#6B7280" font-size="11">• Same channel progression: 32→32→64→128→256 (encoder), reverse in decoder</text>
+  <text x="50" y="1710" fill="#6B7280" font-size="11">• Same residual learning (image + residual, no clamping)</text>
+  <text x="50" y="1730" fill="#6B7280" font-size="11">• Same 7-layer CNN decoder backbone (5 stride-2 + 2 stride-1)</text>
+  <text x="50" y="1750" fill="#6B7280" font-size="11">• Same skip connection pattern including original inputs at final level</text>
+  <text x="50" y="1770" fill="#6B7280" font-size="11">• Same initialization (Kaiming He), no BatchNorm, all ReLU activations</text>
+
+  <text x="50" y="1805" fill="#374151" font-size="12" font-weight="bold">Flatten Size Computation:</text>
+  <text x="50" y="1825" fill="#6B7280" font-size="11">flatten_size = 128 × (input_size // 32)² — computed dynamically from a dummy forward pass at __init__</text>
+  <text x="50" y="1845" fill="#6B7280" font-size="11">For 512×512: 128 × 16 × 16 = 32,768 · For 400×400 (non-÷32, would need ÷16): 128 × 13 × 13 = 21,632</text>
+</svg>
