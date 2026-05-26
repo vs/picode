@@ -82,7 +82,7 @@ def main(
     # Create or resume trainer
     if resume:
         click.echo(f"Resuming from {resume}")
-        trainer = Trainer.from_checkpoint(resume)
+        trainer = Trainer.from_checkpoint(resume, config_path=config, overrides=override_dict)
     else:
         trainer = Trainer.from_config(config, override_dict)
 
