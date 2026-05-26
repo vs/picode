@@ -87,7 +87,7 @@ class Encoder(BaseEncoder):
         self.adain3 = AdaIN(mapping_dim, 32)   # After conv3d
         self.adain4 = AdaIN(mapping_dim, 32)   # After conv2d
 
-        # Output: direct residual
+        # Output: 3-channel residual (chrominance constrained by loss, not architecture)
         self.residual = nn.Conv2d(32, 3, 1)
 
         self._init_weights()
@@ -114,6 +114,42 @@ class Encoder(BaseEncoder):
             if isinstance(m, AdaIN):
                 nn.init.zeros_(m.projection.weight)
                 nn.init.zeros_(m.projection.bias)
+
+    @staticmethod
+    def _edge_mask(
+        h: int, w: int, device: torch.device, dtype: torch.dtype, margin: float = 0.05,
+    ) -> Tensor:
+        """Create a soft cosine mask that fades residual to zero at image edges.
+
+        Args:
+            h: Image height.
+            w: Image width.
+            device: Tensor device.
+            dtype: Tensor dtype.
+            margin: Fraction of each dimension to fade (default 5%).
+
+        Returns:
+            (1, 1, H, W) mask: 1.0 in center, smooth cosine fade to 0.0 at edges.
+        """
+        margin_h = max(1, int(h * margin))
+        margin_w = max(1, int(w * margin))
+
+        # Vertical: cosine ramp from 0→1 over margin pixels at top/bottom
+        vert = torch.ones(h, device=device, dtype=dtype)
+        ramp_v = torch.linspace(0, torch.pi / 2, margin_h, device=device, dtype=dtype)
+        fade_v = torch.sin(ramp_v)
+        vert[:margin_h] = fade_v
+        vert[-margin_h:] = fade_v.flip(0)
+
+        # Horizontal: same for left/right
+        horiz = torch.ones(w, device=device, dtype=dtype)
+        ramp_h = torch.linspace(0, torch.pi / 2, margin_w, device=device, dtype=dtype)
+        fade_h = torch.sin(ramp_h)
+        horiz[:margin_w] = fade_h
+        horiz[-margin_w:] = fade_h.flip(0)
+
+        # Outer product → 2D mask, reshape to (1, 1, H, W)
+        return (vert[:, None] * horiz[None, :]).unsqueeze(0).unsqueeze(0)
 
     def prepare_message(self, message_norm: Tensor, target_h: int, target_w: int) -> Tensor:
         """Expand message bits to spatial feature map.
@@ -199,7 +235,8 @@ class Encoder(BaseEncoder):
         x = F.relu(self.conv2d(x))
         x = self.adain4(x, w)
 
-        # Residual output
-        residual = self.residual(x)
-        encoded = image + residual
+        # Residual output with edge fadeout mask
+        residual = self.residual(x)              # (B, 3, H, W)
+        edge_mask = self._edge_mask(img_h, img_w, residual.device, residual.dtype)
+        encoded = image + residual * edge_mask
         return encoded
