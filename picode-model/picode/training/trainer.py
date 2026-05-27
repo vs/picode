@@ -246,9 +246,9 @@ class Trainer:
 
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
-        # Picodeine: uses model.encoder_size/decoder_size (default 512x512)
+        # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type in ("picodelite", "picodeine", "picotrust"):
+        if config.model.type in ("picodelite", "picotrust"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":
@@ -262,8 +262,8 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe", "picodeine", "picotrust"):
-            # StegaStamp, PicodeFrame, Picodeine, and PicoTrust have STN with separate LR
+        if config.model.type in ("stegastamp", "picodeframe", "picotrust"):
+            # StegaStamp, PicodeFrame, and PicoTrust have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
             stn_params = []
@@ -1024,7 +1024,7 @@ class Trainer:
             l2_scale = self._ramp(loss_cfg.l2.scale, loss_cfg.l2.ramp_steps, effective_step)
             weighted_l2 = l2_scale * loss_l2
 
-        # STN regularization (for models with STN: stegastamp, picodeframe, picodeine)
+        # STN regularization (for models with STN: stegastamp, picodeframe, picotrust)
         if hasattr(self.decoder, "stn_scale_reg"):
             loss_stn = self.decoder.stn_scale_reg()
             weighted_stn = 0.1 * loss_stn

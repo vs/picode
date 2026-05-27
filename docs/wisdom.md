@@ -224,17 +224,6 @@ The `decoder_prob_std` is the earliest indicator - if it collapses to near-zero 
 
 PicodeLite's visible blocky artifacts are **NOT** caused by bit-to-region mapping. Each message bit contributes to every spatial position through the linear layer. The artifacts come from **nearest-neighbor upsampling** of the 32x32 intermediate tensor to 512x512 — a 16x stretch that creates a visible grid pattern in the encoded residual.
 
-### AdaIN as Architectural Fix (Picodeine)
-
-Picodeine eliminates the spatial message template entirely by using Adaptive Instance Normalization (AdaIN), inspired by StyleGAN's style injection:
-
-- Message bits (127) pass through a MappingNetwork (MLP: 127→256→256) producing a shared latent vector `w`
-- The U-Net encoder takes only the image (3ch, no message spatial concat)
-- `w` is injected via AdaIN at 4 decoder layers, modulating feature statistics (mean/variance)
-- **Skip bottleneck injection** — injecting at the bottleneck causes global color shifts (a known issue fixed in PicodeLite commit 10f8381)
-
-**AdaIN identity initialization:** Both projection weight and bias must be zero-initialized so that `gamma=0, beta=0` for any input `w`, making AdaIN a no-op at init. The `1+gamma` formulation means the output equals instance-normalized input when gamma=0.
-
 ---
 
 ## PicodeLite & PicodeFrame Training Techniques
@@ -258,15 +247,11 @@ Picodeine eliminates the spatial message template entirely by using Adaptive Ins
 
 ### STN Parameter Group Separation
 
-Any model with STN (StegaStamp, PicodeFrame, Picodeine) **must** have STN parameters (`stn_fc_weight`, `stn_fc_bias`) in a separate optimizer param group with ~100x lower learning rate. The Trainer checks `config.model.type in ("stegastamp", "picodeframe", "picodeine")` for this. Forgetting to add a new model type here will cause STN instability.
+Any model with STN (StegaStamp, PicodeFrame, PicoTrust) **must** have STN parameters (`stn_fc_weight`, `stn_fc_bias`) in a separate optimizer param group with ~100x lower learning rate. The Trainer checks `config.model.type in ("stegastamp", "picodeframe", "picotrust")` for this. Forgetting to add a new model type here will cause STN instability.
 
 ### Trainer Image Size Configuration
 
-Models that use `ModelConfig.encoder_size` / `decoder_size` (PicodeLite, Picodeine) must be handled in the Trainer's image size selection logic — the `else` branch uses `training.image_size` which may differ from the model config, causing shape mismatches at decode time.
-
-### Decoder Input Size Constraints
-
-Picodeine's decoder has 5 stride-2 convolutions, so `input_size` must be divisible by 32. The `ModelConfig.__post_init__` defaults to 512x512 for picodeine when sizes are unspecified (avoids the generic 400 default which is invalid).
+Models that use `ModelConfig.encoder_size` / `decoder_size` (PicodeLite, PicoTrust) must be handled in the Trainer's image size selection logic — the `else` branch uses `training.image_size` which may differ from the model config, causing shape mismatches at decode time.
 
 ---
 

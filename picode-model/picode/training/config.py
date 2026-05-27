@@ -193,21 +193,18 @@ class ModelConfig:
     """Model architecture configuration.
 
     Attributes:
-        type: Model type: "stegastamp", "picodelite", "picodeframe", "picodeine", or "picotrust".
+        type: Model type: "stegastamp", "picodelite", "picodeframe", or "picotrust".
         encoder_size: Image size for the encoder (e.g., 400 for StegaStamp, 256 for PicoTrust).
         decoder_size: Image size for the decoder (e.g., 400 for StegaStamp, 256 for PicoTrust).
     """
 
-    type: str = "stegastamp"  # stegastamp, picodelite, picodeframe, picodeine, or picotrust
+    type: str = "stegastamp"  # stegastamp, picodelite, picodeframe, or picotrust
     encoder_size: int = 400
     decoder_size: int = 400
 
     def __post_init__(self) -> None:
         """Apply model-specific size defaults when sizes are left at default."""
-        if self.type == "picodeine" and self.encoder_size == 400 and self.decoder_size == 400:
-            self.encoder_size = 512
-            self.decoder_size = 512
-        elif self.type == "picotrust" and self.encoder_size == 400 and self.decoder_size == 400:
+        if self.type == "picotrust" and self.encoder_size == 400 and self.decoder_size == 400:
             self.encoder_size = 256
             self.decoder_size = 256
 
