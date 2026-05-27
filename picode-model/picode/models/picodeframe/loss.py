@@ -6,6 +6,7 @@ while preserving the original center pixels.
 
 from collections.abc import Callable
 
+import torch
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -23,6 +24,24 @@ def message_loss(decoded_logits: Tensor, message: Tensor) -> Tensor:
         Scalar BCE loss.
     """
     return F.binary_cross_entropy_with_logits(decoded_logits, message)
+
+
+def message_loss_mse(decoded_logits: Tensor, message: Tensor) -> Tensor:
+    """MSE loss for message recovery.
+
+    Applies sigmoid to logits then computes MSE against binary targets.
+    Unlike BCE, MSE has no stable trivial equilibrium at 0.5, making
+    training collapse less likely and recovery possible.
+
+    Args:
+        decoded_logits: Decoder output logits (B, num_bits) - NOT probabilities.
+        message: Target message (B, num_bits) binary tensor.
+
+    Returns:
+        Scalar MSE loss.
+    """
+    decoded_probs = torch.sigmoid(decoded_logits)
+    return F.mse_loss(decoded_probs, message)
 
 
 def frame_l2_loss(generated: Tensor, ground_truth: Tensor, mask: Tensor) -> Tensor:
