@@ -780,7 +780,10 @@ class Trainer:
             self.config.loss.message.ramp_steps,
             step,
         )
-        loss_msg = frame_loss.message_loss(decoded_logits, messages)
+        if self.config.loss.message_loss_type == "mse":
+            loss_msg = frame_loss.message_loss_mse(decoded_logits, messages)
+        else:
+            loss_msg = frame_loss.message_loss(decoded_logits, messages)
 
         losses: dict[str, Tensor] = {"loss_msg": loss_msg}
 
