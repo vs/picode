@@ -1,9 +1,13 @@
 # PicodeFrame Kaggle Configuration — Fixed 8% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
+# v24: Fix training collapse at step ~40k.
+# - Switch to MSE message loss (no trivial 0.5 equilibrium)
+# - Reduce frame_l2 to 0.05 (regularization only, 300:1 ratio vs message)
+# - Remove frame_lpips and frame_color (structural changes acceptable,
+#   greyscale residual architecture handles color by construction)
+#
 # v23: Fixed 8% frame (32px at 400x400) — more pixel area for message encoding.
-# Previous 2-5% frames plateaued at ~73% accuracy once distortions ramped in.
-# Wider frame → more capacity → lower message scale, shorter warmups.
 
 experiment_name: picodeframe
 
@@ -35,11 +39,11 @@ frame:
   min_frame_pct: 0.08
   max_frame_pct: 0.08         # Fixed 8% = 32px at 400x400
   fixed_frame_steps: 0        # Not needed — min == max
-  frame_l2_scale: 0.3         # Higher than before — wider frame is more visible, needs constraint
-  frame_l2_ramp_steps: 15000
-  frame_lpips_scale: 0.3      # Higher than before — keep frame perceptually close
+  frame_l2_scale: 0.05        # Regularization only — prevent unbounded residual (300:1 vs message)
+  frame_l2_ramp_steps: 10000
+  frame_lpips_scale: 0.0      # Removed — structural changes in frame are acceptable
   frame_lpips_ramp_steps: 15000
-  frame_color_scale: 0.5      # Re-enabled — enforce greyscale via loss (backup to single-channel)
+  frame_color_scale: 0.0      # Removed — greyscale residual architecture handles color by construction
   frame_color_ramp_steps: 10000
   stn_reg_scale: 0.1
 
@@ -47,7 +51,7 @@ loss:
   message:
     scale: 15.0               # Down from 25 — wider frame has more capacity
     ramp_steps: 1             # No ramp — full gradient from step 0
-  message_loss_type: bce
+  message_loss_type: mse       # MSE avoids trivial 0.5 collapse that BCE allows
   gan_config:
     enabled: false
 
