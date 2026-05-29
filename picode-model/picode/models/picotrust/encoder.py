@@ -28,10 +28,18 @@ class Encoder(BaseEncoder):
         image_size: Target image size (default: 256).
     """
 
-    def __init__(self, num_bits: int = 100, image_size: int = 256) -> None:
+    def __init__(
+        self,
+        num_bits: int = 100,
+        image_size: int = 256,
+        strength: float | None = None,
+        use_mask: bool = False,
+    ) -> None:
         super().__init__()
         self.num_bits = num_bits
         self.image_size = image_size
+        self.strength = strength
+        self.use_mask = use_mask
 
         # Message preparation: num_bits -> 7500 -> (3, 50, 50) -> upsample to image_size
         self.secret_dense = nn.Linear(num_bits, 7500)
@@ -63,6 +71,16 @@ class Encoder(BaseEncoder):
             nn.Conv2d(16, 3, 1),              # Residual output (no activation)
         )
 
+        # Learned spatial mask (PicoTrust v2)
+        self.mask_head: nn.Sequential | None = None
+        if use_mask:
+            self.mask_head = nn.Sequential(
+                nn.Conv2d(32, 16, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(16, 1, 1),
+                nn.Sigmoid(),
+            )
+
         # Initialize weights (Kaiming normal)
         self._init_weights()
 
@@ -92,7 +110,7 @@ class Encoder(BaseEncoder):
         x = F.interpolate(x, size=(self.image_size, self.image_size), mode="nearest")
         return x
 
-    def forward(self, image: Tensor, message: Tensor) -> Tensor:
+    def forward(self, image: Tensor, message: Tensor) -> dict[str, Tensor] | Tensor:
         """Encode message into image.
 
         Args:
@@ -100,7 +118,8 @@ class Encoder(BaseEncoder):
             message: (B, num_bits) binary tensor.
 
         Returns:
-            Encoded image (B, 3, H, W) in [0, 1].
+            When strength is set: dict with "encoded" and optionally "mask".
+            When strength is None: Encoded image tensor (B, 3, H, W) (backward compat).
         """
         # Normalize inputs (match StegaStamp)
         image_norm = image - 0.5
@@ -138,10 +157,25 @@ class Encoder(BaseEncoder):
         x = torch.cat([c1, x, inputs], dim=1)  # 32 + 32 + 6 = 70 (message skip)
         x = F.relu(self.conv9(x))
 
-        # E_post: spatial refinement -> residual
-        residual = self.e_post(x)
+        # E_post: spatial refinement -> raw residual
+        raw_residual = self.e_post(x)
 
-        # Add residual to original image
-        # No clamp during training — allows gradients to flow freely
-        encoded = image + residual
-        return encoded
+        if self.strength is not None:
+            # PicoTrust v2: bounded residual
+            residual = self.strength * torch.tanh(raw_residual)
+
+            # Apply spatial mask if enabled
+            mask: Tensor | None = None
+            if self.mask_head is not None:
+                mask = self.mask_head(x)  # (B, 1, H, W) in [0, 1]
+                residual = residual * mask
+
+            encoded = image + residual
+            result: dict[str, Tensor] = {"encoded": encoded}
+            if mask is not None:
+                result["mask"] = mask
+            return result
+        else:
+            # Backward compat: unconstrained residual, return tensor
+            encoded = image + raw_residual
+            return encoded
