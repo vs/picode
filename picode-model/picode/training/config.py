@@ -134,6 +134,20 @@ class TrainingConfig:
     generator_grad_clip: float = 0.25  # Original: clips to [-0.25, 0.25]
     seed: int | None = None  # Random seed for reproducibility (None = non-deterministic)
 
+    # Collapse defense: gradient norm clipping
+    # Replaces per-element clamping with clip_grad_norm_ for both encoder and decoder.
+    # Set to 0 to disable (falls back to generator_grad_clip per-element clamping).
+    grad_clip_norm: float = 1.0
+
+    # Learning rate schedule: "constant" or "cosine"
+    lr_schedule: str = "constant"
+    lr_min_ratio: float = 0.1  # eta_min = lr * lr_min_ratio (for cosine)
+
+    # EMA + collapse detection
+    ema_decay: float = 0.999
+    collapse_threshold: float = 0.05  # prob_std below this triggers recovery
+    collapse_recovery_cooldown: int = 500  # Steps to wait after recovery before checking again
+
     # Pre-encode warp / post-encode unwarp (StegaStamp training strategy)
     # This creates a canonical encoding space that is robust to geometric transforms
     borders: str = "black"  # Border mode: no_edge, black, random, randomrgb, white, image
