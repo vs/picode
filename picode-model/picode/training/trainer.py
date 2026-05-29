@@ -468,7 +468,8 @@ class Trainer:
                         self._ema_encoder[k].mul_(ema_decay).add_(
                             enc_state[k], alpha=1 - ema_decay
                         )
-                    for k in self._ema_decoder:  # type: ignore[union-attr]
+                    assert self._ema_decoder is not None
+                    for k in self._ema_decoder:
                         self._ema_decoder[k].mul_(ema_decay).add_(
                             dec_state[k], alpha=1 - ema_decay
                         )
@@ -489,7 +490,8 @@ class Trainer:
 
                     # Restore from EMA
                     self.encoder.load_state_dict(self._ema_encoder)
-                    self.decoder.load_state_dict(self._ema_decoder)  # type: ignore[arg-type]
+                    assert self._ema_decoder is not None
+                    self.decoder.load_state_dict(self._ema_decoder)
 
                     # Halve LR
                     for group in self.optimizer.param_groups:
