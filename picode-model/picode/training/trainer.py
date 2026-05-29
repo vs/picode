@@ -601,8 +601,15 @@ class Trainer:
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
-        # Clip generator/decoder gradients (matches original StegaStamp)
-        if self.config.training.generator_grad_clip > 0:
+        # Clip gradients
+        if self.config.training.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.encoder.parameters(), max_norm=self.config.training.grad_clip_norm
+            )
+            torch.nn.utils.clip_grad_norm_(
+                self.decoder.parameters(), max_norm=self.config.training.grad_clip_norm
+            )
+        elif self.config.training.generator_grad_clip > 0:
             clip_val = self.config.training.generator_grad_clip
             for p in self.encoder.parameters():
                 if p.grad is not None:
@@ -857,7 +864,15 @@ class Trainer:
         self.optimizer.zero_grad()
         total_loss.backward()  # type: ignore[no-untyped-call]
 
-        if self.config.training.generator_grad_clip > 0:
+        # Clip gradients
+        if self.config.training.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.encoder.parameters(), max_norm=self.config.training.grad_clip_norm
+            )
+            torch.nn.utils.clip_grad_norm_(
+                self.decoder.parameters(), max_norm=self.config.training.grad_clip_norm
+            )
+        elif self.config.training.generator_grad_clip > 0:
             clip_val = self.config.training.generator_grad_clip
             for p in self.encoder.parameters():
                 if p.grad is not None:
