@@ -1,0 +1,92 @@
+experiment_name: picotrust_v2
+
+model:
+  type: picotrust
+  encoder_size: 512
+  decoder_size: 512
+
+data:
+  source: folder
+  path: ./data/train
+  batch_size: 4
+
+training:
+  num_steps: 200000
+  lr: 0.0001
+  num_bits: 100
+  image_size: 512
+  warmup_steps: 500
+  no_im_loss_steps: 500
+  generator_grad_clip: 0.25
+  stn_lr_scale: 0.01
+  borders: black
+  rnd_trans: 0.10
+  rnd_trans_ramp: 10000
+  residual_strength: 0.05
+  residual_strength_anneal_target: 0.03
+  residual_strength_anneal_start: 60000
+  residual_strength_anneal_steps: 20000
+  phase2_step: 60000
+  phase2_decoder_lr_scale: 0.1
+
+loss:
+  message:
+    scale: 2.0
+    ramp_steps: 1
+  l2:
+    scale: 3.0
+    ramp_steps: 20000
+  lpips:
+    scale: 2.0
+    ramp_steps: 20000
+  ssim:
+    scale: 1.0
+    ramp_steps: 20000
+    delay_steps: 30000
+  ffl:
+    scale: 1.5
+    ramp_steps: 20000
+    delay_steps: 20000
+  mask_reg:
+    scale: 0.1
+    ramp_steps: 1
+  message_loss_type: mse
+  use_border_falloff: true
+  gan_config:
+    enabled: true
+    discriminator_type: patchgan
+    discriminator_lr: 0.0002
+    g_loss_scale: 1.5
+    g_loss_ramp_steps: 20000
+
+distortion:
+  strategy: curriculum
+  perspective:
+    strength: 0.1
+    ramp_steps: 10000
+  brightness:
+    strength: 0.2
+    ramp_steps: 1000
+  saturation:
+    strength: 0.5
+    ramp_steps: 1000
+  hue:
+    strength: 0.05
+    ramp_steps: 1000
+  noise:
+    strength: 0.03
+    ramp_steps: 1000
+  jpeg_quality:
+    strength: 15
+    ramp_steps: 1000
+  enable_jpeg: true
+  enable_blur: true
+
+checkpoint:
+  dir: checkpoints
+  save_every_steps: 10000
+  keep_last: 3
+
+logging:
+  backends: [console, tensorboard]
+  log_every_steps: 100
