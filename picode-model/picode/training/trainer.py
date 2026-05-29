@@ -336,6 +336,11 @@ class Trainer:
         self.global_step = 0
         self.best_metric = float("inf")
 
+        # EMA shadow weights for collapse recovery
+        self._ema_encoder: dict[str, torch.Tensor] | None = None
+        self._ema_decoder: dict[str, torch.Tensor] | None = None
+        self._last_recovery_step: int = -1000  # Allow immediate first check
+
         # Optional LPIPS loss (lazy loaded)
         self._lpips_fn: nn.Module | None = None
 
@@ -446,6 +451,59 @@ class Trainer:
 
             if self.scheduler is not None:
                 metrics["lr"] = self.scheduler.get_last_lr()[0]
+
+            # EMA update and collapse detection
+            ema_decay = self.config.training.ema_decay
+            if ema_decay > 0:
+                enc_state = self.encoder.state_dict()
+                dec_state = self.decoder.state_dict()
+
+                if self._ema_encoder is None:
+                    # Initialize EMA from current weights
+                    self._ema_encoder = {k: v.clone() for k, v in enc_state.items()}
+                    self._ema_decoder = {k: v.clone() for k, v in dec_state.items()}
+                else:
+                    # Update EMA
+                    for k in self._ema_encoder:
+                        self._ema_encoder[k].mul_(ema_decay).add_(
+                            enc_state[k], alpha=1 - ema_decay
+                        )
+                    for k in self._ema_decoder:  # type: ignore[union-attr]
+                        self._ema_decoder[k].mul_(ema_decay).add_(
+                            dec_state[k], alpha=1 - ema_decay
+                        )
+
+                # Collapse detection (only after warmup and cooldown)
+                threshold = self.config.training.collapse_threshold
+                cooldown = self.config.training.collapse_recovery_cooldown
+                warmup_done = self.global_step > self.config.training.warmup_steps
+                cooldown_done = (self.global_step - self._last_recovery_step) > cooldown
+                prob_std = metrics.get("decoder_prob_std", 1.0)
+
+                if warmup_done and cooldown_done and prob_std < threshold:
+                    print(
+                        f"\n*** COLLAPSE DETECTED at step {self.global_step} "
+                        f"(prob_std={prob_std:.4f} < {threshold}) ***"
+                    )
+                    print("Restoring from EMA weights and halving LR...")
+
+                    # Restore from EMA
+                    self.encoder.load_state_dict(self._ema_encoder)
+                    self.decoder.load_state_dict(self._ema_decoder)  # type: ignore[arg-type]
+
+                    # Halve LR
+                    for group in self.optimizer.param_groups:
+                        group["lr"] *= 0.5
+                    current_lr = self.optimizer.param_groups[0]["lr"]
+                    print(f"New LR: {current_lr:.2e}")
+
+                    self._last_recovery_step = self.global_step
+
+                    # Re-initialize EMA from restored weights
+                    enc_state = self.encoder.state_dict()
+                    dec_state = self.decoder.state_dict()
+                    self._ema_encoder = {k: v.clone() for k, v in enc_state.items()}
+                    self._ema_decoder = {k: v.clone() for k, v in dec_state.items()}
 
             # Log metrics
             if self.global_step % log_every == 0:

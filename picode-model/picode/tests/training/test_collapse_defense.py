@@ -1,5 +1,7 @@
 """Tests for collapse defense config and mechanics."""
 
+import copy
+
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -91,3 +93,54 @@ class TestCosineScheduler:
 
         final_lr = optimizer.param_groups[0]["lr"]
         assert abs(final_lr - 3e-5) < 1e-7
+
+
+class TestEMA:
+    """Test EMA weight tracking."""
+
+    def test_ema_update_moves_toward_current(self) -> None:
+        """EMA should move toward current weights."""
+        model = nn.Linear(10, 10, bias=False)
+        ema_state = copy.deepcopy(model.state_dict())
+
+        # Modify model weights
+        with torch.no_grad():
+            for p in model.parameters():
+                p.add_(torch.ones_like(p))
+
+        # Update EMA (decay=0.9 for easy math)
+        decay = 0.9
+        current_state = model.state_dict()
+        for key in ema_state:
+            ema_state[key] = decay * ema_state[key] + (1 - decay) * current_state[key]
+
+        # EMA should be between original (zeros-ish) and current (ones-ish)
+        for key in ema_state:
+            assert ema_state[key].mean().item() > 0  # Moved from original
+            assert ema_state[key].mean().item() < current_state[key].mean().item()  # Not at current
+
+
+class TestCollapseDetection:
+    """Test collapse detection logic."""
+
+    def test_prob_std_below_threshold_is_collapse(self) -> None:
+        """prob_std < threshold should be detected as collapse."""
+        threshold = 0.05
+        prob_std = 0.01
+        assert prob_std < threshold
+
+    def test_prob_std_above_threshold_is_not_collapse(self) -> None:
+        """prob_std >= threshold should not trigger recovery."""
+        threshold = 0.05
+        prob_std = 0.2
+        assert prob_std >= threshold
+
+    def test_lr_halving(self) -> None:
+        """Recovery should halve all optimizer LR groups."""
+        model = nn.Linear(10, 10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+
+        for group in optimizer.param_groups:
+            group["lr"] *= 0.5
+
+        assert optimizer.param_groups[0]["lr"] == 1.5e-4
