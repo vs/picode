@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from picode.training.config import TrainingConfig
 
@@ -62,3 +63,31 @@ class TestGradientNormClipping:
             sum(p.grad.norm() ** 2 for p in model.parameters() if p.grad is not None) ** 0.5
         )
         assert float(total_norm_after) <= 1.0 + 1e-4
+
+
+class TestCosineScheduler:
+    """Test cosine LR schedule integration."""
+
+    def test_cosine_schedule_decays_lr(self) -> None:
+        """Cosine schedule should decay LR over steps."""
+        model = nn.Linear(10, 10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+        scheduler = CosineAnnealingLR(optimizer, T_max=140000, eta_min=3e-5)
+
+        initial_lr = optimizer.param_groups[0]["lr"]
+        assert initial_lr == 3e-4
+
+        # Simulate 70000 steps
+        for _ in range(70000):
+            scheduler.step()
+
+        mid_lr = optimizer.param_groups[0]["lr"]
+        assert mid_lr < initial_lr
+        assert mid_lr > 3e-5  # Not at minimum yet
+
+        # Simulate to 140000
+        for _ in range(70000):
+            scheduler.step()
+
+        final_lr = optimizer.param_groups[0]["lr"]
+        assert abs(final_lr - 3e-5) < 1e-7

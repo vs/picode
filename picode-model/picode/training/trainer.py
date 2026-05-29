@@ -286,7 +286,16 @@ class Trainer:
             ]
 
         self.optimizer = torch.optim.Adam(param_groups)
-        self.scheduler = None  # No scheduler by default
+
+        # Create LR scheduler
+        if config.training.lr_schedule == "cosine":
+            from torch.optim.lr_scheduler import CosineAnnealingLR
+            eta_min = config.training.lr * config.training.lr_min_ratio
+            self.scheduler: torch.optim.lr_scheduler.LRScheduler | None = CosineAnnealingLR(
+                self.optimizer, T_max=config.training.num_steps, eta_min=eta_min
+            )
+        else:
+            self.scheduler = None
 
         # Create dataloader
         self.dataloader = create_dataloader(config.data, train_image_size)
@@ -407,6 +416,10 @@ class Trainer:
         trainer.global_step = data["step"]
         trainer.best_metric = data["best_metric"]
 
+        # Restore scheduler state
+        if trainer.scheduler is not None and data.get("scheduler_state") is not None:
+            trainer.scheduler.load_state_dict(data["scheduler_state"])
+
         return trainer
 
     def fit(self) -> None:
@@ -431,6 +444,9 @@ class Trainer:
             # Train step
             metrics = self._train_step(images)
 
+            if self.scheduler is not None:
+                metrics["lr"] = self.scheduler.get_last_lr()[0]
+
             # Log metrics
             if self.global_step % log_every == 0:
                 self.logger.log_scalars(metrics, self.global_step)
@@ -442,12 +458,15 @@ class Trainer:
                     encoder=self.encoder,
                     decoder=self.decoder,
                     optimizer=self.optimizer,
-                    scheduler=None,
+                    scheduler=self.scheduler,
                     config=self.config,
                     metrics=metrics,
                 )
 
             self.global_step += 1
+
+            if self.scheduler is not None:
+                self.scheduler.step()
 
         # Final checkpoint
         final_metrics = {"loss": 0.0}  # Placeholder
@@ -456,7 +475,7 @@ class Trainer:
             encoder=self.encoder,
             decoder=self.decoder,
             optimizer=self.optimizer,
-            scheduler=None,
+            scheduler=self.scheduler,
             config=self.config,
             metrics=final_metrics,
         )
