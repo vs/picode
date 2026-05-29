@@ -23,18 +23,22 @@ class Decoder(BaseDecoder):
     structure via flatten from 8x8 feature maps) paired with a compact STN
     that uses AdaptiveAvgPool2d instead of a massive FC layer.
 
-    At 256x256: 5 stride-2 convs reduce spatial to 8x8, flatten to 128*8*8=8192.
+    5 stride-2 convs reduce spatial by 2^5 = 32: image_size -> image_size//32.
+    At 256x256: flatten to 128*8*8=8192. At 512x512: flatten to 128*16*16=32768.
 
     Args:
         num_bits: Number of bits in the message (default: 100).
+        image_size: Input image spatial size (default: 256).
         freeze_stn_linear: If True, freeze STN affine parameters.
     """
 
     def __init__(
-        self, num_bits: int = 100, freeze_stn_linear: bool = False,
+        self, num_bits: int = 100, image_size: int = 256,
+        freeze_stn_linear: bool = False,
     ) -> None:
         super().__init__()
         self.num_bits = num_bits
+        self.image_size = image_size
 
         # Compact STN: resolution-independent via AdaptiveAvgPool2d
         self.stn_params = nn.Sequential(
@@ -59,25 +63,27 @@ class Decoder(BaseDecoder):
             self.stn_fc_bias.requires_grad = False
 
         # Main decoder CNN — matches StegaStamp architecture
-        # 256 -> 128 -> 128 -> 64 -> 64 -> 32 -> 16 -> 8
-        # 5 stride-2 convs reduce spatial by 2^5 = 32: 256 -> 8
+        # 5 stride-2 convs reduce spatial by 2^5 = 32: image_size -> image_size//32
+        # e.g. 256 -> 8, 512 -> 16
+        spatial = image_size // 32
+
         self.decoder = nn.Sequential(
-            nn.Conv2d(3, 32, 3, stride=2, padding=1),    # 128
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 32, 3, padding=1),             # 128
+            nn.Conv2d(32, 32, 3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1),   # 64
+            nn.Conv2d(32, 64, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 64, 3, padding=1),             # 64
+            nn.Conv2d(64, 64, 3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 64, 3, stride=2, padding=1),   # 32
+            nn.Conv2d(64, 64, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1),  # 16
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(128, 128, 3, stride=2, padding=1), # 8
+            nn.Conv2d(128, 128, 3, stride=2, padding=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128 * 8 * 8, 512),
+            nn.Linear(128 * spatial * spatial, 512),
             nn.ReLU(),
             nn.Linear(512, num_bits),
         )
