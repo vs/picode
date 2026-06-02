@@ -1,16 +1,12 @@
 # PicodeFrame Kaggle Configuration — Fixed 8% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
-# v25: Three-layer collapse defense.
-# - Gradient norm clipping (max_norm=1.0) replaces per-element clamping
-# - Cosine LR decay (3e-4 -> 3e-5 over 140k steps)
-# - EMA weights + collapse detection (prob_std < 0.05 triggers recovery)
-#
-# v24: Fix training collapse at step ~40k.
-# - Switch to MSE message loss (no trivial 0.5 equilibrium)
-# - Reduce frame_l2 to 0.05 (regularization only, 300:1 ratio vs message)
-# - Remove frame_lpips and frame_color (structural changes acceptable,
-#   greyscale residual architecture handles color by construction)
+# v27: Revert to BCE + cosine LR + EMA defense.
+# - BCE has 2x stronger gradients than MSE (no sigmoid' attenuation)
+# - MSE through sigmoid can't escape trivial solution from random init
+# - Disable grad_clip_norm (per-element clamp is sufficient for normal training)
+# - Cosine LR decay prevents late-stage catastrophic updates
+# - EMA + collapse detection provides safety net for auto-recovery
 #
 # v23: Fixed 8% frame (32px at 400x400) — more pixel area for message encoding.
 
@@ -40,7 +36,7 @@ training:
   rnd_trans: 0.10
   rnd_trans_ramp: 15000       # Slightly faster perspective ramp
   # Collapse defense
-  grad_clip_norm: 10.0
+  grad_clip_norm: 0  # Disabled — per-element clamp at 0.25 is sufficient
   lr_schedule: cosine
   lr_min_ratio: 0.1
   ema_decay: 0.999
@@ -63,7 +59,7 @@ loss:
   message:
     scale: 15.0               # Down from 25 — wider frame has more capacity
     ramp_steps: 1             # No ramp — full gradient from step 0
-  message_loss_type: mse       # MSE avoids trivial 0.5 collapse that BCE allows
+  message_loss_type: bce       # BCE has 2x stronger gradients than MSE at initialization
   gan_config:
     enabled: false
 
