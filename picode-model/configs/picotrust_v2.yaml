@@ -3,12 +3,12 @@ experiment_name: picotrust_v2
 model:
   type: picotrust
   encoder_size: 512
-  decoder_size: 256                     # Use proven 256 decoder; trainer downsamples 512→256
+  decoder_size: 256                     # Proven 256 decoder; trainer downsamples 512→256
 
 data:
   source: folder
   path: ./data/train
-  batch_size: 4
+  batch_size: 4                         # Half of v1's 8 due to 4x larger images
 
 training:
   num_steps: 200000
@@ -22,35 +22,29 @@ training:
   borders: black
   rnd_trans: 0.10
   rnd_trans_ramp: 10000
-  residual_strength: 0.0              # Unconstrained — let image losses control amplitude
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
 
 loss:
   message:
-    scale: 5.0                         # Strong message gradient for Phase 1 bootstrap
+    scale: 5.0
     ramp_steps: 1
   l2:
-    scale: 3.0
+    scale: 1.5                          # Match v1 (was 3.0 — too aggressive)
     ramp_steps: 20000
   lpips:
-    scale: 2.0
+    scale: 1.0                          # Match v1 (was 2.0)
     ramp_steps: 20000
-  ssim:
-    scale: 1.0
-    ramp_steps: 20000
-    delay_steps: 30000
   ffl:
-    scale: 1.5
+    scale: 1.0                          # Match v1 (was 1.5)
     ramp_steps: 20000
     delay_steps: 20000
   message_loss_type: mse
   use_border_falloff: true
   gan_config:
     enabled: true
-    discriminator_type: patchgan
-    discriminator_lr: 0.0002
-    g_loss_scale: 1.5
+    discriminator_lr: 0.00001           # Match v1 (was 0.0002 — 20x too high!)
+    g_loss_scale: 1.0                   # Match v1 (was 1.5)
     g_loss_ramp_steps: 20000
 
 distortion:
@@ -59,19 +53,19 @@ distortion:
     strength: 0.1
     ramp_steps: 10000
   brightness:
-    strength: 0.2
+    strength: 0.3
     ramp_steps: 1000
   saturation:
-    strength: 0.5
+    strength: 1.0
     ramp_steps: 1000
   hue:
-    strength: 0.05
+    strength: 0.1
     ramp_steps: 1000
   noise:
-    strength: 0.03
+    strength: 0.02
     ramp_steps: 1000
   jpeg_quality:
-    strength: 15
+    strength: 25
     ramp_steps: 1000
   enable_jpeg: true
   enable_blur: true
