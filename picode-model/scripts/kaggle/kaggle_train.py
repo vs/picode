@@ -20,7 +20,7 @@ import sys
 import zipfile
 
 # --- Model selection ---
-MODEL_NAME = os.environ.get("MODEL_NAME", "picodelite")
+MODEL_NAME = os.environ.get("MODEL_NAME", "picodeframe")
 print(f"Model: {MODEL_NAME}")
 
 # Map model names to config files and checkpoint dataset names
@@ -181,6 +181,12 @@ try:
     print(f"Current step: {trainer.global_step}")
     print(f"Target steps: {trainer.config.training.num_steps}")
     print(f"Checkpoint dir: {CHECKPOINT_DIR}")
+    # Log critical config values for verification
+    print(f"message_loss_type: {trainer.config.loss.message_loss_type}")
+    if trainer.config.frame is not None:
+        print(f"frame_l2_scale: {trainer.config.frame.frame_l2_scale}")
+        print(f"frame_lpips_scale: {trainer.config.frame.frame_lpips_scale}")
+        print(f"frame_color_scale: {trainer.config.frame.frame_color_scale}")
     print()
 
     trainer.fit()

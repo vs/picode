@@ -1,6 +1,6 @@
 {
-  "id": "INSERT_YOUR_USERNAME/picodelite-training",
-  "title": "picodelite-training",
+  "id": "your-kaggle-id/picodeframe-training",
+  "title": "picodeframe-training",
   "code_file": "kaggle_train.py",
   "language": "python",
   "kernel_type": "script",
@@ -8,7 +8,8 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
-    "INSERT_YOUR_USERNAME/picode-source"
+    "your-kaggle-id/picode-source",
+    "awsaf49/coco-2017-dataset"
   ],
   "competition_sources": [],
   "kernel_sources": []
