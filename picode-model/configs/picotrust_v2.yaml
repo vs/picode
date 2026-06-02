@@ -3,7 +3,7 @@ experiment_name: picotrust_v2
 model:
   type: picotrust
   encoder_size: 512
-  decoder_size: 512
+  decoder_size: 256                     # Use proven 256 decoder; trainer downsamples 512→256
 
 data:
   source: folder
