@@ -20,7 +20,12 @@ if TYPE_CHECKING:
     from picode.training.config import ModelConfig
 
 
-def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
+def create_encoder(
+    config: ModelConfig,
+    num_bits: int,
+    strength: float | None = None,
+    use_mask: bool = False,
+) -> BaseEncoder:
     """Create an encoder based on model configuration.
 
     Factory function that instantiates the appropriate encoder class
@@ -29,9 +34,11 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
     Args:
         config: Model configuration containing the model type.
         num_bits: Number of bits in the message to encode.
+        strength: Residual amplitude bound for PicoTrust v2 (tanh scaling).
+        use_mask: Whether to enable learned spatial mask (PicoTrust v2).
 
     Returns:
-        An encoder instance (StegaStamp or PicodeLite).
+        An encoder instance (StegaStamp, PicodeLite, PicodeFrame, or PicoTrust).
 
     Raises:
         ValueError: If the model type is not recognized.
@@ -58,7 +65,10 @@ def create_encoder(config: ModelConfig, num_bits: int) -> BaseEncoder:
     elif config.type == "picotrust":
         from picode.models.picotrust import Encoder as PicoTrustEncoder
 
-        return PicoTrustEncoder(num_bits=num_bits, image_size=config.encoder_size)
+        return PicoTrustEncoder(
+            num_bits=num_bits, image_size=config.encoder_size,
+            strength=strength, use_mask=use_mask,
+        )
     else:
         raise ValueError(f"Unknown model type: {config.type}")
 
@@ -101,6 +111,6 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
     elif config.type == "picotrust":
         from picode.models.picotrust import Decoder as PicoTrustDecoder
 
-        return PicoTrustDecoder(num_bits=num_bits)
+        return PicoTrustDecoder(num_bits=num_bits, image_size=config.decoder_size)
     else:
         raise ValueError(f"Unknown model type: {config.type}")

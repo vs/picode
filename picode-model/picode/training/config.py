@@ -51,6 +51,7 @@ class GANConfig:
     g_loss_scale: float = 1.0  # Original: 1.0 (not 0.001)
     g_loss_ramp_steps: int = 20000  # Steps to ramp up generator loss
     gradient_clip: float = 0.25  # Original: clips D gradients to [-0.25, 0.25]
+    discriminator_type: str = "wgan"  # "wgan" or "patchgan"
 
 
 @dataclass
@@ -90,6 +91,12 @@ class LossConfig:
     # GAN loss weight (for generator adversarial loss)
     # delay 30k, ramp 30k→80k
     gan: DelayedLossRamp | None = None
+
+    # SSIM loss — structural similarity for image quality
+    ssim: DelayedLossRamp | None = None
+
+    # Mask regularization — encourages learned mask to correlate with texture
+    mask_reg: LossRamp | None = None
 
     # GAN training settings
     gan_config: GANConfig = field(default_factory=GANConfig)
@@ -153,6 +160,16 @@ class TrainingConfig:
     borders: str = "black"  # Border mode: no_edge, black, random, randomrgb, white, image
     rnd_trans: float = 0.1  # Max perspective translation (fraction of image size)
     rnd_trans_ramp: int = 10000  # Steps to ramp up perspective strength from 0 to rnd_trans
+
+    # Residual amplitude control (PicoTrust v2)
+    residual_strength: float = 0.0  # 0 = disabled (v1 compat). Max residual = strength * tanh
+    residual_strength_anneal_target: float = 0.03  # Anneal to this in phase 2
+    residual_strength_anneal_start: int = 60000  # Step to start annealing
+    residual_strength_anneal_steps: int = 20000  # Steps to anneal over
+
+    # Two-phase training
+    phase2_step: int = 0  # 0 means disabled. Step to enter phase 2
+    phase2_decoder_lr_scale: float = 0.1  # Multiply decoder LR by this in phase 2
 
 
 @dataclass
@@ -272,11 +289,11 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     if "loss" in data:
         loss_data = data["loss"]
         # Standard LossRamp fields
-        for key in ["message", "l2", "lpips", "chroma"]:
+        for key in ["message", "l2", "lpips", "chroma", "mask_reg"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
-        # DelayedLossRamp fields (ffl, gan)
-        for key in ["ffl", "gan"]:
+        # DelayedLossRamp fields (ffl, gan, ssim)
+        for key in ["ffl", "gan", "ssim"]:
             if key in loss_data and loss_data[key] is not None:
                 if isinstance(loss_data[key], dict):
                     loss_data[key] = DelayedLossRamp(**loss_data[key])

@@ -241,7 +241,17 @@ class Trainer:
 
         # Create models via factory
         num_bits = config.training.num_bits
-        self.encoder: BaseEncoder = create_encoder(config.model, num_bits).to(self.device)
+
+        # Determine v2 encoder params
+        _strength: float | None = None
+        _use_mask = False
+        if config.training.residual_strength > 0:
+            _strength = config.training.residual_strength
+            _use_mask = config.loss.mask_reg is not None
+
+        self.encoder: BaseEncoder = create_encoder(
+            config.model, num_bits, strength=_strength, use_mask=_use_mask,
+        ).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 
         # Determine image sizes based on model type
@@ -322,19 +332,31 @@ class Trainer:
 
         # Create discriminator if GAN training enabled
         self.discriminator: nn.Module | None = None
-        self.d_optimizer: torch.optim.RMSprop | None = None
+        self.d_optimizer: torch.optim.Optimizer | None = None
 
         if config.loss.gan_config.enabled:
-            from picode.models.stegastamp.discriminator import Discriminator
+            if config.loss.gan_config.discriminator_type == "patchgan":
+                from picode.models.stegastamp.patchgan import PatchGANDiscriminator
 
-            self.discriminator = Discriminator().to(self.device)
-            self.d_optimizer = torch.optim.RMSprop(
-                self.discriminator.parameters(), lr=config.loss.gan_config.discriminator_lr
-            )
+                self.discriminator = PatchGANDiscriminator().to(self.device)
+                self.d_optimizer = torch.optim.Adam(
+                    self.discriminator.parameters(),
+                    lr=config.loss.gan_config.discriminator_lr,
+                    betas=(0.5, 0.999),
+                )
+            else:
+                from picode.models.stegastamp.discriminator import Discriminator
+
+                self.discriminator = Discriminator().to(self.device)
+                self.d_optimizer = torch.optim.RMSprop(
+                    self.discriminator.parameters(),
+                    lr=config.loss.gan_config.discriminator_lr,
+                )
 
         # Training state
         self.global_step = 0
         self.best_metric = float("inf")
+        self._phase2_triggered = False
 
         # EMA shadow weights for collapse recovery
         self._ema_encoder: dict[str, torch.Tensor] | None = None
@@ -624,8 +646,30 @@ class Trainer:
         # This means we apply M_inverse to get source coords for each dest coord
         images_warped = perspective_transform(images, M_inverse, padding_mode="border")
 
+        # Update encoder strength if annealing is active
+        if (
+            hasattr(self.encoder, 'strength')
+            and self.encoder.strength is not None
+            and self.config.training.residual_strength > 0
+        ):
+            self.encoder.strength = self._compute_strength(
+                initial=self.config.training.residual_strength,
+                target=self.config.training.residual_strength_anneal_target,
+                start_step=self.config.training.residual_strength_anneal_start,
+                anneal_steps=self.config.training.residual_strength_anneal_steps,
+                current_step=self.global_step,
+            )
+
         # 2. Encode in warped space
-        encoded_warped = self.encoder(images_warped, messages)
+        encoder_output = self.encoder(images_warped, messages)
+
+        # Handle v2 dict return or v1 tensor return
+        if isinstance(encoder_output, dict):
+            encoded_warped = encoder_output["encoded"]
+            encoder_mask = encoder_output.get("mask")  # (B, 1, H, W) or None
+        else:
+            encoded_warped = encoder_output
+            encoder_mask = None
 
         # 3. Compute residual in warped space
         residual_warped = encoded_warped - images_warped
@@ -665,6 +709,18 @@ class Trainer:
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
         losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
 
+        # Mask regularization (PicoTrust v2)
+        if encoder_mask is not None and self.config.loss.mask_reg is not None:
+            mask_reg_scale = self._ramp(
+                self.config.loss.mask_reg.scale,
+                self.config.loss.mask_reg.ramp_steps,
+                self.global_step,
+            )
+            if mask_reg_scale > 0:
+                loss_mask_reg = self._compute_mask_reg_loss(encoder_mask, images_warped)
+                losses["loss_mask_reg"] = loss_mask_reg
+                losses["loss"] = losses["loss"] + mask_reg_scale * loss_mask_reg
+
         # Warmup phase: only use scaled message loss
         if self.global_step < self.config.training.warmup_steps:
             msg_scale = self._ramp(
@@ -699,6 +755,20 @@ class Trainer:
 
         self.optimizer.step()
 
+        # Phase 2: reduce decoder LR (one-time trigger)
+        if (
+            not self._phase2_triggered
+            and self.config.training.phase2_step > 0
+            and self.global_step >= self.config.training.phase2_step
+        ):
+            self._phase2_triggered = True
+            scale = self.config.training.phase2_decoder_lr_scale
+            # Decoder param group is index 1
+            self.optimizer.param_groups[1]["lr"] *= scale
+            # STN param group is index 2 (if exists)
+            if len(self.optimizer.param_groups) > 2:
+                self.optimizer.param_groups[2]["lr"] *= scale
+
         # GAN training step (if enabled)
         loss_D = torch.tensor(0.0, device=self.device)
 
@@ -707,33 +777,30 @@ class Trainer:
             and self.d_optimizer is not None
             and self.config.loss.gan_config.enabled
         ):
-            # Discriminator step
             self.d_optimizer.zero_grad()
-
-            # Real images
             d_real = self.discriminator(images)
-            # Fake (encoded) images - detach to not backprop through encoder
             d_fake = self.discriminator(encoded.detach())
 
-            # WGAN loss: maximize D(real) - D(fake)
-            # Discriminator wants: D(real) high, D(fake) low
-            # So minimize: D(fake) - D(real)
-            loss_D = d_fake.mean() - d_real.mean()
-            loss_D.backward()
-
-            # Clip discriminator gradients by value (original uses [-0.25, 0.25])
-            if self.config.loss.gan_config.gradient_clip > 0:
-                clip_val = self.config.loss.gan_config.gradient_clip
+            if self.config.loss.gan_config.discriminator_type == "patchgan":
+                # LSGAN loss: D(real) -> 1, D(fake) -> 0
+                loss_D = 0.5 * ((d_real - 1) ** 2).mean() + 0.5 * (d_fake ** 2).mean()
+                loss_D.backward()
+                self.d_optimizer.step()
+            else:
+                # WGAN loss: minimize D(fake) - D(real)
+                loss_D = d_fake.mean() - d_real.mean()
+                loss_D.backward()
+                # Clip discriminator gradients by value
+                if self.config.loss.gan_config.gradient_clip > 0:
+                    clip_val = self.config.loss.gan_config.gradient_clip
+                    for p in self.discriminator.parameters():
+                        if p.grad is not None:
+                            p.grad.data.clamp_(-clip_val, clip_val)
+                self.d_optimizer.step()
+                # Clip discriminator weights (WGAN)
+                clip_val = self.config.loss.gan_config.clip_weights
                 for p in self.discriminator.parameters():
-                    if p.grad is not None:
-                        p.grad.data.clamp_(-clip_val, clip_val)
-
-            self.d_optimizer.step()
-
-            # Clip discriminator weights (WGAN)
-            clip_val = self.config.loss.gan_config.clip_weights
-            for p in self.discriminator.parameters():
-                p.data.clamp_(-clip_val, clip_val)
+                    p.data.clamp_(-clip_val, clip_val)
 
         # Add GAN metrics
         if self.discriminator is not None:
@@ -758,6 +825,13 @@ class Trainer:
             predicted_bits = (decoded_probs > 0.5).float()
             bit_accuracy = (predicted_bits == messages).float().mean().item()
             metrics["bit_accuracy"] = bit_accuracy
+
+        # v2 diagnostic metrics
+        if encoder_mask is not None:
+            metrics["mask_mean"] = encoder_mask.mean().item()
+            metrics["mask_std"] = encoder_mask.std().item()
+        if hasattr(self.encoder, 'strength') and self.encoder.strength is not None:
+            metrics["strength"] = self.encoder.strength
 
         return metrics
 
@@ -1172,6 +1246,14 @@ class Trainer:
                 total = total + ffl_scale * loss_ffl
                 losses["loss_ffl"] = loss_ffl
 
+        # SSIM loss -- structural similarity
+        if not skip_image_loss and loss_cfg.ssim is not None:
+            ssim_scale = self._delayed_ramp(loss_cfg.ssim, effective_step)
+            if ssim_scale > 0:
+                loss_ssim = self._compute_ssim_loss(original, encoded)
+                total = total + ssim_scale * loss_ssim
+                losses["loss_ssim"] = loss_ssim
+
         # GAN generator loss (if enabled)
         if (
             not skip_image_loss
@@ -1185,7 +1267,11 @@ class Trainer:
             )
             if g_scale > 0:
                 d_fake = self.discriminator(encoded)
-                loss_G = -d_fake.mean()  # Maximize D(fake) = minimize -D(fake)
+                if self.config.loss.gan_config.discriminator_type == "patchgan":
+                    # LSGAN generator loss: D(fake) -> 1
+                    loss_G = 0.5 * ((d_fake - 1) ** 2).mean()
+                else:
+                    loss_G = -d_fake.mean()  # WGAN: maximize D(fake)
                 weighted_G = g_scale * loss_G
                 total = total + weighted_G
                 losses["loss_G"] = loss_G
@@ -1250,6 +1336,88 @@ class Trainer:
         if config.ramp_steps <= 0:
             return config.scale
         return min(config.scale * adjusted_step / config.ramp_steps, config.scale)
+
+    @staticmethod
+    def _compute_ssim_loss(
+        original: Tensor, encoded: Tensor,
+        window_size: int = 11, C1: float = 0.01**2, C2: float = 0.03**2,
+    ) -> Tensor:
+        """Compute 1 - SSIM as a loss (0 = identical).
+
+        Args:
+            original: Original images (B, C, H, W).
+            encoded: Encoded images (B, C, H, W).
+            window_size: Size of the averaging window.
+            C1: Stabilization constant for luminance.
+            C2: Stabilization constant for contrast.
+
+        Returns:
+            Scalar loss tensor (1 - mean SSIM).
+        """
+        channels = original.shape[1]
+        kernel = torch.ones(channels, 1, window_size, window_size,
+                            device=original.device) / (window_size ** 2)
+        pad = window_size // 2
+
+        mu_x = F.conv2d(original, kernel, groups=channels, padding=pad)
+        mu_y = F.conv2d(encoded, kernel, groups=channels, padding=pad)
+
+        sigma_x_sq = F.conv2d(original ** 2, kernel, groups=channels, padding=pad) - mu_x ** 2
+        sigma_y_sq = F.conv2d(encoded ** 2, kernel, groups=channels, padding=pad) - mu_y ** 2
+        sigma_xy = (
+            F.conv2d(original * encoded, kernel, groups=channels, padding=pad) - mu_x * mu_y
+        )
+
+        ssim_map = ((2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)) / \
+                   ((mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x_sq + sigma_y_sq + C2))
+        return 1.0 - ssim_map.mean()
+
+    @staticmethod
+    def _compute_mask_reg_loss(mask: Tensor, image: Tensor) -> Tensor:
+        """Encourage mask to correlate with local image texture.
+
+        Higher-variance regions (edges, textures) should receive stronger encoding.
+
+        Args:
+            mask: Learned spatial mask (B, 1, H, W).
+            image: Input image (B, C, H, W).
+
+        Returns:
+            Scalar MSE loss between mask and normalized local variance.
+        """
+        gray = image.mean(dim=1, keepdim=True)
+        kernel = torch.ones(1, 1, 7, 7, device=image.device) / 49.0
+        local_mean = F.conv2d(gray, kernel, padding=3)
+        local_var = F.conv2d(gray ** 2, kernel, padding=3) - local_mean ** 2
+        local_var = local_var.clamp(min=0)
+        lv_max = local_var.amax(dim=(-2, -1), keepdim=True) + 1e-8
+        local_var_norm = local_var / lv_max
+        return F.mse_loss(mask, local_var_norm.detach())
+
+    @staticmethod
+    def _compute_strength(
+        initial: float, target: float,
+        start_step: int, anneal_steps: int, current_step: int,
+    ) -> float:
+        """Compute annealed residual strength.
+
+        Returns initial before start_step, linearly interpolates to target
+        over anneal_steps, and clamps at target afterwards.
+
+        Args:
+            initial: Starting strength value.
+            target: Target strength value after annealing.
+            start_step: Step at which annealing begins.
+            anneal_steps: Number of steps to anneal over.
+            current_step: Current training step.
+
+        Returns:
+            Interpolated strength value.
+        """
+        if current_step < start_step:
+            return initial
+        progress = min((current_step - start_step) / max(anneal_steps, 1), 1.0)
+        return initial + progress * (target - initial)
 
     def _compute_edge_loss(self, original: Tensor, encoded: Tensor) -> Tensor:
         """Compute edge-weighted L2 loss using Sobel edge detection.
