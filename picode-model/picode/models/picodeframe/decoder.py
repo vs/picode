@@ -1,10 +1,16 @@
-"""PicodeFrame decoder network.
+"""PicodeFrame decoder network with border-pooling branch.
 
-Based on the StegaStamp decoder with STN and CNN architecture.
-Key differences from StegaStamp decoder:
-- 127 output bits (BCH(127,64) codeword) instead of 100
-- STN scale regularization to prevent zoom-in that would crop the frame
-- Deep CNN (4ch: RGB + border_mask) with flatten, matching StegaStamp's proven pattern
+Hybrid architecture that combines:
+1. CNN branch: 7-layer strided CNN (400→13×13) with STN for perspective correction
+2. Border-pooling branch: strip-pooled border features at full resolution
+
+The CNN branch alone cannot learn from fresh initialization because the 7-layer
+spatial compression reduces the 32px border to ~1px in the feature map, drowning
+the border signal in center noise. The border-pooling branch provides a direct
+path for border information to reach the output, bypassing spatial compression.
+
+Both branches are concatenated before the FC head, allowing the model to learn
+from border features immediately while the CNN branch learns over time.
 """
 
 import torch
@@ -16,17 +22,21 @@ from picode.models.base import Decoder as BaseDecoder
 
 
 class Decoder(BaseDecoder):
-    """CNN decoder with STN that extracts message bits from a framed image.
+    """Hybrid CNN + border-pooling decoder for framed steganography.
 
-    Uses a deep CNN (5 stride-2 + 2 stride-1 convolutions, 400→13×13) with
-    flatten, matching StegaStamp's proven architecture. The border mask is
-    passed as a 4th input channel (1=border, 0=center) so the CNN learns
-    border-aware features without information-destroying average pooling.
+    The CNN branch processes the full image through strided convolutions with an
+    STN for perspective correction. The border-pooling branch extracts features
+    from the four border strips at full resolution by averaging along the narrow
+    dimension (frame_width → 1) while preserving the long dimension (400 pixels).
+
+    The border branch operates on the ORIGINAL image (not STN-transformed) to
+    preserve border spatial information that would be distorted by the STN's
+    bilinear interpolation.
 
     Args:
         num_bits: Number of bits in the message (default: 127 for BCH(127,64)).
-        height: Image height for STN output (default: 400).
-        width: Image width for STN output (default: 400).
+        height: Image height (default: 400).
+        width: Image width (default: 400).
         freeze_stn_linear: If True, freeze the STN linear transformation parameters.
     """
 
@@ -61,8 +71,8 @@ class Decoder(BaseDecoder):
             self.stn_fc_weight.requires_grad = False
             self.stn_fc_bias.requires_grad = False
 
-        # Deep decoder CNN — 4 input channels (3 RGB + 1 border indicator)
-        # Matches StegaStamp decoder depth: 5 stride-2 + 2 stride-1 convolutions
+        # CNN branch — 4 input channels (3 RGB + 1 border indicator)
+        # 5 stride-2 + 2 stride-1 convolutions: 400→13×13
         self.decoder_cnn = nn.Sequential(
             nn.Conv2d(4, 32, 3, stride=2, padding=1),    # 200x200
             nn.ReLU(),
@@ -80,8 +90,18 @@ class Decoder(BaseDecoder):
             nn.ReLU(),
         )
 
-        # FC head after flatten: 128×13×13 = 21632 → 512 → num_bits
-        self.fc1 = nn.Linear(128 * 13 * 13, 512)
+        # Border-pooling branch: strip-pool each border side along the narrow
+        # dimension (fw→1), keeping the long dimension (H or W pixels).
+        # 4 strips × 3 channels × height = 4800 features for 400×400
+        border_features = 3 * 4 * height
+        self.border_fc = nn.Sequential(
+            nn.Linear(border_features, 256),
+            nn.ReLU(),
+        )
+
+        # Combined FC head: CNN features + border features
+        cnn_flat = 128 * 13 * 13  # 21632
+        self.fc1 = nn.Linear(cnn_flat + 256, 512)
         self.fc2 = nn.Linear(512, num_bits)
 
         # Initialize weights (He normal)
@@ -99,6 +119,31 @@ class Decoder(BaseDecoder):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
+    def _pool_border_strips(self, image: Tensor, frame_width: int) -> Tensor:
+        """Extract strip-pooled features from each border side.
+
+        Averages each border strip along its narrow dimension (frame_width → 1)
+        while preserving the long dimension. This gives 4 × 3 × H features
+        that capture the full-resolution border pattern.
+
+        Args:
+            image: (B, 3, H, W) input image.
+            frame_width: Width of the border frame in pixels.
+
+        Returns:
+            Flattened border features (B, 3 * 4 * H).
+        """
+        B, C, H, W = image.shape
+        fw = frame_width
+        top = image[:, :, :fw, :].mean(dim=2)      # (B, 3, W)
+        bottom = image[:, :, H - fw:, :].mean(dim=2)  # (B, 3, W)
+        left = image[:, :, :, :fw].mean(dim=3)      # (B, 3, H)
+        right = image[:, :, :, W - fw:].mean(dim=3)   # (B, 3, H)
+        return torch.cat([
+            top.reshape(B, -1), bottom.reshape(B, -1),
+            left.reshape(B, -1), right.reshape(B, -1),
+        ], dim=1)
+
     def stn_scale_reg(self) -> Tensor:
         """Compute L2 regularization on STN scale deviation from identity.
 
@@ -109,9 +154,6 @@ class Decoder(BaseDecoder):
         Returns:
             Scalar regularization loss.
         """
-        # Current affine params: theta = features @ weight + bias
-        # At initialization, weight=0 so theta = bias = [1, 0, 0, 0, 1, 0] (identity)
-        # We penalize deviation of bias from identity and non-zero weight magnitude
         identity = torch.tensor([1., 0., 0., 0., 1., 0.], device=self.stn_fc_bias.device)
         bias_reg = F.mse_loss(self.stn_fc_bias, identity)
         weight_reg = (self.stn_fc_weight ** 2).mean()
@@ -122,15 +164,17 @@ class Decoder(BaseDecoder):
 
         Args:
             image: (B, 3, H, W) in [0, 1]
-            **kwargs: Optional ``mask`` (B, 1, H, W) with 1 in center, 0 in border.
-                When provided, border_mask = 1 - mask is concatenated as a 4th CNN
-                input channel. When absent, an all-ones border channel is used
-                (full-image processing, like StegaStamp).
+            **kwargs:
+                mask: (B, 1, H, W) with 1 in center, 0 in border.
+                    When provided, border_mask = 1 - mask is concatenated as a
+                    4th CNN input channel. When absent, all-ones is used.
+                frame_width: Width of the border frame in pixels (default: 32).
 
         Returns:
             Message logits (B, num_bits) - unbounded, apply sigmoid for probabilities
         """
         mask: Tensor | None = kwargs.get("mask", None)
+        frame_width: int = int(kwargs.get("frame_width", 32))
 
         # Normalize input
         image_norm = image - 0.5
@@ -159,13 +203,18 @@ class Decoder(BaseDecoder):
                 device=image.device, dtype=image.dtype,
             )
 
-        # Concatenate RGB + border indicator → (B, 4, H, W)
+        # CNN branch: RGB + border indicator → strided CNN → flatten
         cnn_input = torch.cat([transformed, border_mask], dim=1)
+        cnn_features = self.decoder_cnn(cnn_input).flatten(1)  # (B, 21632)
 
-        # Deep CNN → flatten → FC head
-        features = self.decoder_cnn(cnn_input)  # (B, 128, 13, 13)
-        flat = features.flatten(1)               # (B, 21632)
-        x = F.relu(self.fc1(flat))
+        # Border-pooling branch: strip-pool on ORIGINAL image (not STN-transformed)
+        # to preserve border spatial information
+        border_features = self._pool_border_strips(image, frame_width)  # (B, 4800)
+        border_features = self.border_fc(border_features)  # (B, 256)
+
+        # Combine and classify
+        combined = torch.cat([cnn_features, border_features], dim=1)  # (B, 21888)
+        x = F.relu(self.fc1(combined))
         logits: Tensor = self.fc2(x)
         return logits
 
@@ -174,7 +223,7 @@ class Decoder(BaseDecoder):
 
         Args:
             image: Input image tensor (B, C, H, W) in [0, 1].
-            **kwargs: Optional ``mask`` passed to forward().
+            **kwargs: Optional ``mask`` and ``frame_width`` passed to forward().
 
         Returns:
             Binary message tensor (B, num_bits).

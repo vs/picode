@@ -932,8 +932,9 @@ class Trainer:
             # Apply distortions (curriculum also ramps from 0)
             decoder_input = self.distortion(encoded_warped, warp_step)
 
-        # Decode — pass mask as border indicator channel for the CNN.
-        decoded_logits = self.decoder(decoder_input, mask=mask)
+        # Decode — pass mask as border indicator channel for the CNN,
+        # and frame_width for the border-pooling branch.
+        decoded_logits = self.decoder(decoder_input, mask=mask, frame_width=fw)
 
         # Compute losses
         step = self.global_step

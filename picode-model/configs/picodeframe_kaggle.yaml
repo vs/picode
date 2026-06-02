@@ -1,13 +1,14 @@
 # PicodeFrame Kaggle Configuration — Fixed 8% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
-# v27: Revert to BCE + cosine LR + EMA defense.
-# - BCE has 2x stronger gradients than MSE (no sigmoid' attenuation)
-# - MSE through sigmoid can't escape trivial solution from random init
-# - Disable grad_clip_norm (per-element clamp is sufficient for normal training)
-# - Cosine LR decay prevents late-stage catastrophic updates
-# - EMA + collapse detection provides safety net for auto-recovery
+# v28: Hybrid decoder — CNN + border-pooling branch.
+# - Border-pooling extracts strip-pooled features at full resolution, bypassing
+#   the CNN's 400→13 spatial compression that drowned 32px border signal
+# - Decoder can learn from fresh init (no separate warmup decoder needed)
+# - decoder_warmup_steps still useful: message-only loss lets encoder produce
+#   strong border patterns before frame L2 regularization kicks in
 #
+# v27: Revert to BCE + cosine LR + EMA defense.
 # v23: Fixed 8% frame (32px at 400x400) — more pixel area for message encoding.
 
 experiment_name: picodeframe

@@ -44,12 +44,20 @@ class TestDecoderArchitecture:
         assert features.shape == (1, 128, 13, 13)
 
     def test_fc_head_dimensions(self) -> None:
-        """FC head: 21632 → 512 → 127."""
+        """FC head: 21888 (21632 CNN + 256 border) → 512 → 127."""
         decoder = Decoder(num_bits=127)
-        assert decoder.fc1.in_features == 128 * 13 * 13  # 21632
+        assert decoder.fc1.in_features == 128 * 13 * 13 + 256  # 21888
         assert decoder.fc1.out_features == 512
         assert decoder.fc2.in_features == 512
         assert decoder.fc2.out_features == 127
+
+    def test_has_border_pooling_branch(self) -> None:
+        """Decoder has border-pooling FC branch."""
+        decoder = Decoder(num_bits=127)
+        assert hasattr(decoder, "border_fc")
+        # border_fc input: 3 channels × 4 strips × 400 pixels = 4800
+        assert decoder.border_fc[0].in_features == 3 * 4 * 400
+        assert decoder.border_fc[0].out_features == 256
 
 
 class TestDecoderForward:
@@ -57,6 +65,12 @@ class TestDecoderForward:
 
     def test_output_shape(self, sample_image: torch.Tensor) -> None:
         """Decoder outputs (B, 127) tensor."""
+        decoder = Decoder(num_bits=127)
+        result = decoder(sample_image, frame_width=32)
+        assert result.shape == (2, 127)
+
+    def test_output_shape_no_frame_width(self, sample_image: torch.Tensor) -> None:
+        """Decoder works with default frame_width."""
         decoder = Decoder(num_bits=127)
         result = decoder(sample_image)
         assert result.shape == (2, 127)
@@ -71,7 +85,7 @@ class TestDecoderForward:
         """Gradients flow through decoder."""
         decoder = Decoder(num_bits=127)
         sample_image.requires_grad_(True)
-        result = decoder(sample_image)
+        result = decoder(sample_image, frame_width=32)
         loss = result.sum()
         loss.backward()
         assert sample_image.grad is not None
@@ -79,9 +93,31 @@ class TestDecoderForward:
     def test_decode_method(self, sample_image: torch.Tensor) -> None:
         """Decode method returns binary bits."""
         decoder = Decoder(num_bits=127)
-        result = decoder.decode(sample_image)
+        result = decoder.decode(sample_image, frame_width=32)
         assert result.shape == (2, 127)
         assert torch.all((result == 0) | (result == 1))
+
+
+class TestBorderPooling:
+    """Test the border-pooling branch."""
+
+    def test_different_frame_widths_produce_different_output(self) -> None:
+        """Different frame widths change border-pooling features."""
+        decoder = Decoder(num_bits=127)
+        decoder.eval()
+        image = torch.rand(1, 3, 400, 400)
+
+        out_narrow = decoder(image, frame_width=16)
+        out_wide = decoder(image, frame_width=64)
+        assert not torch.allclose(out_narrow, out_wide, atol=1e-4)
+
+    def test_border_strip_pooling_shape(self) -> None:
+        """Strip pooling produces correct feature dimensions."""
+        decoder = Decoder(num_bits=127, height=400)
+        image = torch.rand(2, 3, 400, 400)
+        features = decoder._pool_border_strips(image, frame_width=32)
+        # 3 channels × 4 strips × 400 pixels = 4800
+        assert features.shape == (2, 4800)
 
 
 class TestDecoderWithMask:
@@ -95,8 +131,8 @@ class TestDecoderWithMask:
         mask = torch.zeros(B, 1, H, W)
         mask[:, :, fw:H - fw, fw:W - fw] = 1.0
 
-        out_no_mask = decoder(sample_image)
-        out_with_mask = decoder(sample_image, mask=mask)
+        out_no_mask = decoder(sample_image, frame_width=fw)
+        out_with_mask = decoder(sample_image, mask=mask, frame_width=fw)
         assert not torch.allclose(out_no_mask, out_with_mask, atol=1e-4)
 
     def test_mask_gradient_flow(self, sample_image: torch.Tensor) -> None:
@@ -108,7 +144,7 @@ class TestDecoderWithMask:
         mask[:, :, fw:H - fw, fw:W - fw] = 1.0
 
         sample_image.requires_grad_(True)
-        result = decoder(sample_image, mask=mask)
+        result = decoder(sample_image, mask=mask, frame_width=fw)
         loss = result.sum()
         loss.backward()
         assert sample_image.grad is not None
@@ -118,7 +154,7 @@ class TestDecoderWithMask:
         decoder = Decoder(num_bits=127)
         mask = torch.zeros(2, 1, 400, 400)
         mask[:, :, 16:384, 16:384] = 1.0
-        result = decoder(sample_image, mask=mask)
+        result = decoder(sample_image, mask=mask, frame_width=16)
         assert result.shape == (2, 127)
 
     def test_mask_channel_affects_output(self) -> None:
@@ -137,8 +173,8 @@ class TestDecoderWithMask:
         mask_wide = torch.zeros(B, 1, 400, 400)
         mask_wide[:, :, 80:320, 80:320] = 1.0
 
-        out_narrow = decoder(image, mask=mask_narrow)
-        out_wide = decoder(image, mask=mask_wide)
+        out_narrow = decoder(image, mask=mask_narrow, frame_width=10)
+        out_wide = decoder(image, mask=mask_wide, frame_width=80)
 
         # Different masks → different border indicator channels → different outputs
         assert not torch.allclose(out_narrow, out_wide, atol=1e-4)
