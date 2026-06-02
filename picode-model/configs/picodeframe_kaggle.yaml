@@ -40,7 +40,7 @@ training:
   rnd_trans: 0.10
   rnd_trans_ramp: 15000       # Slightly faster perspective ramp
   # Collapse defense
-  grad_clip_norm: 1.0
+  grad_clip_norm: 10.0
   lr_schedule: cosine
   lr_min_ratio: 0.1
   ema_decay: 0.999

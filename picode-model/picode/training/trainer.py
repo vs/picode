@@ -499,7 +499,14 @@ class Trainer:
                 # Collapse detection (only after warmup and cooldown)
                 threshold = self.config.training.collapse_threshold
                 cooldown = self.config.training.collapse_recovery_cooldown
-                warmup_done = self.global_step > self.config.training.warmup_steps
+                # Don't detect collapse until model has had time to learn.
+                # no_im_loss_steps marks when distortions begin — collapse is only
+                # meaningful after the model has trained successfully for a while.
+                min_collapse_step = max(
+                    self.config.training.warmup_steps,
+                    self.config.training.no_im_loss_steps,
+                )
+                warmup_done = self.global_step > min_collapse_step
                 cooldown_done = (self.global_step - self._last_recovery_step) > cooldown
                 prob_std = metrics.get("decoder_prob_std", 1.0)
 
