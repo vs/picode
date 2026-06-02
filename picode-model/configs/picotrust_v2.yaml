@@ -22,16 +22,16 @@ training:
   borders: black
   rnd_trans: 0.10
   rnd_trans_ramp: 10000
-  residual_strength: 0.05
-  residual_strength_anneal_target: 0.03
+  residual_strength: 0.3             # Generous in Phase 1 — let encoder learn to embed
+  residual_strength_anneal_target: 0.03  # Tighten hard in Phase 2 for quality
   residual_strength_anneal_start: 60000
-  residual_strength_anneal_steps: 20000
+  residual_strength_anneal_steps: 40000  # Slower anneal (60k→100k) so decoder can adapt
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
 
 loss:
   message:
-    scale: 2.0
+    scale: 5.0                         # Strong message gradient for Phase 1 bootstrap
     ramp_steps: 1
   l2:
     scale: 3.0
