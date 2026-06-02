@@ -29,9 +29,8 @@ class Decoder(BaseDecoder):
     from the four border strips at full resolution by averaging along the narrow
     dimension (frame_width → 1) while preserving the long dimension (400 pixels).
 
-    The border branch operates on the ORIGINAL image (not STN-transformed) to
-    preserve border spatial information that would be distorted by the STN's
-    bilinear interpolation.
+    The border branch operates on the STN-corrected image so it benefits from
+    perspective correction when distortions are applied during training.
 
     Args:
         num_bits: Number of bits in the message (default: 127 for BCH(127,64)).
@@ -207,9 +206,10 @@ class Decoder(BaseDecoder):
         cnn_input = torch.cat([transformed, border_mask], dim=1)
         cnn_features = self.decoder_cnn(cnn_input).flatten(1)  # (B, 21632)
 
-        # Border-pooling branch: strip-pool on ORIGINAL image (not STN-transformed)
-        # to preserve border spatial information
-        border_features = self._pool_border_strips(image, frame_width)  # (B, 4800)
+        # Border-pooling branch: strip-pool on STN-corrected image so the border
+        # branch benefits from perspective correction under distortions.
+        # transformed is in [-0.5, 0.5] range; add 0.5 back for [0, 1] pooling.
+        border_features = self._pool_border_strips(transformed + 0.5, frame_width)  # (B, 4800)
         border_features = self.border_fc(border_features)  # (B, 256)
 
         # Combine and classify

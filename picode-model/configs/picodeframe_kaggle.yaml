@@ -1,13 +1,16 @@
 # PicodeFrame Kaggle Configuration — Fixed 8% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
-# v28: Hybrid decoder — CNN + border-pooling branch.
-# - Border-pooling extracts strip-pooled features at full resolution, bypassing
-#   the CNN's 400→13 spatial compression that drowned 32px border signal
-# - Decoder can learn from fresh init (no separate warmup decoder needed)
-# - decoder_warmup_steps still useful: message-only loss lets encoder produce
-#   strong border patterns before frame L2 regularization kicks in
+# v29: Reduced distortions + STN-corrected border pooling.
+# - Border-pooling now operates on STN-corrected image (not original) so it
+#   benefits from perspective correction under distortions
+# - Halved distortion strengths: border-only encoding has 12x less signal area
+#   than full-image stego, so full StegaStamp-strength distortions overwhelm it
+# - Slower 30K ramp gives model time to build robustness gradually
+# - v28 showed: 99.8% clean accuracy, then steady decline to 78% as distortions
+#   ramped — the border signal was being destroyed faster than the model adapted
 #
+# v28: Hybrid decoder — CNN + border-pooling branch.
 # v27: Revert to BCE + cosine LR + EMA defense.
 # v23: Fixed 8% frame (32px at 400x400) — more pixel area for message encoding.
 
@@ -34,8 +37,8 @@ training:
   warmup_steps: 2500          # Shorter — 8% frame gives strong signal from the start
   no_im_loss_steps: 8000      # Image losses can start earlier with wider frame
   borders: black
-  rnd_trans: 0.10
-  rnd_trans_ramp: 15000       # Slightly faster perspective ramp
+  rnd_trans: 0.05
+  rnd_trans_ramp: 30000       # Slow ramp — border signal needs gradual hardening
   # Collapse defense
   grad_clip_norm: 0  # Disabled — per-element clamp at 0.25 is sufficient
   lr_schedule: cosine
@@ -67,25 +70,25 @@ loss:
 distortion:
   strategy: curriculum
   perspective:
-    strength: 0.1
-    ramp_steps: 15000   # Slightly faster ramp (counted from warmup end)
+    strength: 0.05              # Halved — border geometry is fragile
+    ramp_steps: 30000
   brightness:
-    strength: 0.3
-    ramp_steps: 15000
+    strength: 0.2               # Mild — realistic for photo sharing
+    ramp_steps: 30000
   saturation:
-    strength: 1.0
-    ramp_steps: 15000
+    strength: 0.5               # Halved — full desaturation destroys border color info
+    ramp_steps: 30000
   hue:
-    strength: 0.1
-    ramp_steps: 15000
+    strength: 0.05              # Halved
+    ramp_steps: 30000
   noise:
-    strength: 0.02
-    ramp_steps: 15000
-  contrast: [0.5, 1.5]
-  contrast_ramp_steps: 15000
+    strength: 0.01              # Halved — border pixels are few, noise impact is amplified
+    ramp_steps: 30000
+  contrast: [0.7, 1.3]         # Tighter range
+  contrast_ramp_steps: 30000
   jpeg_quality:
-    strength: 25
-    ramp_steps: 15000
+    strength: 50                # Q50 not Q25 — Q25 destroys thin border patterns
+    ramp_steps: 30000
   enable_jpeg: true
   enable_blur: true
 
