@@ -22,10 +22,7 @@ training:
   borders: black
   rnd_trans: 0.10
   rnd_trans_ramp: 10000
-  residual_strength: 0.3             # Generous in Phase 1 — let encoder learn to embed
-  residual_strength_anneal_target: 0.03  # Tighten hard in Phase 2 for quality
-  residual_strength_anneal_start: 60000
-  residual_strength_anneal_steps: 40000  # Slower anneal (60k→100k) so decoder can adapt
+  residual_strength: 0.0              # Unconstrained — let image losses control amplitude
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
 
@@ -47,9 +44,6 @@ loss:
     scale: 1.5
     ramp_steps: 20000
     delay_steps: 20000
-  mask_reg:
-    scale: 0.1
-    ramp_steps: 1
   message_loss_type: mse
   use_border_falloff: true
   gan_config:
