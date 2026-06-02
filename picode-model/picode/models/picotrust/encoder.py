@@ -160,22 +160,25 @@ class Encoder(BaseEncoder):
         # E_post: spatial refinement -> raw residual
         raw_residual = self.e_post(x)
 
+        # Apply amplitude bound if configured
         if self.strength is not None:
-            # PicoTrust v2: bounded residual
             residual = self.strength * torch.tanh(raw_residual)
+        else:
+            residual = raw_residual
 
-            # Apply spatial mask if enabled
-            mask: Tensor | None = None
-            if self.mask_head is not None:
-                mask = self.mask_head(x)  # (B, 1, H, W) in [0, 1]
-                residual = residual * mask
+        # Apply spatial mask if enabled (independent of strength)
+        mask: Tensor | None = None
+        if self.mask_head is not None:
+            mask = self.mask_head(x)  # (B, 1, H, W) in [0, 1]
+            residual = residual * mask
 
-            encoded = image + residual
+        encoded = image + residual
+
+        # Return dict if v2 features active, tensor for backward compat
+        if mask is not None or self.strength is not None:
             result: dict[str, Tensor] = {"encoded": encoded}
             if mask is not None:
                 result["mask"] = mask
             return result
         else:
-            # Backward compat: unconstrained residual, return tensor
-            encoded = image + raw_residual
             return encoded

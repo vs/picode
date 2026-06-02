@@ -244,10 +244,9 @@ class Trainer:
 
         # Determine v2 encoder params
         _strength: float | None = None
-        _use_mask = False
         if config.training.residual_strength > 0:
             _strength = config.training.residual_strength
-            _use_mask = config.loss.mask_reg is not None
+        _use_mask = config.loss.mask_reg is not None
 
         self.encoder: BaseEncoder = create_encoder(
             config.model, num_bits, strength=_strength, use_mask=_use_mask,

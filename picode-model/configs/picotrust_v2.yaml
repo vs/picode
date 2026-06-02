@@ -8,7 +8,7 @@ model:
 data:
   source: folder
   path: ./data/train
-  batch_size: 4                         # Half of v1's 8 due to 4x larger images
+  batch_size: 4
 
 training:
   num_steps: 200000
@@ -16,7 +16,7 @@ training:
   num_bits: 100
   image_size: 512
   warmup_steps: 500
-  no_im_loss_steps: 500
+  no_im_loss_steps: 10000              # 10k steps pure message — establish communication first
   generator_grad_clip: 0.25
   stn_lr_scale: 0.01
   borders: black
@@ -30,21 +30,24 @@ loss:
     scale: 5.0
     ramp_steps: 1
   l2:
-    scale: 1.5                          # Match v1 (was 3.0 — too aggressive)
-    ramp_steps: 20000
+    scale: 1.5
+    ramp_steps: 50000                   # Slow squeeze — give encoder time to learn compact embedding
   lpips:
-    scale: 1.0                          # Match v1 (was 2.0)
-    ramp_steps: 20000
+    scale: 1.0
+    ramp_steps: 50000
   ffl:
-    scale: 1.0                          # Match v1 (was 1.5)
-    ramp_steps: 20000
-    delay_steps: 20000
+    scale: 1.0
+    ramp_steps: 50000
+    delay_steps: 30000
+  mask_reg:
+    scale: 0.1
+    ramp_steps: 1                       # Active from step 0 — guides mask toward textures
   message_loss_type: mse
   use_border_falloff: true
   gan_config:
     enabled: true
-    discriminator_lr: 0.00001           # Match v1 (was 0.0002 — 20x too high!)
-    g_loss_scale: 1.0                   # Match v1 (was 1.5)
+    discriminator_lr: 0.00001
+    g_loss_scale: 1.0
     g_loss_ramp_steps: 20000
 
 distortion:
