@@ -444,8 +444,13 @@ class Trainer:
         trainer.global_step = data["step"]
         trainer.best_metric = data["best_metric"]
 
-        # Restore scheduler state
-        if trainer.scheduler is not None and data.get("scheduler_state") is not None:
+        # Restore scheduler state — skip when using a new config (fine-tuning).
+        # CosineAnnealingLR.get_lr() computes relative updates from current optimizer LR,
+        # so a corrupted LR (e.g. from collapse detector halvings) persists in the state.
+        # A fresh schedule gives a warm restart with full LR.
+        if config_path is not None:
+            print("  New config provided — using fresh LR schedule (warm restart)")
+        elif trainer.scheduler is not None and data.get("scheduler_state") is not None:
             trainer.scheduler.load_state_dict(data["scheduler_state"])
 
         return trainer
