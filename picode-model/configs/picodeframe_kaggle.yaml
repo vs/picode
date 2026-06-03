@@ -31,9 +31,9 @@ training:
   seed: 42
   num_bits: 127
   image_size: 400
-  decoder_warmup_steps: 1500  # Already past warmup — no effect on resume
-  warmup_steps: 2500          # Already past warmup — no effect on resume
-  no_im_loss_steps: 8000      # Already past — no effect on resume
+  decoder_warmup_steps: 72000  # Message-only loss until step 72K (2K steps of pure bootstrap)
+  warmup_steps: 74000          # No distortions until step 74K (4K steps of clean signal)
+  no_im_loss_steps: 78000      # Re-enable L2/LPIPS at step 78K (8K steps of message-first)
   borders: black
   rnd_trans: 0.05
   rnd_trans_ramp: 30000       # Slow ramp — border signal needs gradual hardening
