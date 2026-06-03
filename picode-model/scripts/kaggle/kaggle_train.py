@@ -187,6 +187,12 @@ try:
         print(f"frame_l2_scale: {trainer.config.frame.frame_l2_scale}")
         print(f"frame_lpips_scale: {trainer.config.frame.frame_lpips_scale}")
         print(f"frame_color_scale: {trainer.config.frame.frame_color_scale}")
+        print(f"residual_max_amplitude: {trainer.config.frame.residual_max_amplitude}")
+    # Verify encoder has the amplitude cap
+    if hasattr(trainer.encoder, 'max_residual_amplitude'):
+        print(f"encoder.max_residual_amplitude: {trainer.encoder.max_residual_amplitude}")
+    else:
+        print("WARNING: encoder has no max_residual_amplitude attribute (old code?)")
     print()
 
     trainer.fit()
