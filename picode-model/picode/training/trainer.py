@@ -450,6 +450,12 @@ class Trainer:
         # A fresh schedule gives a warm restart with full LR.
         if config_path is not None:
             print("  New config provided — using fresh LR schedule (warm restart)")
+            # Reset optimizer LRs to base values — load_state_dict restored corrupted LRs
+            # but we want to keep Adam momentum buffers.
+            if trainer.scheduler is not None:
+                for i, group in enumerate(trainer.optimizer.param_groups):
+                    group["lr"] = trainer.scheduler.base_lrs[i]
+                print(f"  Reset optimizer LRs to {trainer.scheduler.base_lrs}")
         elif trainer.scheduler is not None and data.get("scheduler_state") is not None:
             trainer.scheduler.load_state_dict(data["scheduler_state"])
 
