@@ -1050,7 +1050,9 @@ class Trainer:
         metrics.update({k: v.item() for k, v in losses.items()})
 
         # Residual statistics (only in frame region)
-        residual = encoded - images
+        # Use padded_inner (encoder input), not images (original crop) — they differ
+        # in the border region because of reflection padding.
+        residual = encoded - padded_inner
         frame_residual = residual * (1 - mask)
         metrics["residual_mean"] = frame_residual.mean().item()
         metrics["residual_std"] = frame_residual.std().item()

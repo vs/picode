@@ -79,7 +79,7 @@ def evaluate_single_image(
             mask = torch.zeros(1, 1, image_size, image_size, device=device)
             mask[:, :, frame_width:image_size - frame_width,
                  frame_width:image_size - frame_width] = 1.0
-            decoded_logits = decoder(encoded, mask=mask)
+            decoded_logits = decoder(encoded, mask=mask, frame_width=frame_width)
             decoded = (decoded_logits > 0).float()
 
             # PSNR on frame region only (center is identical by construction)
