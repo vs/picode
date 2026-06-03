@@ -9,7 +9,8 @@
   "enable_internet": true,
   "dataset_sources": [
     "your-kaggle-id/picode-source",
-    "awsaf49/coco-2017-dataset"
+    "awsaf49/coco-2017-dataset",
+    "your-kaggle-id/picodeframe-checkpoints"
   ],
   "competition_sources": [],
   "kernel_sources": []

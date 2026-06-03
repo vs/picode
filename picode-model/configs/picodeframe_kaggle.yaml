@@ -1,12 +1,9 @@
 # PicodeFrame Kaggle Configuration — Fixed 3% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
-# v31: Narrow frame fine-tune — resume from v30 70K checkpoint at 3% (12px).
-# - v30 trained at 8% (32px) reached 99.5% accuracy, 7 dB frame PSNR.
-#   Frame is visible but acceptable — narrowing reduces visual footprint.
-# - v30 model already gets 88.5% at 3% without retraining — good starting point.
-# - Keep v30 loss values (L2=1.5, LPIPS=0.75) that the checkpoint was trained with.
-# - Bump message scale 15→25 to compensate for 60% less frame area.
+# v31b: Train from scratch at 3% (12px). Fine-tuning from v30 (8%/32px) failed —
+# Adam momentum from 70K steps of 32px training pushes residual to zero,
+# overwhelming the weak BCE gradient. Fresh training with v29 warmup sequence.
 #
 # v30: 8% frame, L2=1.5 + LPIPS=0.75, 70K steps → 99.5% accuracy.
 # v29: Reduced distortions + STN-corrected border pooling.
@@ -31,9 +28,9 @@ training:
   seed: 42
   num_bits: 127
   image_size: 400
-  decoder_warmup_steps: 72000  # Message-only loss until step 72K (2K steps of pure bootstrap)
-  warmup_steps: 74000          # No distortions until step 74K (4K steps of clean signal)
-  no_im_loss_steps: 78000      # Re-enable L2/LPIPS at step 78K (8K steps of message-first)
+  decoder_warmup_steps: 1500  # v29 value — bootstraps reliably
+  warmup_steps: 2500          # v29 value
+  no_im_loss_steps: 8000      # Phase 1: message-first, image losses start at step 8K
   borders: black
   rnd_trans: 0.05
   rnd_trans_ramp: 30000       # Slow ramp — border signal needs gradual hardening
@@ -49,9 +46,9 @@ frame:
   min_frame_pct: 0.03
   max_frame_pct: 0.03         # Fixed 3% = 12px at 400x400
   fixed_frame_steps: 0        # Not needed — min == max
-  frame_l2_scale: 1.5         # Match v30 training — controls residual magnitude
+  frame_l2_scale: 0.05        # v29 phase 1 — regularization only, don't suppress residual
   frame_l2_ramp_steps: 10000
-  frame_lpips_scale: 0.75     # Match v30 training — perceptual quality
+  frame_lpips_scale: 0.0      # Disabled for phase 1 — re-enable in phase 2 if needed
   frame_lpips_ramp_steps: 15000
   frame_color_scale: 0.0      # Greyscale residual architecture handles color by construction
   frame_color_ramp_steps: 10000
@@ -62,7 +59,7 @@ loss:
   message:
     scale: 25.0               # Up from 15 — narrower frame needs stronger message gradient
     ramp_steps: 1             # No ramp — full gradient from step 0
-  message_loss_type: bce       # v29 value — BCE bootstraps fine with this config
+  message_loss_type: bce       # BCE bootstraps fine with this config
   gan_config:
     enabled: false
 
