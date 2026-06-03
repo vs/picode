@@ -247,9 +247,11 @@ class Trainer:
         if config.training.residual_strength > 0:
             _strength = config.training.residual_strength
         _use_mask = config.loss.mask_reg is not None
+        _max_res_amp = config.frame.residual_max_amplitude if config.frame else 0.0
 
         self.encoder: BaseEncoder = create_encoder(
             config.model, num_bits, strength=_strength, use_mask=_use_mask,
+            max_residual_amplitude=_max_res_amp,
         ).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 

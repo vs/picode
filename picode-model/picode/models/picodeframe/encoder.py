@@ -32,9 +32,12 @@ class Encoder(BaseEncoder):
         num_bits: Number of bits in the message (default: 127 for BCH(127,64)).
     """
 
-    def __init__(self, num_bits: int = 127) -> None:
+    def __init__(
+        self, num_bits: int = 127, max_residual_amplitude: float = 0.0,
+    ) -> None:
         super().__init__()
         self.num_bits = num_bits
+        self.max_residual_amplitude = max_residual_amplitude
 
         # Message preparation: num_bits -> 7500 -> (3, 50, 50) -> upsample to (400, 400)
         self.secret_dense = nn.Linear(num_bits, 7500)
@@ -161,7 +164,10 @@ class Encoder(BaseEncoder):
 
         # Output layers - single-channel residual broadcast to RGB (greyscale only)
         _ = F.relu(self.conv10(x))  # Computed but not used (matches StegaStamp)
-        residual = self.residual(x).expand(-1, 3, -1, -1)  # (B, 1, H, W) -> (B, 3, H, W)
+        residual = self.residual(x)  # (B, 1, H, W)
+        if self.max_residual_amplitude > 0:
+            residual = torch.tanh(residual) * self.max_residual_amplitude
+        residual = residual.expand(-1, 3, -1, -1)  # (B, 1, H, W) -> (B, 3, H, W)
 
         # Add residual to padded image
         full_output = image + residual

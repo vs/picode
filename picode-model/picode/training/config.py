@@ -217,6 +217,7 @@ class FrameConfig:
     frame_color_scale: float = 2.0  # Penalize color shifts in frame residual
     frame_color_ramp_steps: int = 1  # Active from step 0
     stn_reg_scale: float = 0.1
+    residual_max_amplitude: float = 0.0  # 0 = disabled. Max residual = tanh * this value
 
 
 @dataclass

@@ -25,6 +25,7 @@ def create_encoder(
     num_bits: int,
     strength: float | None = None,
     use_mask: bool = False,
+    max_residual_amplitude: float = 0.0,
 ) -> BaseEncoder:
     """Create an encoder based on model configuration.
 
@@ -61,7 +62,9 @@ def create_encoder(
     elif config.type == "picodeframe":
         from picode.models.picodeframe import Encoder as FrameEncoder
 
-        return FrameEncoder(num_bits=num_bits)
+        return FrameEncoder(
+            num_bits=num_bits, max_residual_amplitude=max_residual_amplitude,
+        )
     elif config.type == "picotrust":
         from picode.models.picotrust import Encoder as PicoTrustEncoder
 

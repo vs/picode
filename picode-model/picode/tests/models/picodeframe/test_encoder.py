@@ -139,6 +139,35 @@ class TestEncoderForward:
         frame_diff = ((result - padded) * frame_mask).abs().sum()
         assert frame_diff > 0, "Frame pixels are identical to input (no encoding)"
 
+    def test_residual_amplitude_clamping(
+        self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
+    ) -> None:
+        """Residual is bounded by max_residual_amplitude when enabled."""
+        max_amp = 0.1
+        encoder = Encoder(num_bits=127, max_residual_amplitude=max_amp)
+        fw = frame_width
+
+        inner = sample_image[:, :, fw:-fw, fw:-fw]
+        padded = torch.nn.functional.pad(inner, (fw, fw, fw, fw), mode="reflect")
+
+        result = encoder(padded, sample_message, frame_width=fw)
+        residual = result - padded
+
+        # Frame residual must be bounded by [-max_amp, +max_amp]
+        frame_mask = torch.ones_like(result)
+        frame_mask[:, :, fw:-fw, fw:-fw] = 0
+        frame_residual = residual * frame_mask
+        assert frame_residual.abs().max() <= max_amp + 1e-6, (
+            f"Residual {frame_residual.abs().max():.4f} exceeds max_amplitude {max_amp}"
+        )
+
+    def test_no_clamping_when_disabled(
+        self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
+    ) -> None:
+        """Residual is unclamped when max_residual_amplitude=0."""
+        encoder = Encoder(num_bits=127, max_residual_amplitude=0.0)
+        assert encoder.max_residual_amplitude == 0.0
+
     def test_greyscale_residual(
         self, sample_image: torch.Tensor, sample_message: torch.Tensor, frame_width: int
     ) -> None:
