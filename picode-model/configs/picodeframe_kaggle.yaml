@@ -1,16 +1,16 @@
-# PicodeFrame Kaggle Configuration — Fixed 8% Frame Width
+# PicodeFrame Kaggle Configuration — Fixed 3% Frame Width
 # Tuned for Kaggle T4 GPU (9h session limit)
 #
-# v30e phase 1: v29 config (bootstraps reliably) + disabled collapse detector.
-# - v30a-d all failed to bootstrap — BCE 0.5 equilibrium + collapse detector death spiral.
-# - Plan: Phase 1 trains with v29 loss settings (frame_l2=0.05, no LPIPS).
-#   Phase 2 resumes with stronger L2/LPIPS to compress residual for subtle frames.
-# - Collapse detector disabled — was halving LR on a model that hadn't started learning.
+# v31: Narrow frame fine-tune — resume from v30 70K checkpoint at 3% (12px).
+# - v30 trained at 8% (32px) reached 99.5% accuracy, 7 dB frame PSNR.
+#   Frame is visible but acceptable — narrowing reduces visual footprint.
+# - v30 model already gets 88.5% at 3% without retraining — good starting point.
+# - Keep v30 loss values (L2=1.5, LPIPS=0.75) that the checkpoint was trained with.
+# - Bump message scale 15→25 to compensate for 60% less frame area.
 #
+# v30: 8% frame, L2=1.5 + LPIPS=0.75, 70K steps → 99.5% accuracy.
 # v29: Reduced distortions + STN-corrected border pooling.
 # v28: Hybrid decoder — CNN + border-pooling branch.
-# v27: Revert to BCE + cosine LR + EMA defense.
-# v23: Fixed 8% frame (32px at 400x400) — more pixel area for message encoding.
 
 experiment_name: picodeframe
 
@@ -31,9 +31,9 @@ training:
   seed: 42
   num_bits: 127
   image_size: 400
-  decoder_warmup_steps: 1500  # v29 value — bootstraps reliably
-  warmup_steps: 2500          # v29 value
-  no_im_loss_steps: 8000      # Image losses can start earlier with wider frame
+  decoder_warmup_steps: 1500  # Already past warmup — no effect on resume
+  warmup_steps: 2500          # Already past warmup — no effect on resume
+  no_im_loss_steps: 8000      # Already past — no effect on resume
   borders: black
   rnd_trans: 0.05
   rnd_trans_ramp: 30000       # Slow ramp — border signal needs gradual hardening
@@ -46,12 +46,12 @@ training:
   collapse_recovery_cooldown: 500
 
 frame:
-  min_frame_pct: 0.08
-  max_frame_pct: 0.08         # Fixed 8% = 32px at 400x400
+  min_frame_pct: 0.03
+  max_frame_pct: 0.03         # Fixed 3% = 12px at 400x400
   fixed_frame_steps: 0        # Not needed — min == max
-  frame_l2_scale: 0.05        # v29 value — regularization only during phase 1
+  frame_l2_scale: 1.5         # Match v30 training — controls residual magnitude
   frame_l2_ramp_steps: 10000
-  frame_lpips_scale: 0.0      # Disabled for phase 1 — re-enable in phase 2
+  frame_lpips_scale: 0.75     # Match v30 training — perceptual quality
   frame_lpips_ramp_steps: 15000
   frame_color_scale: 0.0      # Greyscale residual architecture handles color by construction
   frame_color_ramp_steps: 10000
@@ -60,7 +60,7 @@ frame:
 
 loss:
   message:
-    scale: 15.0               # Down from 25 — wider frame has more capacity
+    scale: 25.0               # Up from 15 — narrower frame needs stronger message gradient
     ramp_steps: 1             # No ramp — full gradient from step 0
   message_loss_type: bce       # v29 value — BCE bootstraps fine with this config
   gan_config:
