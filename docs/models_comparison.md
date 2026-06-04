@@ -1,27 +1,28 @@
 # Models Comparison
 
-This document provides an in-depth comparison of the three steganography model architectures in the Picode framework: **StegaStamp**, **Picode**, and **Picode v2**.
+This document compares the four steganography model architectures in the Picode framework: **StegaStamp**, **PicodeLite**, **PicodeFrame**, and **PicoTrust**.
 
 ## Overview
 
-| Model | Purpose | Training | Key Innovation |
-|-------|---------|----------|----------------|
-| **StegaStamp** | Baseline implementation | Supervised | Original U-Net encoder with STN decoder |
-| **Picode** | Improved gradient flow | Supervised | GroupNorm + LeakyReLU + ResBlocks |
-| **Picode v2** | Mobile-optimized | GAN-based | Content-adaptive residuals + Focal Frequency Loss |
+| Model | Purpose | Key Innovation | Status |
+|-------|---------|----------------|--------|
+| **StegaStamp** | Baseline implementation | Original U-Net encoder with STN decoder (CVPR 2020) | Foundation model |
+| **PicodeLite** | Lightweight experiment | No STN, flexible input sizes, BCH(63,36) | Experimental |
+| **PicodeFrame** | Frame-border encoding | Message in border only, center pristine | Specialized |
+| **PicoTrust** | Best overall model | E_post refinement, compact STN, grayscale residual | **Recommended** |
 
 ## Architecture Evolution
 
 ```
-StegaStamp (CVPR 2020)
-    │
-    │ [Add normalization & better activations]
-    ▼
-Picode [Improved Gradient Flow]
-    │
-    │ [Learned message expansion, bilinear upsampling, content-adaptive, GAN]
-    ▼
-Picode v2 [Mobile-Optimized]
+StegaStamp (CVPR 2020, Tancik et al.)
+    |
+    |--- PicodeLite [Lightweight experiment: no STN, flexible sizes]
+    |
+    |--- PicodeFrame [Frame-border variant: hard mask, border-pooling decoder]
+    |
+    └--- PicoTrust v1 [E_post refinement, MSE loss, compact STN, 256x256]
+              |
+              └--- PicoTrust v2 [512->256, grayscale residual, strength annealing, WGAN]
 ```
 
 ---
@@ -34,321 +35,374 @@ Picode v2 [Mobile-Optimized]
 
 ### Encoder Architecture
 
-The StegaStamp encoder uses a U-Net architecture to embed binary messages into images:
+The StegaStamp encoder uses a U-Net architecture to embed binary messages into images.
 
 **Message Preparation:**
-- Linear expansion: `num_bits → 7500 → (3, 50, 50)`
-- Bilinear upsampling: `(3, 50, 50) → (3, 400, 400)`
+- Linear expansion: `num_bits -> 7500 -> (3, 50, 50)`
+- Nearest-neighbor upsampling: `(3, 50, 50) -> (3, 400, 400)`
 - Concatenated with input image (6 channels total)
 
 **Downsampling Path (5 layers):**
 ```
 Input: (6, 400, 400)
-  ↓ Conv(6→32, k=3, s=2)    → (32, 200, 200)
-  ↓ Conv(32→32, k=3, s=2)   → (32, 100, 100)
-  ↓ Conv(32→64, k=3, s=2)   → (64, 50, 50)
-  ↓ Conv(64→128, k=3, s=2)  → (128, 25, 25)
-  ↓ Conv(128→256, k=3, s=2) → (256, 13, 13)
+  | Conv(6->32, k=3, s=1)    -> (32, 400, 400)
+  | Conv(32->32, k=3, s=2)   -> (32, 200, 200)
+  | Conv(32->64, k=3, s=2)   -> (64, 100, 100)
+  | Conv(64->128, k=3, s=2)  -> (128, 50, 50)
+  | Conv(128->256, k=3, s=2) -> (256, 25, 25)
 ```
 - ReLU activations
 - No normalization layers
 
 **Upsampling Path (with skip connections):**
 ```
-(256, 13, 13)
-  ↓ Conv(256→128) + Upsample → concat(skip4) → (256, 25, 25)
-  ↓ Conv(256→64)  + Upsample → concat(skip3) → (128, 50, 50)
-  ↓ Conv(128→32)  + Upsample → concat(skip2) → (64, 100, 100)
-  ↓ Conv(64→32)   + Upsample → concat(skip1) → (64, 200, 200)
-  ↓ Conv(64→32)   + Upsample → concat(input,message) → (70, 400, 400)
-  ↓ Conv(70→3)    → (3, 400, 400)
+(256, 25, 25)
+  | Conv(256->128, 2x2) + Upsample -> concat(skip4) -> (256, 50, 50)
+  | Conv(256->128, 3x3)  -> (128, 50, 50)
+  | Conv(128->64, 2x2) + Upsample -> concat(skip3) -> (128, 100, 100)
+  | Conv(128->64, 3x3)  -> (64, 100, 100)
+  | Conv(64->32, 2x2)  + Upsample -> concat(skip2) -> (64, 200, 200)
+  | Conv(64->32, 3x3)   -> (32, 200, 200)
+  | Conv(32->32, 2x2)  + Upsample -> concat(skip1, input) -> (70, 400, 400)
+  | Conv(70->32, 3x3)   -> (32, 400, 400)
+  | Conv(32->3, 1x1)    -> (3, 400, 400)  [residual]
 ```
 
-**Output:** Residual learning with clamping
+**Output:** Unclamped residual addition (allows gradient flow beyond [0,1] during training):
 ```python
-output = torch.clamp(image + residual, 0, 1)
+encoded = image + residual  # No clamping
 ```
 
 ### Decoder Architecture
 
 **Spatial Transformer Network (STN):**
-- 3 conv layers → flatten → predict 6 affine parameters
-- Initialized to identity transform
-- Corrects for geometric distortions
+- 3 stride-2 conv layers -> flatten(128*50*50) -> FC(128) -> affine (2x3)
+- Identity-initialized (zero weight, identity bias)
+- Optional freeze/unfreeze for training stability
 
 **Main CNN Path:**
 ```
 Input: (3, 400, 400)
-  ↓ 7 conv layers with stride-2 downsampling
-  ↓ Spatial resolution: 400→200→100→50→25→13
-  ↓ Channels: 3→32→32→64→64→64→128→128
-  ↓ Flatten → FC(21632→512) → FC(512→num_bits)
+  | 5 stride-2 + 2 stride-1 conv layers
+  | Spatial: 400->200->200->100->100->50->25->13
+  | Channels: 3->32->32->64->64->64->128->128
+  | Flatten -> FC(128*13*13=21632, 512) -> FC(512, num_bits)
 ```
 - Output: Raw logits (no sigmoid)
-- Expects `BCEWithLogitsLoss`
+- ReLU activations, no normalization
+
+### Discriminator
+
+**WGAN Discriminator** (default, `discriminator.py`):
+- 5-layer conv stack: Conv(3->8->16->32->64->1), stride-2, ReLU
+- No normalization (WGAN requirement)
+- Weight clipping at 0.01
+- Output: scalar score per image via global average pooling
+
+**PatchGAN Discriminator** (alternative, `patchgan.py`):
+- 5-layer conv stack with InstanceNorm, LeakyReLU(0.2)
+- 70x70 receptive field, spatial score map output
+- Gaussian weight init (std=0.02)
 
 ### Loss Functions
 
-```python
-total_loss = (
-    weight_msg  * BCE(decoder_logits, message) +
-    weight_l2   * MSE(encoded_image, original_image) +
-    weight_lpips * LPIPS(encoded_image, original_image)  # optional
-)
+| Loss | Purpose | Default Weight | Ramp Steps |
+|------|---------|----------------|------------|
+| BCE (with logits) | Message accuracy | 1.0 | 1 |
+| L2 (MSE) | Pixel fidelity | 1.5 | 15,000 |
+| LPIPS | Perceptual similarity | 1.0 | 15,000 |
+| Border falloff | Edge penalty | 10.0 gain | delay 60k |
+| WGAN G loss | Adversarial realism | 1.0 | 15,000 |
+
+### Characteristics
+
+| Aspect | Detail |
+|--------|--------|
+| Default size | 400x400 |
+| Num bits | 100 |
+| Normalization | None |
+| Activation | ReLU |
+| STN | Yes (large: flatten 128*50*50) |
+| Encoder params | ~1.75M |
+| Decoder params | ~54M (dominated by STN FC layer) |
+
+---
+
+## PicodeLite
+
+**Purpose:** Lightweight variant for flexible input sizes and mobile inference.
+
+**Location:** `picode/models/picodelite/`
+
+### Key Differences from StegaStamp
+
+1. **No STN** in decoder -- simpler, fewer parameters
+2. **Flexible input sizes** -- any dimension divisible by 16 (U-Net skip connections)
+3. **63 bits** default (BCH(63,36) error correction)
+4. **Message expansion** adapts to input size: `Linear -> (3, 32, 32) -> interpolate to target`
+
+### Encoder Architecture
+
+Same U-Net depth as StegaStamp (5 levels) with minor differences:
+- Message preparation uses `Linear(num_bits, 3*32*32)` then nearest interpolation to target size
+- No unused `conv10` layer (cleaner residual path)
+- Default size: 512x512
+
+### Decoder Architecture
+
+**StegaStamp-style CNN without STN:**
 ```
+Input: (3, H, W)
+  | 5 stride-2 + 2 stride-1 conv layers
+  | Channels: 3->32->32->64->64->64->128->128
+  | Flatten -> FC(128*(H/32)^2, 512) -> FC(512, num_bits)
+```
+- At 512x512: flatten size = 128*16*16 = 32,768
+- No STN, no normalization
+
+### Configuration
+
+```yaml
+# configs/picodelite.yaml
+model:
+  type: picodelite
+  encoder_size: 512
+  decoder_size: 512
+training:
+  num_bits: 63
+  image_size: 512
+loss:
+  message: { scale: 1.0, ramp_steps: 1 }
+  l2: { scale: 2.0, ramp_steps: 10000 }
+  lpips: { scale: 1.5, ramp_steps: 10000 }
+  message_loss_type: bce
+  yuv_weights: [1.0, 100.0, 100.0]  # Heavy chrominance penalty
+  gan_config: { enabled: false }
+```
+
+### Characteristics
+
+| Aspect | Detail |
+|--------|--------|
+| Default size | 512x512 |
+| Num bits | 63 |
+| STN | No |
+| Status | Experimental, not the recommended model |
+
+---
+
+## PicodeFrame
+
+**Purpose:** Encode messages only in a narrow frame border around the image, keeping the center pixels completely untouched.
+
+**Location:** `picode/models/picodeframe/`
+
+### Key Innovation
+
+A hard mask guarantees the original center pixels are never modified. The encoder generates a natural-looking frame via reflection-padded outpainting while encoding the message into the border pixels only.
+
+### Encoder Architecture
+
+Based on StegaStamp U-Net with key modifications:
+- **7 input channels**: 3 (padded image) + 1 (center mask) + 3 (message spatial)
+- **Single-channel residual**: `Conv(32->1, 1x1)` broadcast to RGB -- no color artifacts by construction
+- **Hard mask output**: `framed = image * mask + (image + residual) * (1 - mask)`
+- Optional `max_residual_amplitude` with tanh bounding
+
+### Decoder Architecture
+
+**Hybrid CNN + border-pooling architecture:**
+
+The 7-layer strided CNN compresses the 400x400 image to 13x13, which reduces a 32px border to ~1px in the feature map. To solve this, a border-pooling branch provides a direct path for border information.
+
+**CNN Branch (4 input channels):**
+- 3 RGB + 1 border indicator channel
+- Standard 7-layer strided CNN -> flatten(128*13*13)
+
+**Border-Pooling Branch:**
+- Strip-pools each border side along narrow dimension (frame_width -> 1)
+- Preserves long dimension (400 pixels)
+- 4 strips * 3 channels * height = 4800 features -> FC(256)
+
+**Combined:** `concat(CNN[21632], Border[256]) -> FC(512) -> FC(num_bits)`
+
+Both branches operate on STN-corrected images.
+
+### Frame-Specific Loss Functions
 
 | Loss | Purpose | Default Weight |
 |------|---------|----------------|
-| BCE | Message accuracy | 1.0 |
-| L2 (MSE) | Pixel-level fidelity | 1.5 |
-| LPIPS | Perceptual similarity | 1.0 |
+| BCE (message) | Message accuracy | 7.0 |
+| Frame L2 | Pixel fidelity in border only | 1.0 |
+| Frame LPIPS | Perceptual quality of border | 0.5 |
+| Frame color | Penalize cross-channel variance | 0.0 (disabled; greyscale residual handles this) |
+| STN reg | Keep STN near identity | 0.1 |
+
+### Configuration
+
+```yaml
+# configs/picodeframe_baseline.yaml
+model:
+  type: picodeframe
+  encoder_size: 400
+  decoder_size: 400
+training:
+  num_bits: 127       # BCH(127,64)
+  image_size: 400
+  warmup_steps: 5000  # Long warmup: message-only (frame signal is thin)
+  no_im_loss_steps: 10000
+frame:
+  min_frame_pct: 0.02
+  max_frame_pct: 0.05
+  fixed_frame_steps: 20000  # Max frame for first N steps, then randomize
+  frame_l2_scale: 1.0
+  frame_lpips_scale: 0.5
+  stn_reg_scale: 0.1
+```
 
 ### Characteristics
 
 | Aspect | Detail |
 |--------|--------|
-| Normalization | None |
-| Activation | ReLU |
-| Gradient Flow | Basic (prone to vanishing gradients) |
-| Training Stability | Sensitive to hyperparameters |
-| Batch Size | Works best with larger batches |
+| Default size | 400x400 |
+| Num bits | 127 (BCH(127,64)) |
+| STN | Yes (full StegaStamp STN in decoder) |
+| Center modification | None (hard mask guarantee) |
+| Residual channels | 1 (greyscale) |
+| Best for | Scenarios requiring pristine center image |
 
 ---
 
-## Picode
+## PicoTrust
 
-**Purpose:** Improved gradient flow and training stability
+**Purpose:** Best overall model. Combines StegaStamp's proven U-Net with targeted TrustMark enhancements.
 
-**Location:** `picode/models/picode/`
-
-### Key Improvements Over StegaStamp
-
-1. **GroupNorm** instead of no normalization
-2. **LeakyReLU(0.2)** instead of ReLU
-3. **ResBlocks** in decoder for skip connections
-4. **Random STN initialization** instead of zeros
-
-### Encoder Architecture
-
-Same U-Net structure as StegaStamp with normalization added:
-
-**Message Preparation:** Same as StegaStamp
-
-**Downsampling Path:**
-```
-Each layer: Conv → GroupNorm(8, channels) → LeakyReLU(0.2)
-```
-
-**Upsampling Path:**
-```
-Each layer: Conv → Upsample → GroupNorm → LeakyReLU → concat(skip)
-```
-
-**Output:** Same residual learning with clamping
-
-### Decoder Architecture
-
-**Improved STN:**
-- GroupNorm + LeakyReLU in feature extraction
-- Small random initialization (`std=0.001`) for better early training
-
-**ResBlock-based CNN:**
-```
-Stem: Conv → GroupNorm → LeakyReLU
-Stage 1: Downsample → ResBlock → (64, H/2, W/2)
-Stage 2: Downsample → ResBlock → (128, H/4, W/4)
-Stage 3: Downsample → ResBlock → (256, H/8, W/8)
-Stage 4: Downsample → ResBlock → (512, H/16, W/16)
-  ↓ Global Average Pooling → FC → num_bits
-```
-
-**ResBlock Structure:**
-```python
-class ResBlock:
-    def forward(x):
-        residual = x
-        x = Conv → GroupNorm → LeakyReLU → Conv → GroupNorm
-        return LeakyReLU(x + residual)
-```
-
-### Loss Functions
-
-Same as StegaStamp: BCE + L2 + LPIPS
-
-### Characteristics
-
-| Aspect | Detail |
-|--------|--------|
-| Normalization | GroupNorm (8 groups) |
-| Activation | LeakyReLU(0.2) |
-| Gradient Flow | Improved via ResBlocks + LeakyReLU |
-| Training Stability | More stable with small batches |
-| Batch Size | Works well with batch size 2-4 |
-
-### Why These Changes Matter
-
-**GroupNorm vs BatchNorm:**
-- BatchNorm statistics are noisy with small batches
-- GroupNorm normalizes within each sample (batch-independent)
-- Stable behavior regardless of batch size
-
-**LeakyReLU vs ReLU:**
-- ReLU can cause "dying neurons" (zero gradient when input < 0)
-- LeakyReLU maintains small gradient for negative inputs
-- Prevents gradient flow from being completely blocked
-
-**ResBlocks:**
-- Skip connections allow gradients to bypass layers
-- Mitigates vanishing gradient problem
-- Enables training of deeper networks
-
----
-
-## Picode v2
-
-**Purpose:** Mobile deployment with reduced visual artifacts
-
-**Location:** `picode/models/picode_v2/`
+**Location:** `picode/models/picotrust/`
 
 ### Key Innovations
 
-1. **MessageExpander** - Learned progressive upsampling
-2. **Bilinear upsampling** throughout U-Net
-3. **Content-adaptive residuals** - Exploit image statistics
-4. **Tanh-bounded output** - Controlled residual magnitude
-5. **No STN in decoder** - Simplified for mobile
-6. **GAN training** with PatchDiscriminator
-7. **Focal Frequency Loss** - Frequency-domain awareness
+1. **E_post refinement block** -- replaces StegaStamp's single residual conv with 3-layer post-processing
+2. **Grayscale residual** -- 1-channel E_post output broadcast to RGB = zero colour shifts by construction
+3. **Compact STN** -- AdaptiveAvgPool2d instead of flatten+FC, eliminating ~67M parameters
+4. **MSE message loss** -- avoids BCE's trivial 0.5 equilibrium
+5. **Softsign amplitude bounding** (v2) -- `strength * x / (1 + |x|)`, gradient never reaches zero
+6. **Strength annealing** (v2) -- 1.0 -> 0.03 over training for high PSNR
 
 ### Encoder Architecture
 
-**MessageExpander Module:**
+**StegaStamp U-Net Backbone** (parameterized size, default 256x256 for v1, 512x512 for v2):
+- Same architecture as StegaStamp encoder (5-level U-Net with skip connections)
+- No normalization, ReLU activations
+
+**E_post Refinement Block** (replaces StegaStamp's `conv10 + residual` layers):
 ```python
-class MessageExpander:
-    """Learned upsampling to avoid checkerboard artifacts"""
-    def forward(message):
-        # Dense: num_bits → 64×5×5
-        x = Linear → Reshape(64, 5, 5)
+e_post = nn.Sequential(
+    nn.Conv2d(32, 32, 3, padding=1),  # Spatial refinement
+    nn.ReLU(),
+    nn.Conv2d(32, 16, 1),             # Channel reduction
+    nn.SiLU(),
+    nn.Conv2d(16, 1, 1),              # Grayscale residual (no activation)
+)
+```
+- Outputs 1 channel -> `expand(-1, 3, -1, -1)` for zero colour shift
+- Last layer zero-initialized so residual starts at zero
 
-        # Progressive upsampling: 5→25→100→400
-        x = Upsample(5→25) → Conv → GroupNorm → LeakyReLU
-        x = Upsample(25→100) → Conv → GroupNorm → LeakyReLU
-        x = Upsample(100→400) → Conv → GroupNorm → LeakyReLU
-
-        return Conv(64→3)  # Final: (3, 400, 400)
+**Amplitude Bounding (v2 only):**
+```python
+# Softsign-like: gradient 1/(1+|x|)^2 never reaches zero
+residual = strength * raw_residual / (1.0 + raw_residual.abs())
 ```
 
-**Bilinear Upsampling Path:**
+**Optional learned spatial mask** (`use_mask=True`):
 ```python
-# Instead of ConvTranspose2d or pixel shuffle:
-x = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
-x = Conv2d → GroupNorm → LeakyReLU
+mask_head = Conv(32->16, 3x3) + ReLU + Conv(16->1, 1x1) + Sigmoid
+residual = residual * mask  # Focus encoding on textured regions
 ```
-
-**Content-Adaptive Residual:**
-```python
-def compute_residual(image, raw_residual):
-    # Bound residual magnitude
-    bounded = torch.tanh(raw_residual) * residual_scale
-
-    if content_adaptive:
-        # Sobel edge detection for activity map
-        activity = sobel_edges(image)  # High in textured regions
-        scale_map = 0.3 + 0.7 * activity  # Range: [0.3, 1.0]
-        bounded = bounded * scale_map
-
-    return torch.clamp(image + bounded, 0, 1)
-```
-
-**Rationale for Content-Adaptive:**
-- Larger perturbations in textured/edge regions (less visible)
-- Smaller perturbations in smooth regions (more visible)
-- Exploits human visual system characteristics
 
 ### Decoder Architecture
 
-**Design Decision: No STN**
-- Geometric correction delegated to detection pipeline
-- Simpler architecture for mobile deployment
-- STN adds computational overhead and parameters
-
-**StegaStamp-style CNN:**
+**Compact STN** (resolution-independent):
 ```
-Input: (3, 400, 400)
-  ↓ 7 conv layers (3×3, stride-2 downsampling)
-  ↓ Pure ReLU activations (no normalization)
-  ↓ Flatten → FC(21632→512) → FC(512→num_bits)
+3 stride-2 convs -> AdaptiveAvgPool2d(1) -> FC(128, 128) -> affine (2x3)
 ```
+- AdaptiveAvgPool2d replaces StegaStamp's flatten(128*50*50), eliminating ~40M params
+- Works at any input resolution
 
-**Why Standard Convolutions (not Depthwise Separable):**
-- Steganography requires aggregating globally distributed bits
-- Depthwise convolutions limit cross-channel information flow
-- Full convolutions better for this task despite being heavier
-
-### Discriminator (Training Only)
-
-**PatchGAN Architecture:**
+**Main CNN** (StegaStamp-style, preserves spatial structure):
 ```
-Input: (3, 400, 400)
-  ↓ Conv(3→64, k=4, s=2) → LeakyReLU
-  ↓ Conv(64→128, k=4, s=2) → InstanceNorm → LeakyReLU
-  ↓ Conv(128→256, k=4, s=2) → InstanceNorm → LeakyReLU
-  ↓ Conv(256→512, k=4, s=1) → InstanceNorm → LeakyReLU
-  ↓ Conv(512→1, k=4, s=1)
-Output: (1, 49, 49) patch predictions
+5 stride-2 + 2 stride-1 convs -> flatten(spatial^2) -> FC(512) -> FC(num_bits)
 ```
+- At 256x256: spatial = 8, flatten = 128*8*8 = 8,192
+- At 512x512: spatial = 16, flatten = 128*16*16 = 32,768
 
-**70×70 Receptive Field:**
-- Each output pixel classifies a 70×70 image patch
-- Forces encoder to produce locally realistic textures
-- More effective than single global real/fake decision
+### Training Configuration
 
-**InstanceNorm (not BatchNorm):**
-- Better generalization for unpaired/adversarial training
-- Normalizes each instance independently
-
-### Loss Functions
-
-**Focal Frequency Loss:**
-```python
-def focal_frequency_loss(pred, target, alpha=1.0):
-    # 2D FFT
-    pred_fft = torch.fft.fft2(pred)
-    target_fft = torch.fft.fft2(target)
-
-    # Magnitude difference
-    freq_distance = |pred_fft.abs() - target_fft.abs()|
-
-    # Focal weighting: harder frequencies get higher weight
-    weight = freq_distance ** alpha
-
-    return (weight * freq_distance).mean()
+**v1 (256x256):**
+```yaml
+# configs/picotrust_baseline.yaml
+model:
+  type: picotrust
+  encoder_size: 256
+  decoder_size: 256
+training:
+  num_bits: 100
+  num_steps: 200000
+  lr: 0.0001
+  stn_lr_scale: 0.01
+loss:
+  message: { scale: 5.0, ramp_steps: 1 }
+  l2: { scale: 1.5, ramp_steps: 20000 }
+  lpips: { scale: 1.0, ramp_steps: 20000 }
+  ffl: { scale: 1.0, ramp_steps: 20000, delay_steps: 20000 }
+  message_loss_type: mse
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001
 ```
 
-**Purpose:** Penalizes frequency-domain artifacts that L2 loss misses
-
-**GAN Losses (WGAN-GP):**
-
-Generator (Encoder):
-```python
-g_loss = -discriminator(encoded_image).mean()
-```
-
-Discriminator:
-```python
-d_loss = D(fake).mean() - D(real).mean() + λ_gp * gradient_penalty(D, real, fake)
+**v2 (512 encoder -> 256 decoder):**
+```yaml
+# configs/picotrust_v2.yaml
+model:
+  type: picotrust
+  encoder_size: 512
+  decoder_size: 256  # Trainer downsamples 512->256 for decoder
+training:
+  num_bits: 100
+  num_steps: 200000
+  lr: 0.0001
+  no_im_loss_steps: 10000    # 10k steps pure message
+  residual_strength: 1.0     # Start unbounded
+  residual_strength_anneal_target: 0.03  # Target for ~38+ dB PSNR
+  residual_strength_anneal_start: 10000
+  residual_strength_anneal_steps: 60000
+  phase2_step: 60000
+  phase2_decoder_lr_scale: 0.1
+loss:
+  message: { scale: 5.0, ramp_steps: 1 }
+  l2: { scale: 1.5, ramp_steps: 50000 }
+  lpips: { scale: 1.0, ramp_steps: 50000 }
+  ffl: { scale: 1.0, ramp_steps: 50000, delay_steps: 30000 }
+  message_loss_type: mse
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001
 ```
 
 ### Characteristics
 
 | Aspect | Detail |
 |--------|--------|
-| Normalization | GroupNorm (encoder), None (decoder), InstanceNorm (discriminator) |
-| Activation | LeakyReLU (encoder/disc), ReLU (decoder) |
-| Output Bounding | Tanh (controlled residual magnitude) |
-| Artifact Reduction | Content-adaptive + bilinear upsampling + focal freq loss |
-| Mobile Optimized | Simpler decoder, no STN |
-| Training | GAN-based (requires discriminator) |
+| Default size | 256x256 (v1), 512->256 (v2) |
+| Num bits | 100 |
+| Normalization | None |
+| Activation | ReLU (U-Net), SiLU (E_post middle layer) |
+| STN | Compact (AdaptiveAvgPool2d) |
+| Residual channels | 1 (greyscale, broadcast to 3) |
+| Encoder params | ~1.75M |
+| Decoder params | ~4.68M (at 256x256) |
+| Total params | ~6.4M |
+| Message loss | MSE (not BCE) |
 
 ---
 
@@ -356,144 +410,154 @@ d_loss = D(fake).mean() - D(real).mean() + λ_gp * gradient_penalty(D, real, fak
 
 ### Encoder Comparison
 
-| Feature | StegaStamp | Picode | Picode v2 |
-|---------|------------|--------|-----------|
-| **Message Expansion** | Linear → reshape → nearest | Linear → reshape → nearest | MessageExpander (learned) |
-| **Normalization** | None | GroupNorm(8) | GroupNorm(8) |
-| **Activation** | ReLU | LeakyReLU(0.2) | LeakyReLU(0.2) |
-| **Upsampling** | Conv2d (2×2 kernel) | Conv2d (2×2 kernel) | nn.Upsample (bilinear) |
-| **Output Residual** | Raw | Raw | Tanh-bounded |
-| **Content Adaptive** | No | No | Yes (optional) |
-| **Checkerboard Artifacts** | Possible | Possible | Minimized |
+| Feature | StegaStamp | PicodeLite | PicodeFrame | PicoTrust |
+|---------|------------|------------|-------------|-----------|
+| **Backbone** | U-Net (5 levels) | U-Net (5 levels) | U-Net (5 levels) | U-Net (5 levels) |
+| **Message Prep** | Linear->7500->(3,50,50)->nearest | Linear->(3,32,32)->nearest | Linear->7500->(3,50,50)->nearest | Linear->7500->(3,50,50)->nearest |
+| **Input Channels** | 6 (img+msg) | 6 (img+msg) | 7 (img+mask+msg) | 6 (img+msg) |
+| **Post-processing** | Single conv(32->3) | Single conv(32->3) | Single conv(32->1) | E_post 3-layer block |
+| **Residual Channels** | 3 (RGB) | 3 (RGB) | 1 (greyscale) | 1 (greyscale) |
+| **Residual Bounding** | None (unclamped) | None (unclamped) | Optional tanh | Softsign + strength annealing (v2) |
+| **Hard Mask** | No | No | Yes (center preserved) | No |
+| **Normalization** | None | None | None | None |
+| **Default Size** | 400x400 | 512x512 | 400x400 | 256 (v1) / 512 (v2) |
 
 ### Decoder Comparison
 
-| Feature | StegaStamp | Picode | Picode v2 |
-|---------|------------|--------|-----------|
-| **Architecture** | CNN + FC | ResNet + GAP + FC | CNN + FC |
-| **STN** | Yes (identity init) | Yes (random init) | No |
-| **Normalization** | None | GroupNorm(8) | None |
-| **Activation** | ReLU | LeakyReLU(0.2) | ReLU |
-| **Skip Connections** | No | ResBlocks | No |
-| **Parameters** | ~2.5M | ~4M | ~2.5M |
+| Feature | StegaStamp | PicodeLite | PicodeFrame | PicoTrust |
+|---------|------------|------------|-------------|-----------|
+| **Architecture** | CNN + FC | CNN + FC | Hybrid CNN + border-pooling | CNN + FC |
+| **STN** | Yes (large) | No | Yes (large) | Yes (compact, AdaptiveAvgPool) |
+| **STN FC size** | 128*50*50=320K | N/A | 128*50*50=320K | 128 (via GAP) |
+| **Border Branch** | No | No | Yes (strip-pooling) | No |
+| **CNN Input** | 3 channels | 3 channels | 4 channels (RGB + border mask) | 3 channels |
+| **Normalization** | None | None | None | None |
+| **Output** | Raw logits | Raw logits | Raw logits | Raw logits |
+| **Default Size** | 400x400 | 512x512 | 400x400 | 256x256 |
 
 ### Loss Function Comparison
 
-| Loss Type | StegaStamp | Picode | Picode v2 |
-|-----------|------------|--------|-----------|
-| **Message** | BCE with logits | BCE with logits | BCE with logits |
-| **Pixel** | L2 (MSE) | L2 (MSE) | L2 (MSE) |
-| **Perceptual** | LPIPS | LPIPS | Focal Frequency |
-| **Adversarial** | No | No | WGAN-GP |
+| Loss Type | StegaStamp | PicodeLite | PicodeFrame | PicoTrust |
+|-----------|------------|------------|-------------|-----------|
+| **Message** | BCE | BCE | BCE | MSE |
+| **Message Scale** | 1.0 | 1.0 | 7.0 | 5.0 |
+| **Pixel** | L2 (MSE) | L2 (MSE) | Frame L2 | L2 (MSE) |
+| **Perceptual** | LPIPS | LPIPS | Frame LPIPS | LPIPS |
+| **Frequency** | No | No | No | FFL (delayed) |
+| **Adversarial** | WGAN | No | No | WGAN |
+| **Border Falloff** | Yes | No | N/A (frame mask) | Yes |
+| **STN Reg** | No | N/A | Yes | No |
+| **YUV Weights** | [1, 1, 1] | [1, 100, 100] | N/A | [1, 1, 1] |
 
 ### Training Characteristics
 
-| Aspect | StegaStamp | Picode | Picode v2 |
-|--------|------------|--------|-----------|
-| **Training Type** | Supervised | Supervised | GAN + Supervised |
-| **Batch Size** | 8-16 recommended | 2-4 works well | 4-8 recommended |
-| **Learning Rate** | 1e-4 | 1e-4 | 1e-4 (G), 4e-4 (D) |
-| **Gradient Flow** | Prone to vanishing | Improved | Good |
-| **Training Stability** | Sensitive | More stable | Requires careful balancing |
-| **Convergence** | ~100k steps | ~100k steps | ~140k steps |
+| Aspect | StegaStamp | PicodeLite | PicodeFrame | PicoTrust |
+|--------|------------|------------|-------------|-----------|
+| **Default Steps** | 140,000 | 140,000 | 140,000 | 200,000 |
+| **Learning Rate** | 1e-4 | 1e-4 | 1e-4 | 1e-4 |
+| **Batch Size** | 4 | 4 | 4 | 8 (v1) / 4 (v2) |
+| **Warmup Steps** | 500 | 2,000 | 5,000 | 500 |
+| **Message-only Steps** | 500 | 2,000 | 10,000 | 500 (v1) / 10,000 (v2) |
+| **GAN** | WGAN | None | None | WGAN |
+| **Distortion Strategy** | Curriculum | Curriculum | Curriculum | Curriculum |
+| **Grad Clip** | 0.25 | -- | -- | 0.25 |
+
+---
+
+## Performance Results
+
+### PicoTrust v1 (256x256) -- Measured
+
+Trained to 200K steps on COCO dataset. Checkpoint: `checkpoints/picotrust_baseline/best.pt`
+
+| Metric | Value |
+|--------|-------|
+| **Bit Accuracy** | 99.8% |
+| **PSNR** | 26.54 dB |
+
+**Robustness sweep:**
+
+| Distortion | Strength | Bit Accuracy |
+|------------|----------|--------------|
+| None | -- | 99.8% |
+| JPEG Q10 | Extreme | 99.4% |
+| JPEG Q50 | Medium | 100% |
+| Noise 0.1 | High | 98.8% |
+| Blur sigma=3.0 | Heavy | 98.8% |
+| Brightness +/-0.5 | Strong | 96.8% |
+| Contrast 0.5 | Strong | 100% |
+
+### PicoTrust v2 (512->256, grayscale residual) -- Measured
+
+| Metric | Value |
+|--------|-------|
+| **Bit Accuracy** | 98.4% |
+| **PSNR** | 32.82 dB |
+| **JPEG Q10** | 98.6% |
+
+### Comparison with TrustMark (from literature)
+
+| Model | PSNR | JPEG Q10 Robustness | Notes |
+|-------|------|---------------------|-------|
+| **TrustMark-P** | ~49 dB | Fails | High PSNR but no compression robustness |
+| **TrustMark-Q** | ~42 dB | Fails | Better but still fails at Q10 |
+| **PicoTrust v1** | 26.54 dB | 99.4% | Lower PSNR, far better robustness |
+| **PicoTrust v2** | 32.82 dB | 98.6% | Better PSNR than v1, strong robustness |
+
+**Key insight:** PicoTrust trades absolute PSNR for real-world robustness. TrustMark's high PSNR comes from barely-perceptible residuals that are destroyed by JPEG compression. PicoTrust's curriculum distortion training produces residuals that survive aggressive compression.
+
+### Other Models -- No Published Results
+
+StegaStamp, PicodeLite, and PicodeFrame do not have final benchmark results available. StegaStamp is the baseline used for comparison; PicodeLite was an experiment; PicodeFrame is specialized for frame-border use cases and requires separate evaluation methodology.
+
+### Model Size
+
+| Model | Encoder Params | Decoder Params | Total | Notes |
+|-------|----------------|----------------|-------|-------|
+| **StegaStamp** | ~1.75M | ~54M | ~56M | STN FC layer dominates |
+| **PicodeLite** | ~1.6M | ~0.6M (at 512) | ~2.2M | No STN |
+| **PicodeFrame** | ~1.75M | ~54M + border FC | ~56M | Full STN + border branch |
+| **PicoTrust** | ~1.75M | ~4.68M | ~6.4M | Compact STN saves ~50M params |
+
+*Note: StegaStamp and PicodeFrame decoder params are dominated by the STN's `Linear(128*50*50, 128)` = ~40M params. PicoTrust's compact STN uses AdaptiveAvgPool2d(1) -> `Linear(128, 128)` = ~16K params.*
+
+---
+
+## Key Architectural Lessons
+
+### ResNet50 Decoder Does NOT Work for Steganography
+
+Attempted during PicoTrust development (Runs 1-2). `AdaptiveAvgPool2d(1)` reduces feature maps to a single 2048-dim vector, destroying all spatial information. Steganography requires spatial awareness to detect subtle per-pixel perturbations. StegaStamp's flatten-from-8x8 approach preserves spatial structure.
+
+### BCE Has a Trivial 0.5 Equilibrium
+
+With BCE loss, the decoder can output sigmoid(0) = 0.5 for all bits, achieving loss = ln(2) = 0.693. This is a stable equilibrium that training cannot escape. MSE loss (`mse_loss(sigmoid(logits), targets)`) has no such equilibrium -- the gradient always pushes away from 0.5.
+
+### Message Scale Must Dominate
+
+PicoTrust uses `message.scale = 5.0` against total image losses of ~3.5 at full ramp. The encoder-decoder must establish communication before image quality losses are applied, otherwise the encoder learns to produce zero residual (trivially good image quality but no message).
+
+### Grayscale Residual Eliminates Colour Artifacts
+
+Both PicodeFrame and PicoTrust output 1-channel residuals broadcast to RGB. This guarantees zero colour shift by construction, eliminating the need for chrominance penalties or YUV weighting.
+
+### Compact STN via AdaptiveAvgPool2d
+
+StegaStamp's STN uses `flatten(128*50*50) -> Linear(320000, 128)` = ~40M params. PicoTrust replaces this with `AdaptiveAvgPool2d(1) -> Linear(128, 128)` = ~16K params. The STN only needs to predict 6 affine parameters -- global average pooling provides sufficient information.
 
 ---
 
 ## Use Case Recommendations
 
-### StegaStamp
-
-**Best for:**
-- Reproducing original paper results
-- Benchmarking against published baselines
-- Large batch training scenarios
-- When exact TensorFlow compatibility is needed
-
-**Not ideal for:**
-- Small batch sizes (< 8)
-- Mobile deployment
-- When visual quality is paramount
-
-### Picode
-
-**Best for:**
-- Research and experimentation
-- Limited GPU memory (small batches)
-- When training stability is important
-- Debugging gradient flow issues
-
-**Not ideal for:**
-- Mobile deployment (larger decoder)
-- When artifact reduction is critical
-
-### Picode v2
-
-**Best for:**
-- Production deployment
-- Mobile applications (simpler decoder)
-- When visual quality is paramount
-- Scenarios requiring minimal visible artifacts
-
-**Not ideal for:**
-- Quick prototyping (GAN training complexity)
-- When training resources are limited
-- Reproducing paper results
-
----
-
-## Configuration Examples
-
-### StegaStamp Training
-
-```yaml
-# configs/stegastamp_baseline.yaml
-training:
-  model: stegastamp
-  num_steps: 100000
-  lr: 0.0001
-  batch_size: 8
-loss:
-  message: { scale: 1.0, ramp_steps: 1 }
-  l2: { scale: 1.5, ramp_steps: 20000 }
-  lpips: { scale: 1.0, ramp_steps: 20000 }
-```
-
-### Picode Training
-
-```yaml
-# configs/picode_test.yaml
-training:
-  model: picode
-  num_steps: 100000
-  lr: 0.0001
-  batch_size: 4
-loss:
-  message: { scale: 1.0, ramp_steps: 1 }
-  l2: { scale: 1.5, ramp_steps: 20000 }
-  lpips: { scale: 1.0, ramp_steps: 20000 }
-```
-
-### Picode v2 Training
-
-```yaml
-# configs/picode_v2.yaml
-training:
-  model: picode_v2
-  num_steps: 140000
-  lr: 0.0001
-  batch_size: 4
-  gan:
-    enabled: true
-    discriminator_lr: 0.0004
-    gp_weight: 10.0
-loss:
-  message: { scale: 1.0, ramp_steps: 1 }
-  l2: { scale: 1.5, ramp_steps: 20000 }
-  focal_frequency: { scale: 0.1, ramp_steps: 30000 }
-encoder:
-  content_adaptive: true
-  residual_scale: 0.1
-```
+| Requirement | Recommended Model |
+|-------------|-------------------|
+| Best overall accuracy + robustness | **PicoTrust v2** |
+| Highest compression robustness | **PicoTrust v1** (99.4% at JPEG Q10) |
+| Best PSNR with robustness | **PicoTrust v2** (32.82 dB) |
+| Center image must be pristine | **PicodeFrame** |
+| Reproduce StegaStamp paper | **StegaStamp** |
+| Fewest parameters | **PicodeLite** (~2.2M) |
+| Quick prototyping / baseline | **StegaStamp** |
 
 ---
 
@@ -502,360 +566,81 @@ encoder:
 ```python
 # StegaStamp
 from picode.models.stegastamp import Encoder, Decoder
-from picode.models.stegastamp.loss import stegastamp_loss
+from picode.models.stegastamp.loss import compute_loss, message_loss, image_loss
+from picode.models.stegastamp import Discriminator
 
-# Picode
-from picode.models.picode import Encoder, Decoder
+# PicodeLite
+from picode.models.picodelite import Encoder, Decoder
 
-# Picode v2
-from picode.models.picode_v2 import Encoder, Decoder, PatchDiscriminator
-from picode.models.picode_v2.loss import (
-    FocalFrequencyLoss,
-    generator_loss,
-    discriminator_loss,
+# PicodeFrame
+from picode.models.picodeframe import Encoder, Decoder
+from picode.models.picodeframe.loss import (
+    compute_picodeframe_loss,
+    message_loss,
+    frame_l2_loss,
+    frame_lpips_loss,
+    frame_color_loss,
+    stn_scale_loss,
 )
+
+# PicoTrust
+from picode.models.picotrust import Encoder, Decoder
+
+# Factory (model-agnostic)
+from picode.models.factory import create_encoder, create_decoder
 ```
 
 ---
 
-## Performance Benchmarks
+## Configuration Reference
 
-### Model Size and Parameters
+Available configs in `picode-model/configs/`:
 
-| Model | Encoder Params | Decoder Params | Total Params | Checkpoint Size |
-|-------|----------------|----------------|--------------|-----------------|
-| **StegaStamp** | ~1.8M | ~2.5M | ~4.3M | ~17 MB |
-| **Picode** | ~1.9M | ~4.0M | ~5.9M | ~24 MB |
-| **Picode v2** | ~2.1M | ~2.5M | ~4.6M | ~18 MB |
-| **Picode v2 + Discriminator** | ~2.1M | ~2.5M + 2.8M | ~7.4M | ~30 MB |
-
-*Note: Discriminator is only used during training, not inference.*
-
-### Inference Speed (400×400 input)
-
-| Model | CPU (i7) | GPU (RTX 3080) | Apple M1 | Notes |
-|-------|----------|----------------|----------|-------|
-| **StegaStamp Encoder** | ~120ms | ~8ms | ~25ms | Baseline |
-| **StegaStamp Decoder** | ~80ms | ~5ms | ~18ms | With STN |
-| **Picode Encoder** | ~130ms | ~9ms | ~28ms | +GroupNorm overhead |
-| **Picode Decoder** | ~110ms | ~7ms | ~24ms | ResBlocks add latency |
-| **Picode v2 Encoder** | ~140ms | ~10ms | ~30ms | MessageExpander overhead |
-| **Picode v2 Decoder** | ~70ms | ~4ms | ~15ms | No STN, simpler |
-
-*Benchmarks are approximate and vary with hardware/batch size.*
-
-### Memory Usage (Batch Size 4)
-
-| Model | Training VRAM | Inference VRAM | Peak Memory |
-|-------|---------------|----------------|-------------|
-| **StegaStamp** | ~4 GB | ~1.5 GB | ~6 GB |
-| **Picode** | ~5 GB | ~1.8 GB | ~7 GB |
-| **Picode v2** | ~8 GB | ~1.6 GB | ~12 GB |
-
-*Picode v2 training requires more memory due to discriminator and gradient penalty computation.*
-
----
-
-## Robustness Analysis
-
-### Distortion Tolerance
-
-How well each model recovers messages after various distortions (Bit Error Rate at default distortion strength):
-
-| Distortion | StegaStamp | Picode | Picode v2 | Notes |
-|------------|------------|--------|-----------|-------|
-| **JPEG Q=50** | 2-5% BER | 1-3% BER | 1-2% BER | All handle well |
-| **JPEG Q=25** | 8-12% BER | 5-8% BER | 4-6% BER | v2 best |
-| **Gaussian Blur σ=1.0** | 3-6% BER | 2-4% BER | 2-3% BER | Similar |
-| **Gaussian Blur σ=2.0** | 10-15% BER | 8-12% BER | 6-10% BER | v2 best |
-| **Gaussian Noise σ=0.05** | 5-8% BER | 4-6% BER | 3-5% BER | v2 best |
-| **Crop 80%** | 15-25% BER | 12-18% BER | 8-12% BER | Depends on STN |
-| **Rotation ±5°** | 5-10% BER | 4-8% BER | 20-30% BER | v2 lacks STN |
-| **Perspective** | 8-15% BER | 6-12% BER | 25-35% BER | v2 lacks STN |
-| **Screen-Camera** | 10-20% BER | 8-15% BER | 6-12% BER | v2 best for quality |
-
-**Key Insight:** Picode v2 excels at quality-degrading distortions (JPEG, blur, noise) but struggles with geometric distortions due to lacking an STN. The detection pipeline handles geometric correction separately for v2.
-
-### ECC Integration
-
-With BCH(127, 64) error correction (corrects up to 10 bit errors per 127-bit block):
-
-| Scenario | Raw BER Tolerance | Effective Message Recovery |
-|----------|-------------------|---------------------------|
-| **Light distortion** | < 5% BER | ~100% recovery |
-| **Medium distortion** | 5-8% BER | ~95% recovery |
-| **Heavy distortion** | 8-12% BER | ~80% recovery |
-| **Extreme distortion** | > 12% BER | < 50% recovery |
-
----
-
-## Visual Quality Metrics
-
-### Image Quality (Encoded vs Original)
-
-| Metric | StegaStamp | Picode | Picode v2 | Target |
-|--------|------------|--------|-----------|--------|
-| **PSNR** | 33-36 dB | 34-37 dB | 36-40 dB | > 35 dB |
-| **SSIM** | 0.94-0.96 | 0.95-0.97 | 0.97-0.99 | > 0.95 |
-| **LPIPS** | 0.02-0.04 | 0.015-0.03 | 0.008-0.02 | < 0.02 |
-
-*Higher PSNR/SSIM is better. Lower LPIPS is better.*
-
-### Artifact Types
-
-| Artifact | StegaStamp | Picode | Picode v2 |
-|----------|------------|--------|-----------|
-| **Checkerboard patterns** | Sometimes visible | Sometimes visible | Rare (bilinear upsampling) |
-| **Color banding** | Occasional | Occasional | Rare (content-adaptive) |
-| **Edge artifacts** | Moderate | Moderate | Minimal (content-adaptive) |
-| **Smooth region noise** | Visible | Visible | Minimal (content-adaptive) |
-| **High-frequency ringing** | Present | Present | Reduced (focal freq loss) |
-
----
-
-## Mobile Export
-
-Picode v2 decoder is designed for mobile deployment. Export options:
-
-### Core ML (iOS)
-
-```python
-import coremltools as ct
-from picode.models.picode_v2 import Decoder
-from picode.detection.mobile_export import export_coreml
-
-decoder = Decoder(num_bits=100)
-decoder.load_state_dict(torch.load("decoder.pt"))
-
-# Export with optimizations
-mlmodel = export_coreml(
-    decoder,
-    input_shape=(1, 3, 400, 400),
-    minimum_deployment_target=ct.target.iOS15,
-    compute_precision=ct.precision.FLOAT16,
-)
-mlmodel.save("PicodeDecoder.mlpackage")
-```
-
-### TensorFlow Lite (Android)
-
-```python
-from picode.detection.mobile_export import export_tflite
-
-export_tflite(
-    decoder,
-    output_path="picode_decoder.tflite",
-    input_shape=(1, 3, 400, 400),
-    quantization="float16",  # or "int8" for smaller size
-)
-```
-
-### Mobile Performance (Picode v2 Decoder)
-
-| Platform | Model Size | Inference Time | Notes |
-|----------|------------|----------------|-------|
-| **iOS (Core ML, iPhone 13)** | ~5 MB (FP16) | ~15ms | Neural Engine |
-| **iOS (Core ML, iPhone 11)** | ~5 MB (FP16) | ~25ms | Neural Engine |
-| **Android (TFLite, Pixel 6)** | ~5 MB (FP16) | ~20ms | GPU delegate |
-| **Android (TFLite, Pixel 6)** | ~2.5 MB (INT8) | ~35ms | CPU, quantized |
+| Config File | Model | Description |
+|-------------|-------|-------------|
+| `stegastamp_baseline.yaml` | StegaStamp | Original defaults (400x400, 100 bits) |
+| `stegastamp_original.yaml` | StegaStamp | Strict original TF reproduction |
+| `picodelite.yaml` | PicodeLite | Default (512x512, 63 bits) |
+| `picodelite_kaggle.yaml` | PicodeLite | Kaggle GPU config |
+| `picodelite_256bit_kaggle.yaml` | PicodeLite | 256-bit variant |
+| `picodeframe_baseline.yaml` | PicodeFrame | Default (400x400, 127 bits) |
+| `picodeframe_kaggle.yaml` | PicodeFrame | Kaggle GPU config |
+| `picotrust_baseline.yaml` | PicoTrust | v1 (256x256, 100 bits) |
+| `picotrust_v2.yaml` | PicoTrust | v2 (512->256, strength annealing) |
+| `modal_training.yaml` | StegaStamp | Modal cloud training |
+| `detection_training.yaml` | -- | FastDetector training |
+| `gradient_test.yaml` | -- | Gradient debugging |
 
 ---
 
 ## Troubleshooting
 
-### StegaStamp Issues
+### All Models
 
-**Problem:** Training loss explodes or NaN values
-- **Cause:** No normalization makes training sensitive
-- **Solution:** Reduce learning rate to 5e-5, use gradient clipping
+**Problem:** Training loss stuck at ln(2) = 0.693 (BCE) or 0.25 (MSE)
+- **Cause:** Decoder collapsed to trivial solution (output 0.5 for all bits)
+- **Solution:** Use MSE loss instead of BCE. Increase `message.scale`. Ensure `no_im_loss_steps` gives the encoder-decoder time to bootstrap communication before image losses push residual to zero.
 
-**Problem:** Poor message recovery after training
-- **Cause:** Decoder not learning STN properly
-- **Solution:** Verify STN initializes to identity, check affine parameters
+**Problem:** Decoder prob_std drops to ~0.02 then recovers
+- **Cause:** Normal behavior during distortion ramp-up. Decoder temporarily loses confidence as distortions increase.
+- **Solution:** No action needed. If it stays low (< 0.01) for many steps, check loss balance.
 
-**Problem:** Visible artifacts in encoded images
-- **Cause:** Residual magnitude too large
-- **Solution:** Increase L2 loss weight, add LPIPS loss earlier
+### PicoTrust-Specific
 
-### Picode Issues
+**Problem:** PicoTrust v2 training collapse with tanh+strength residual
+- **Cause:** `tanh(x) * strength` with initial `strength=0.1` kills encoder gradient flow, preventing bootstrap
+- **Solution:** Start with `residual_strength=1.0` (effectively unconstrained), anneal down over training. The softsign bound `x / (1 + |x|)` also helps because its gradient never reaches zero.
 
-**Problem:** GroupNorm causing instability with batch size 1
-- **Cause:** GroupNorm needs multiple channels per group
-- **Solution:** Use batch size ≥ 2, or reduce num_groups
+**Problem:** PatchGAN with high LR causes collapse
+- **Cause:** PatchGAN with 20x discriminator LR (0.0002 vs 0.00001) overpowers the generator
+- **Solution:** Use WGAN with `discriminator_lr=1e-5` (matching v1 settings)
 
-**Problem:** Decoder overfitting on small datasets
-- **Cause:** ResBlocks increase model capacity
-- **Solution:** Add dropout, use data augmentation, reduce model size
+### PicodeFrame-Specific
 
-**Problem:** STN predicting extreme transformations
-- **Cause:** Random initialization too large
-- **Solution:** Reduce STN init std to 0.0001
+**Problem:** Decoder cannot learn from fresh init (bit accuracy stuck at 50%)
+- **Cause:** 7-layer strided CNN compresses 32px border to ~1px in feature map, drowning signal
+- **Solution:** The border-pooling branch provides a direct path. Ensure `warmup_steps` is long enough (5000+) and `message.scale` is high (7.0).
 
-### Picode v2 Issues
-
-**Problem:** GAN training mode collapse
-- **Cause:** Discriminator too strong or generator too weak
-- **Solution:** Reduce discriminator LR, increase GP weight, balance D/G update ratio
-
-**Problem:** Geometric distortions break decoding
-- **Cause:** No STN in decoder
-- **Solution:** Use detection pipeline for geometric correction before decoding
-
-**Problem:** Content-adaptive scaling causes edge artifacts
-- **Cause:** Sobel edge detection too sensitive
-- **Solution:** Disable content_adaptive or tune activity map threshold
-
-**Problem:** Focal frequency loss dominates training
-- **Cause:** Scale too high relative to other losses
-- **Solution:** Reduce focal_frequency scale, increase ramp_steps
-
----
-
-## Migration Guide
-
-### StegaStamp → Picode
-
-```python
-# Before (StegaStamp)
-from picode.models.stegastamp import Encoder, Decoder
-
-# After (Picode)
-from picode.models.picode import Encoder, Decoder
-
-# Models are API-compatible, but weights are NOT transferable
-# Must retrain from scratch
-```
-
-**Config changes:**
-```yaml
-training:
-  model: picode  # was: stegastamp
-  batch_size: 4  # can reduce from 8
-```
-
-### Picode → Picode v2
-
-```python
-# Before (Picode)
-from picode.models.picode import Encoder, Decoder
-
-# After (Picode v2)
-from picode.models.picode_v2 import Encoder, Decoder, PatchDiscriminator
-from picode.models.picode_v2.loss import FocalFrequencyLoss, generator_loss, discriminator_loss
-
-# Training loop changes required for GAN
-```
-
-**Config changes:**
-```yaml
-training:
-  model: picode_v2  # was: picode
-  gan:
-    enabled: true
-    discriminator_lr: 0.0004
-    gp_weight: 10.0
-loss:
-  focal_frequency: { scale: 0.1, ramp_steps: 30000 }  # replaces lpips
-encoder:
-  content_adaptive: true
-  residual_scale: 0.1
-```
-
-**Key differences:**
-1. Add discriminator to training loop
-2. Replace LPIPS with Focal Frequency Loss
-3. Handle geometric distortions in detection pipeline (not decoder)
-4. Configure content-adaptive residuals
-
-### Using Pre-trained Weights
-
-Weights are **not compatible** between models due to architectural differences:
-- Different normalization layers
-- Different activation functions
-- Different layer configurations
-
-Always train from scratch when switching models.
-
----
-
-## Advanced Topics
-
-### Custom Distortion Strategies
-
-Each model works with the distortion strategy system:
-
-```python
-from picode.training import create_distortion_strategy
-
-# Curriculum: gradually increase difficulty
-strategy = create_distortion_strategy("curriculum", max_strength=1.0)
-
-# Fixed: constant distortion strength
-strategy = create_distortion_strategy("fixed", strength=0.5)
-
-# Random: random strength per batch
-strategy = create_distortion_strategy("random", min_strength=0.0, max_strength=1.0)
-
-# None: no distortions (not recommended)
-strategy = create_distortion_strategy("none")
-```
-
-### Multi-Scale Detection
-
-For real-world deployment, use the detection pipeline:
-
-```python
-from picode.detection import Detector
-
-detector = Detector(
-    decoder_path="checkpoints/decoder.pt",
-    model_type="picode_v2",  # or "stegastamp", "picode"
-    scales=[0.25, 0.5, 0.75, 1.0],
-    threshold=0.1,
-)
-
-# Handles geometric correction, multi-scale search, confidence scoring
-result = detector.detect("input.jpg")
-```
-
-### Ensemble Approaches
-
-For maximum robustness, combine models:
-
-```python
-def ensemble_decode(image, decoders):
-    """Average predictions from multiple decoders."""
-    predictions = []
-    for decoder in decoders:
-        logits = decoder(image)
-        predictions.append(torch.sigmoid(logits))
-
-    # Soft voting
-    avg_pred = torch.stack(predictions).mean(dim=0)
-    return (avg_pred > 0.5).float()
-```
-
----
-
-## Summary
-
-The three models represent an evolution from research baseline to production-ready:
-
-1. **StegaStamp**: Faithful reproduction of the original paper, good for benchmarking
-2. **Picode**: Training stability improvements, good for research/experimentation
-3. **Picode v2**: Artifact reduction and mobile optimization, good for deployment
-
-### Quick Selection Guide
-
-| Requirement | Recommended Model |
-|-------------|-------------------|
-| Reproduce paper results | StegaStamp |
-| Limited GPU memory | Picode |
-| Training stability | Picode |
-| Best visual quality | Picode v2 |
-| Mobile deployment | Picode v2 |
-| Geometric robustness | StegaStamp or Picode |
-| Quick prototyping | StegaStamp or Picode |
-| Production system | Picode v2 |
-
-Choose based on your use case: reproducibility (StegaStamp), experimentation (Picode), or production (Picode v2).
+**Problem:** STN learns to zoom in, cropping the frame
+- **Cause:** STN affine parameters diverge from identity
+- **Solution:** Enable `stn_reg_scale` (default 0.1) to regularize toward identity transform.

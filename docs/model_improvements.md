@@ -2,6 +2,33 @@
 
 > **Note:** All file paths in this document are relative to `picode-model/` unless otherwise specified.
 
+## Implementation Status (as of 2026-06-04)
+
+Several of the proposed improvements were implemented during PicoTrust v2 training. Others were solved through alternative approaches that proved more effective.
+
+| Improvement | Status | Notes |
+|-------------|--------|-------|
+| 4.1 Improved Message Expansion | **Not implemented** | Still uses Linear→7500→reshape(3,50,50)→nearest-neighbor. Current results are good; future work. |
+| 4.2 Focal Frequency Loss | **DONE** | Used in v2 with scale 1.0, ramp 50k, delay 30k. |
+| 4.3 Adversarial Training | **DONE** | WGAN with LR 1e-5, g_scale 1.0, ramp 20k. PatchGAN discriminator. |
+| 4.4 Content-Adaptive Residual Scaling | **Solved differently** | Grayscale residual (1-ch E_post broadcast to RGB) + softsign bounding with strength annealing + border falloff loss. |
+| 4.5 JND Masking | **Not implemented** | Strength annealing achieves similar PSNR control. |
+| 4.6 YUV Color Space | **Not implemented** | Grayscale residual eliminates colour shifts by construction, making YUV unnecessary. |
+| 4.7 Bilinear Upsampling | **Not done in message expansion** | Still uses nearest-neighbor for 50→image_size. Architecture works well regardless. |
+
+### Results: PicoTrust v1 → v2
+
+| Metric | v1 | v2 | Target | Status |
+|--------|-----|-----|--------|--------|
+| PSNR | 26.54 dB | 32.82 dB | >38 dB | Improved +6.3 dB, not yet at target |
+| Bit accuracy (clean) | 99.8% | 98.4% | 99%+ | Slight trade-off for imperceptibility |
+| Bit accuracy (JPEG Q10) | 99.4% | 98.6% | >90% | Exceeds target |
+| Colour shifts | Visible | None | None | Solved via grayscale residual |
+
+**Key architectural insight:** The colour shift problem (Section 2.1 "Color channel imbalance") was solved not by YUV embedding or content-adaptive scaling, but by making E_post output a single grayscale channel that is broadcast to RGB. This eliminates colour artifacts by construction.
+
+---
+
 ## Executive Summary
 
 Analysis of encoded images from the current model reveals **highly visible structured artifacts** that compromise imperceptibility despite achieving reliable message decoding. This document proposes architectural and training improvements to make watermarks visually undetectable while maintaining decoding robustness.
@@ -145,7 +172,9 @@ class ImprovedMessageExpander(nn.Module):
 
 > **Mobile compatibility:** ⚠️ **Encoder-only** - This improvement is encoder-side only (runs on server). The mobile decoder does not use message expansion. However, note the use of GroupNorm and LeakyReLU - if a mobile encoder is ever needed, replace with BatchNorm and ReLU6.
 
-### 4.2 Focal Frequency Loss (Priority: High)
+### 4.2 Focal Frequency Loss (Priority: High) — DONE
+
+> **Implemented in PicoTrust v2:** scale 1.0, ramp 50k steps, delay 30k steps, alpha 1.0.
 
 **Problem:** L2/LPIPS don't penalize structured frequency artifacts.
 
@@ -194,7 +223,9 @@ loss:
 
 > **Mobile compatibility:** ✅ **Training-only** - FFL is a loss function used only during training. No runtime impact on mobile inference.
 
-### 4.3 Adversarial Training with Discriminator (Priority: High)
+### 4.3 Adversarial Training with Discriminator (Priority: High) — DONE
+
+> **Implemented in PicoTrust v2:** WGAN with gradient penalty, discriminator LR 1e-5, generator loss scale 1.0, ramp 20k steps. PatchGAN architecture as proposed below.
 
 **Problem:** No mechanism to make encoded images indistinguishable from originals.
 
@@ -259,11 +290,18 @@ def generator_loss(fake_pred):
 
 > **Mobile compatibility:** ✅ **Training-only** - The discriminator is only used during training. Note: uses InstanceNorm and LeakyReLU but this doesn't affect deployment since discriminator is discarded after training.
 
-### 4.4 Content-Adaptive Residual Scaling (Priority: High)
+### 4.4 Content-Adaptive Residual Scaling (Priority: High) — Solved Differently
+
+> **Not implemented as proposed.** Instead, three alternative techniques addressed the same problems:
+> 1. **Grayscale residual** — E_post outputs 1 channel broadcast to RGB, eliminating colour shifts architecturally.
+> 2. **Softsign bounding with strength annealing** — Controls residual magnitude without destroying gradient flow (tanh+strength constraint was found to kill encoder gradient flow).
+> 3. **Border falloff in loss function** — Reduces edge/frame artifacts (Section 2.1 "Border/frame effects").
+>
+> These proved more effective than a runtime activity map because they address the root causes (unbounded residual, colour imbalance, border effects) rather than masking symptoms.
 
 **Problem:** Same perturbation magnitude in smooth and textured regions.
 
-**Solution:** Scale residual based on local image activity:
+**Original proposed solution:** Scale residual based on local image activity:
 
 ```python
 class ContentAdaptiveEncoder(nn.Module):
@@ -311,7 +349,9 @@ class ContentAdaptiveEncoder(nn.Module):
 
 > **Mobile compatibility:** ⚠️ **Encoder-only** - Content-adaptive scaling runs in the encoder (server-side). The decoder does not need to know how the watermark was scaled. If mobile encoding is needed, the `compute_activity_map` uses standard convolutions and can be made mobile-friendly.
 
-### 4.5 Just Noticeable Difference (JND) Masking (Priority: Medium)
+### 4.5 Just Noticeable Difference (JND) Masking (Priority: Medium) — Not Implemented
+
+> **Decided against:** Strength annealing (softsign bounding with a schedule that tightens the residual magnitude over training) achieves similar PSNR control without the complexity of computing per-pixel JND thresholds. May revisit if pushing beyond 38 dB PSNR.
 
 **Problem:** Perturbations exceed human visual perception thresholds in some regions.
 
@@ -377,7 +417,9 @@ constrained_residual = torch.tanh(residual) * jnd_mask * 0.1
 
 > **Mobile compatibility:** ⚠️ **Encoder-only, but affects decoder if YUV mode used** - JND masking is encoder-side. However, if combined with YUV embedding (4.6), the decoder must also work in YUV space. The JND computation itself uses only standard ops (conv2d, basic math) and is mobile-compatible if needed.
 
-### 4.6 YUV/LAB Color Space Embedding (Priority: Medium)
+### 4.6 YUV/LAB Color Space Embedding (Priority: Medium) — Not Implemented
+
+> **Decided against:** The grayscale residual approach (4.4) eliminates colour shifts by construction, making YUV embedding unnecessary. Since E_post outputs a single channel broadcast to all three RGB channels, there is no colour channel imbalance to solve.
 
 **Problem:** RGB channels treated equally, but human vision is more sensitive to luminance.
 
@@ -424,7 +466,9 @@ class YUVEncoder(nn.Module):
 
 > **Mobile compatibility:** ⚠️ **Affects both encoder AND decoder** - If the encoder embeds in YUV space, the decoder must also convert to YUV before decoding. RGB↔YUV conversion is simple matrix math and mobile-friendly. **Recommendation:** Train separate RGB and YUV decoder variants, or pre-convert images in the mobile app before feeding to decoder.
 
-### 4.7 Bilinear/Bicubic Upsampling Throughout (Priority: Medium)
+### 4.7 Bilinear/Bicubic Upsampling Throughout (Priority: Medium) — Partially Done
+
+> **Not done in message expansion** (still uses nearest-neighbor for 50→image_size), but U-Net decoder upsampling in the encoder uses bilinear. The architecture works well regardless; message expansion artifacts are absorbed by the U-Net.
 
 **Problem:** Multiple `mode="nearest"` upsampling operations create blocky patterns.
 
@@ -533,62 +577,65 @@ class EncoderAugmentation:
 
 ## 6. Mobile Compatibility Summary
 
-| Improvement | Encoder | Decoder | Mobile Status | Notes |
-|-------------|---------|---------|---------------|-------|
-| 4.1 Improved Message Expansion | ✓ | - | ⚠️ Encoder-only | Uses GroupNorm/LeakyReLU (replace if mobile encoder needed) |
-| 4.2 Focal Frequency Loss | Training | Training | ✅ Training-only | No inference impact |
-| 4.3 Adversarial Training | Training | Training | ✅ Training-only | Discriminator discarded after training |
-| 4.4 Content-Adaptive Scaling | ✓ | - | ⚠️ Encoder-only | Decoder agnostic to scaling method |
-| 4.5 JND Masking | ✓ | - | ⚠️ Encoder-only | Standard ops, mobile-friendly if needed |
-| 4.6 YUV Color Space | ✓ | ✓ | ⚠️ Both affected | Need YUV decoder variant or app-side conversion |
-| 4.7 Bilinear Upsampling | ✓ | - | ✅ Fully compatible | Well-supported on all mobile platforms |
+| Improvement | Encoder | Decoder | Mobile Status | Implementation |
+|-------------|---------|---------|---------------|----------------|
+| 4.1 Improved Message Expansion | ✓ | - | ⚠️ Encoder-only | Not done (future work) |
+| 4.2 Focal Frequency Loss | Training | Training | ✅ Training-only | **DONE** |
+| 4.3 Adversarial Training | Training | Training | ✅ Training-only | **DONE** (WGAN) |
+| 4.4 Content-Adaptive Scaling | ✓ | - | ⚠️ Encoder-only | **Solved differently** (grayscale residual) |
+| 4.5 JND Masking | ✓ | - | ⚠️ Encoder-only | Not done (strength annealing suffices) |
+| 4.6 YUV Color Space | ✓ | ✓ | ⚠️ Both affected | Not done (grayscale residual makes unnecessary) |
+| 4.7 Bilinear Upsampling | ✓ | - | ✅ Fully compatible | Partially done (U-Net only) |
 
-**Key insight:** Most improvements are encoder-side or training-only, with no mobile decoder impact. The only exception is YUV color space embedding (4.6), which requires decoder awareness. Consider making this optional or maintaining separate RGB/YUV decoder models.
+**Key insight (validated):** As predicted, the most impactful improvements were training-only (FFL, WGAN) and encoder-side (grayscale residual, softsign bounding). No mobile decoder changes were required. YUV embedding (4.6) turned out to be unnecessary because the grayscale residual approach eliminates colour shifts by construction.
 
 ---
 
 ## 7. Implementation Roadmap
 
 ### Phase 1: Quick Wins (1-2 training runs)
-1. **Replace nearest-neighbor with bilinear** in all `F.interpolate` calls ✅ Mobile-safe
-2. **Add Focal Frequency Loss** to existing training ✅ Training-only
-3. **Reduce residual magnitude** with tanh scaling ✅ Mobile-safe
+1. **Replace nearest-neighbor with bilinear** in all `F.interpolate` calls — Partially done (U-Net decoder, not message expansion)
+2. **Add Focal Frequency Loss** to existing training — **DONE** (scale 1.0, ramp 50k, delay 30k)
+3. **Reduce residual magnitude** with tanh scaling — **Solved differently** (softsign bounding + strength annealing)
 
 ### Phase 2: Architectural Improvements (2-3 training runs)
-4. **Implement ImprovedMessageExpander** with learned upsampling ⚠️ Encoder-only
-5. **Add content-adaptive residual scaling** ⚠️ Encoder-only
-6. **Train in YUV space** with channel-specific weights ⚠️ **Requires YUV mobile decoder variant**
+4. **Implement ImprovedMessageExpander** with learned upsampling — Not done (future work)
+5. **Add content-adaptive residual scaling** — **Solved differently** (grayscale residual + border falloff)
+6. **Train in YUV space** with channel-specific weights — Not implemented (grayscale residual makes this unnecessary)
 
 ### Phase 3: Adversarial Training (3-5 training runs)
-7. **Add PatchDiscriminator** with WGAN-GP ✅ Training-only
-8. **Implement progressive training schedule** ✅ Training-only
-9. **Add JND masking** as constraint ⚠️ Encoder-only
+7. **Add PatchDiscriminator** with WGAN-GP — **DONE** (WGAN, LR 1e-5, g_scale 1.0, ramp 20k)
+8. **Implement progressive training schedule** — **DONE** (phased loss ramp with delays)
+9. **Add JND masking** as constraint — Not implemented (strength annealing suffices for now)
 
 ### Phase 4: Validation & Refinement
-10. **A/B testing** of each improvement
-11. **Perceptual user study** for artifact visibility
-12. **Robustness testing** to ensure decoding accuracy maintained
+10. **A/B testing** of each improvement — Ongoing
+11. **Perceptual user study** for artifact visibility — Not yet done
+12. **Robustness testing** to ensure decoding accuracy maintained — **DONE** (98.6% at JPEG Q10)
 
 ### Phase 5: Mobile Validation (Required)
 13. **Export improved decoder to Core ML/TFLite** - Verify all ops supported
 14. **Benchmark mobile inference** - Target < 100ms on iPhone 12+
 15. **Validate bit accuracy on mobile** - Target < 2% degradation vs. server
-16. **Test YUV decoder variant** if Phase 2.6 implemented
+16. ~~**Test YUV decoder variant** if Phase 2.6 implemented~~ — No longer needed
 
 ---
 
-## 8. Expected Outcomes
+## 8. Expected Outcomes vs. Actual Results
 
 ### Quality Metrics
 
-| Metric | Current | Target | Notes |
-|--------|---------|--------|-------|
-| PSNR | ~32 dB | >38 dB | Higher is better |
-| SSIM | ~0.92 | >0.97 | Closer to 1 is better |
-| LPIPS | ~0.08 | <0.03 | Lower is better |
-| Bit accuracy (clean) | 99%+ | 99%+ | Maintain |
-| Bit accuracy (JPEG Q50) | ~95% | >90% | Slight trade-off acceptable |
-| Visual artifact score | Obvious | Imperceptible | Human evaluation |
+| Metric | v1 Baseline | Target | v2 Actual | Status |
+|--------|-------------|--------|-----------|--------|
+| PSNR | 26.54 dB | >38 dB | 32.82 dB | +6.3 dB improvement, not yet at target |
+| SSIM | ~0.92 | >0.97 | — | Not measured yet |
+| LPIPS | ~0.08 | <0.03 | — | Not measured yet |
+| Bit accuracy (clean) | 99.8% | 99%+ | 98.4% | Slight trade-off for imperceptibility |
+| Bit accuracy (JPEG Q10) | 99.4% | >90% | 98.6% | Exceeds target |
+| Colour shifts | Visible | None | None | Solved via grayscale residual |
+| Visual artifact score | Obvious | Imperceptible | Greatly reduced | Border falloff + strength annealing |
+
+**Analysis:** The +6.3 dB PSNR gain comes from the combination of FFL, WGAN adversarial training, grayscale residual, softsign bounding with strength annealing, and border falloff. The remaining gap to 38 dB may require further strength annealing tightening, improved message expansion (4.1), or JND masking (4.5).
 
 ### Mobile Deployment Metrics
 
@@ -649,4 +696,5 @@ def visualize_residual(encoder, image, message):
 
 *Document created: 2026-03-03*
 *Updated: 2026-03-04 - Added mobile deployment constraints and compatibility analysis*
-*Status: Proposed improvements pending implementation*
+*Updated: 2026-06-04 - Added implementation status, actual results from PicoTrust v2 training*
+*Status: Partially implemented. FFL (4.2) and WGAN (4.3) done. Colour/residual issues (4.4, 4.6) solved via grayscale residual + softsign bounding. Remaining items (4.1, 4.5) are future work.*

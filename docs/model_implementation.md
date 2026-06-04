@@ -1024,86 +1024,97 @@ See `docs/gradient_flow_analysis.md` for detailed analysis of gradient behavior 
 
 ---
 
+## PicoTrust Architecture (Best Model)
+
+PicoTrust extends StegaStamp with several key innovations. See `picode/models/picotrust/` for implementation.
+
+### PicoTrust Encoder
+
+Located in `picode/models/picotrust/encoder.py`:
+
+**Key differences from StegaStamp:**
+
+1. **E_post refinement block** replaces the single residual conv:
+```python
+self.e_post = nn.Sequential(
+    nn.Conv2d(32, 32, 3, padding=1),  # Spatial refinement
+    nn.ReLU(),
+    nn.Conv2d(32, 16, 1),             # Channel reduction
+    nn.SiLU(),
+    nn.Conv2d(16, 1, 1),              # Grayscale residual (1 channel)
+)
+```
+
+2. **Grayscale residual**: E_post outputs 1 channel, broadcast to 3. This architecturally guarantees R=G=B — zero colour shifts by construction.
+
+3. **Softsign bounding with strength annealing**:
+```python
+# Softsign: gradient 1/(1+|x|)^2 never reaches zero (unlike tanh)
+residual = self.strength * raw_residual / (1.0 + raw_residual.abs())
+```
+Strength starts at 1.0 (unbounded for bootstrap) and anneals to 0.03 during training.
+
+4. **Zero-initialized E_post last layer**: Residual starts at exactly zero, grows gradually.
+
+5. **No normalization layers**: Matches StegaStamp (Kaiming init throughout).
+
+6. **Parameterized size**: Default 512x512 (encoder), bilinear downsample to 256x256 for decoder.
+
+### PicoTrust Decoder
+
+Located in `picode/models/picotrust/decoder.py`:
+
+Same CNN architecture as StegaStamp decoder but with a **compact STN** using `AdaptiveAvgPool2d` instead of flatten+FC for the localization network. This makes the decoder size-agnostic.
+
+### Training Innovations
+
+- **MSE message loss** (not BCE) — avoids the trivial 0.5 equilibrium
+- **Focal Frequency Loss** — reduces frequency-domain artifacts
+- **WGAN discriminator** — conservative LR (1e-5, i.e., 0.1x encoder LR)
+- **Slow loss ramps** (50k steps) — let encoder establish communication before quality penalty
+- **Border falloff** — reduces edge artifacts
+
+### PicoTrust Results
+
+| Version | Resolution | PSNR | Bit Accuracy | JPEG Q10 | Colour Shifts |
+|---------|-----------|------|-------------|----------|---------------|
+| v1 | 256x256 | 26.54 dB | 99.8% | 99.4% | Yes |
+| v2 | 512→256 | 32.82 dB | 98.4% | 98.6% | None |
+
+Config: `configs/picotrust_v2.yaml`
+Checkpoint: `checkpoints/picotrust_v2/checkpoint_00200000_grayscale.pt`
+
+---
+
 ## Summary
 
 ### Implementation Comparison Table
 
-| Component | StegaStamp | Picode | This Project (StegaStamp) |
-|-----------|------------|--------|---------------------------|
+| Component | StegaStamp (TF) | StegaStamp (PyTorch) | PicoTrust v2 |
+|-----------|-----------------|---------------------|-------------|
 | **Framework** | TensorFlow 1.x | PyTorch | PyTorch |
-| **Normalization** | BatchNorm | GroupNorm | BatchNorm |
-| **Activation** | ReLU | LeakyReLU | ReLU |
-| **Encoder** | U-Net | U-Net | U-Net |
-| **Decoder** | CNN | CNN + ResBlocks | CNN |
-| **STN** | Yes | No | No |
-| **Message output** | Logits | Logits | Logits |
-| **Loss function** | Sigmoid CE | BCEWithLogitsLoss | BCEWithLogitsLoss |
-| **Gradient flow** | Standard | Improved | Standard |
+| **Encoder** | U-Net | U-Net | U-Net + E_post |
+| **Decoder** | CNN + STN | CNN | CNN + compact STN |
+| **Residual** | Unbounded | Unbounded | Softsign + annealing |
+| **Residual channels** | 3 (RGB) | 3 (RGB) | 1 (grayscale) |
+| **Message loss** | BCE | BCE | MSE |
+| **Image losses** | L2 + LPIPS | L2 + LPIPS | L2 + LPIPS + FFL |
+| **GAN** | Optional | No | WGAN |
+| **Normalization** | None | None | None |
+| **PSNR** | ~30 dB | ~30 dB | 32.82 dB |
 
-### When to Use Which
+### Recommended Model
 
-**Use the original StegaStamp if you need:**
-- Physical robustness (printed/photographed images)
-- Perspective correction (camera at angles)
-- GAN-based image quality
-- Curriculum learning for complex training
-
-**Use this project's implementation if you need:**
-- Simpler PyTorch integration
-- Modular distortions library
-- Cleaner code structure
-- Easy experimentation without STN complexity
-
-### Extending This Project
-
-To add STN support:
-
-```python
-import torch.nn.functional as F
-
-class DecoderWithSTN(nn.Module):
-    def __init__(self, num_bits: int = 100):
-        super().__init__()
-        # Localization network
-        self.localization = nn.Sequential(
-            nn.Conv2d(3, 32, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, 3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(128 * 50 * 50, 128),
-            nn.ReLU(),
-            nn.Linear(128, 6)  # 6 affine parameters
-        )
-
-        # Initialize to identity
-        self.localization[-1].weight.data.zero_()
-        self.localization[-1].bias.data.copy_(
-            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
-        )
-
-        # Main decoder (same as before)
-        self.decoder = Decoder(num_bits)
-
-    def forward(self, x: Tensor) -> Tensor:
-        # Predict affine transform
-        theta = self.localization(x).view(-1, 2, 3)
-
-        # Create sampling grid
-        grid = F.affine_grid(theta, x.size(), align_corners=False)
-
-        # Apply transform
-        x_transformed = F.grid_sample(x, grid, align_corners=False)
-
-        # Decode from rectified image
-        return self.decoder(x_transformed)
-```
+**PicoTrust v2** is the recommended production model:
+- Best PSNR (32.82 dB) with strong robustness (98.6% JPEG Q10)
+- Zero colour shifts (architectural guarantee)
+- Outperforms TrustMark on real-world robustness (TrustMark fails JPEG entirely)
 
 ### References
 
 - [StegaStamp Paper (CVPR 2020)](https://arxiv.org/abs/1904.05343)
+- [TrustMark: Universal Watermarking (CVPR 2024)](https://arxiv.org/abs/2311.18297)
 - [U-Net Paper](https://arxiv.org/abs/1505.04597)
 - [Spatial Transformer Networks Paper](https://arxiv.org/abs/1506.02025)
 - [LPIPS Paper](https://arxiv.org/abs/1801.03924)
+- [Focal Frequency Loss (ICCV 2021)](https://github.com/EndlessSora/focal-frequency-loss)

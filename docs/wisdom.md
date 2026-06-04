@@ -81,6 +81,89 @@ This can cause the decoder to learn faster than the encoder can adapt, leading t
 
 ---
 
+## PicoTrust Training Lessons (2026-05-26 — 2026-06-04)
+
+PicoTrust is a 512x512 encoder (U-Net + E_post refinement) with bilinear downsample to 256x256 decoder. These lessons come from two months of training iterations across v1 and v2.
+
+### Lesson 1: Bounded Residuals Kill Bootstrap
+
+Applying tanh or softsign bounds from step 0 prevents the encoder-decoder pair from bootstrapping. The encoder needs large residuals initially to create patterns distinguishable from decoder noise — bounding forces small residuals that look like random noise to an untrained decoder.
+
+**Fix:** Strength annealing — start with strength=1.0 (effectively unbounded), anneal to target (0.03) after bootstrap:
+```yaml
+residual_strength: 1.0
+residual_strength_anneal_target: 0.03
+residual_strength_anneal_start: 10000
+residual_strength_anneal_steps: 60000
+```
+
+### Lesson 2: Grayscale Residual Eliminates Colour Shifts
+
+3-channel E_post output creates R!=G!=B residuals causing visible colour shifts even at small amplitudes. Chroma loss doesn't fully fix this — it reduces shifts but doesn't eliminate them.
+
+**Fix:** E_post final layer outputs 1 channel (`Conv(16, 1, 1)`), broadcast to 3 channels. R=G=B by construction. No colour loss term needed.
+
+### Lesson 3: Softsign > Tanh for Residual Bounding
+
+Tanh gradient approaches 0 for large |x|. Once weights grow during training, gradients vanish and the encoder stops learning.
+
+**Fix:** Use softsign: `strength * x / (1 + |x|)`. Gradient `1/(1+|x|)^2` is small but never zero — the encoder always receives some learning signal.
+
+### Lesson 4: Zero-Init E_post Last Layer
+
+Kaiming-init E_post produces O(1) activations at step 0, pushing into saturation immediately. This means the residual starts large and random, fighting the image losses from step 0.
+
+**Fix:** Zero-init final Conv2d weight and bias. Residual starts at exactly zero, then grows as the network learns.
+
+### Lesson 5: Checkpoint Stores Config, Not Runtime Values
+
+Checkpoint saves `residual_strength: 1.0` (initial config), not the annealed value at the saved step. Resuming with the saved config value resets annealing.
+
+**Fix:** Recompute annealed strength from step: `t = min((step - start) / steps, 1.0); strength = initial + t * (target - initial)`.
+
+### Lesson 6: ResNet50 Decoder Cannot Do Steganography
+
+`AdaptiveAvgPool2d(1)` destroys ALL spatial information. Steganographic signals are per-pixel — the decoder needs spatial awareness. StegaStamp CNN decoder with flatten from spatial feature maps (8x8) learned in 300 steps what ResNet50 couldn't in 114K.
+
+**Takeaway:** Never use global average pooling in a steganography decoder. Use flatten from spatial feature maps.
+
+### Lesson 7: MSE > BCE for Message Loss
+
+BCE has a trivial equilibrium at 0.5 (logit=0 for all bits). The decoder can sit at this stable point and never move. MSE has stronger gradients away from 0.5 and no stable trivial solution — the gradient is always proportional to the error.
+
+### Lesson 8: Learned Spatial Masks Collapse Under Regularization
+
+`mask_reg` penalty pushes the learned mask toward 0, reducing effective residual to near-zero. At `mask_mean=0.03`, effective signal is ~0.003 — the decoder can't learn from such a faint signal.
+
+**Fix:** Don't use learned masks with bounded residuals. The bound itself is the quality guarantee — adding a learned mask on top creates redundant and conflicting constraints.
+
+### Lesson 9: message.scale Must Dominate Total Image Losses
+
+Working ratio: `message.scale=5.0` vs ~3.5 total image losses. If image losses dominate, the encoder minimizes the residual to satisfy L2/LPIPS, and the decoder starves.
+
+### Lesson 10: Black Border Inflates residual_abs_max in Logs
+
+`residual = encoded - images` includes border regions where `encoded=0` and `images=original`, giving `max=1.0`. This is misleading — the border is not part of the encoded content.
+
+**Fix:** Check `residual_mean` and `residual_std` instead of `residual_abs_max` for meaningful residual magnitude diagnostics.
+
+### Lesson 11: Conservative GAN LR
+
+PatchGAN discriminator LR of 0.0002 (20x encoder LR) causes training collapse. The discriminator overpowers the encoder, and the encoder can't embed messages while also fooling the discriminator.
+
+**Fix:** Use LR 1e-5 (0.1x encoder LR) for stable adversarial training. The discriminator should provide gentle guidance, not dominate.
+
+### PicoTrust Best Results
+
+| Metric | v1 | v2 |
+|--------|-----|-----|
+| PSNR | 26.54 dB | 32.82 dB |
+| Bit Accuracy | 99.8% | 98.4% |
+| JPEG Q10 | 99.4% | 98.6% |
+| Colour Shifts | Yes | None |
+
+---
+
 ## Summary
 
 **Key lessons:**

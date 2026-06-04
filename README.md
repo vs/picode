@@ -1,6 +1,6 @@
 # Picode
 
-Steganography framework for encoding and decoding hidden messages in images. Based on [StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020).
+Steganography framework for encoding and decoding hidden messages in images. Evolved from [StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020) into PicoTrust, a production-quality architecture achieving 32.82 dB PSNR with zero colour shifts and strong JPEG robustness.
 
 ## Sub-Projects
 
@@ -12,16 +12,27 @@ This monorepo contains multiple sub-projects:
 
 ## Features
 
-- **StegaStamp Architecture**: Proven encoder/decoder based on Tancik et al., CVPR 2020
-- **U-Net Encoder**: Embeds binary messages into images as imperceptible perturbations
-- **CNN Decoder**: Extracts hidden messages even from distorted images
+- **PicoTrust Architecture**: 512x512 U-Net encoder with grayscale E_post refinement and strength annealing, delivering 32.82 dB PSNR with zero colour shifts
+- **JPEG Robustness**: 98.6% bit accuracy at JPEG quality 10 -- messages survive extreme compression
+- **Multiple Model Variants**: StegaStamp, PicodeLite, PicodeFrame, and PicoTrust architectures for different use cases
 - **Blind Detection**: Multi-scale sliding window detector for finding steganographic images in photos/videos
 - **Differentiable Distortions**: Blur, noise, color, geometric, and JPEG compression with swappable backends (native PyTorch, Kornia)
 - **Error Correction Codes**: BCH and LDPC implementations for message robustness
-- **Training Infrastructure**: YAML config, curriculum learning, checkpointing, TensorBoard logging
-- **Cloud Training**: Modal deployment scripts for GPU training with automatic data upload
+- **Training Infrastructure**: YAML config, curriculum learning, strength annealing, WGAN discriminator, checkpointing, TensorBoard logging
+- **Cloud Training**: GCE (Google Cloud) and Modal deployment scripts for GPU training
 - **Data Collection**: Distributed web scraper for collecting paired image datasets
 - **iOS App**: Mobile implementation for real-world steganography
+
+## Results
+
+| Model | Resolution | PSNR | Bit Accuracy | JPEG Q10 | Colour Shifts |
+|-------|-----------|------|-------------|----------|---------------|
+| PicoTrust v2 | 512x512 | 32.82 dB | 98.4% | 98.6% | None |
+| PicoTrust v1 | 256x256 | 26.54 dB | 99.8% | 99.4% | Yes |
+| TrustMark-Q | 256x256 | ~42 dB | ~98% | Fails | None |
+| TrustMark-P | 256x256 | ~49 dB | ~98% | Fails | None |
+
+PicoTrust v2 is the recommended production model. It eliminates colour shifts by construction (grayscale 1-channel residual) and maintains strong accuracy under JPEG compression -- an area where TrustMark variants fail.
 
 ## Project Structure
 
@@ -33,7 +44,11 @@ This monorepo contains multiple sub-projects:
 │   ├── picode/              # Python package
 │   │   ├── distortions/     # Differentiable image distortions
 │   │   ├── ecc/             # Error correction codes (BCH, LDPC)
-│   │   ├── models/          # Encoder/decoder models (stegastamp)
+│   │   ├── models/          # Encoder/decoder models
+│   │   │   ├── stegastamp/  #   StegaStamp baseline (CVPR 2020)
+│   │   │   ├── picodelite/  #   Lightweight variant
+│   │   │   ├── picodeframe/ #   Frame-border encoding variant
+│   │   │   └── picotrust/   #   Best model (U-Net + E_post + WGAN)
 │   │   ├── detection/       # Blind steganographic image detection
 │   │   ├── training/        # Training infrastructure
 │   │   └── tests/           # Test suite
@@ -67,22 +82,26 @@ pip install -e ".[kornia]"
 
 ## Quick Start
 
-### Encoding and Decoding
+### Encoding and Decoding (PicoTrust v2)
 
 ```python
 import torch
-from picode.models.stegastamp import Encoder, Decoder
+from picode.models.picotrust import Encoder, Decoder
 
-# Initialize models (StegaStamp architecture)
-encoder = Encoder(num_bits=100)
-decoder = Decoder(num_bits=100)
+# Initialize models (PicoTrust v2 architecture)
+encoder = Encoder(num_bits=100, image_size=512, strength=0.03)
+decoder = Decoder(num_bits=100, image_size=256)
 
 # Encode a message into an image
-image = torch.rand(1, 3, 400, 400)  # NCHW, [0, 1] range
+image = torch.rand(1, 3, 512, 512)  # NCHW, [0, 1] range
 message = torch.randint(0, 2, (1, 100)).float()  # Binary message
 
 encoded_image = encoder(image, message)
-logits = decoder(encoded_image)  # Returns logits (pre-sigmoid)
+
+# Decoder works on 256x256 (bilinear downsample from 512)
+import torch.nn.functional as F
+decoded_input = F.interpolate(encoded_image, size=256, mode='bilinear', align_corners=False)
+logits = decoder(decoded_input)  # Returns logits (pre-sigmoid)
 binary_message = (torch.sigmoid(logits) > 0.5).float()
 ```
 
@@ -143,11 +162,14 @@ decoded = ldpc.decode(codeword.float())
 ```bash
 cd picode-model
 
-# Train with default config
+# Train PicoTrust v2 (recommended)
+picode-train --config configs/picotrust_v2.yaml
+
+# Train StegaStamp baseline
 picode-train --config configs/stegastamp_baseline.yaml
 
 # Override specific settings
-picode-train --config configs/stegastamp_baseline.yaml --lr 0.0002 --num-steps 50000
+picode-train --config configs/picotrust_v2.yaml --lr 0.0002 --num-steps 100000
 ```
 
 ### Distortions CLI
@@ -168,23 +190,43 @@ distort combine input.png -o output/ --intensity 0.5
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           Training Pipeline                              │
+│                     PicoTrust v2 Training Pipeline                      │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  Image + Message ──► [Encoder] ──► Encoded ──► [Distortions] ──►        │
-│                                    Image                                 │
-│                                                                          │
-│                      ──► [Decoder] ──► Recovered Message                 │
-│                                                                          │
-│  Loss = BCE(message) + L2(image) + LPIPS(perceptual)                    │
-│                                                                          │
+│                                                                         │
+│  Image (512) + Message ──► [U-Net Encoder + E_post] ──► Encoded        │
+│                              grayscale residual          Image (512)    │
+│                              softsign + strength                        │
+│                                                                         │
+│  Encoded (512) ──► [Distortions] ──► [Downsample 256] ──► [Decoder]   │
+│                                                             ──► Msg    │
+│                                                                         │
+│  Loss = MSE(message) + L2(image) + LPIPS(perceptual)                   │
+│        + FFL(frequency) + WGAN(adversarial)                             │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Encoder** (U-Net): Takes an image and binary message, outputs an encoded image that looks identical to the original
+1. **Encoder** (U-Net + E_post): Takes a 512x512 image and binary message, produces a 1-channel grayscale residual bounded by softsign with strength annealing (1.0 -> 0.03), added to the original image
 2. **Distortions**: Simulates real-world degradation (printing, compression, camera capture, lighting)
-3. **Decoder** (CNN): Extracts the message from the (possibly distorted) encoded image
-4. **Training**: End-to-end optimization balances message recovery accuracy with image quality
+3. **Decoder** (CNN + compact STN): Extracts the message from a 256x256 (bilinear downsampled) version of the encoded image
+4. **Training**: End-to-end optimization with MSE message loss, L2/LPIPS/FFL image losses, and WGAN adversarial loss
+
+## Model Architectures
+
+### PicoTrust (recommended)
+The best model. U-Net encoder at 512x512 with E_post refinement layer that outputs a 1-channel grayscale residual. Uses softsign activation with strength annealing (starts at 1.0, anneals to 0.03) to gradually constrain the residual during training. The grayscale residual eliminates colour shifts by construction. Decoder operates at 256x256 with a compact STN (AdaptiveAvgPool2d). Trained with WGAN discriminator, MSE message loss, L2, LPIPS, and FFL losses.
+
+- Best checkpoint: `checkpoints/picotrust_v2/checkpoint_00200000_grayscale.pt`
+- Config: `configs/picotrust_v2.yaml`
+
+### StegaStamp
+The original baseline architecture from Tancik et al., CVPR 2020. U-Net encoder with BatchNorm and ReLU, CNN decoder with 7 conv layers. Well-understood architecture with reliable gradient flow and training stability.
+
+### PicodeLite
+Lightweight variant designed for faster inference and smaller model size. Suitable for resource-constrained deployment.
+
+### PicodeFrame
+Frame-border encoding variant that concentrates the steganographic signal in image borders rather than the full image area. Useful when encoding should be confined to a narrow frame region.
 
 ## Available Distortions
 
@@ -247,29 +289,47 @@ for name, BlurClass in backends:
 
 ## Training Configuration
 
-Training is configured via YAML files (see `picode-model/configs/stegastamp_baseline.yaml`):
+Training is configured via YAML files. The recommended config is `picode-model/configs/picotrust_v2.yaml`:
 
 ```yaml
-experiment_name: my_experiment
+experiment_name: picotrust_v2
+
+model:
+  type: picotrust
+  encoder_size: 512
+  decoder_size: 256
 
 data:
+  source: folder
   path: ./data/train
   batch_size: 4
-  num_workers: 4
 
 training:
-  num_steps: 140000
+  num_steps: 200000
   lr: 0.0001
   num_bits: 100
-  image_size: 400
+  image_size: 512
+  warmup_steps: 500
+  no_im_loss_steps: 10000
+  residual_strength: 1.0
+  residual_strength_anneal_target: 0.03
+  residual_strength_anneal_start: 10000
+  residual_strength_anneal_steps: 60000
 
 loss:
-  message: { scale: 1.0, ramp_steps: 1 }
-  l2: { scale: 1.5, ramp_steps: 20000 }
-  lpips: { scale: 1.0, ramp_steps: 20000 }
+  message: { scale: 5.0, ramp_steps: 1 }
+  l2: { scale: 1.5, ramp_steps: 50000 }
+  lpips: { scale: 1.0, ramp_steps: 50000 }
+  ffl: { scale: 1.0, ramp_steps: 50000, delay_steps: 30000 }
+  message_loss_type: mse
+  gan_config:
+    enabled: true
+    discriminator_lr: 0.00001
+    g_loss_scale: 1.0
+    g_loss_ramp_steps: 20000
 
 distortion:
-  strategy: curriculum  # curriculum, fixed, random, none
+  strategy: curriculum
   perspective: { strength: 0.1, ramp_steps: 10000 }
   noise: { strength: 0.02, ramp_steps: 1000 }
   jpeg_quality: { strength: 25, ramp_steps: 1000 }
@@ -280,7 +340,6 @@ checkpoint:
 
 logging:
   backends: [console, tensorboard]
-  tensorboard_dir: runs
 ```
 
 ### Distortion Strategies
@@ -290,7 +349,24 @@ logging:
 - **random**: Randomly sample distortion strength each step
 - **none**: No distortions (for baseline comparison)
 
-## Cloud Training with Modal
+## Cloud Training
+
+### Google Cloud (GCE)
+
+Train on GCE with T4 GPU:
+
+```bash
+cd picode-model
+
+# Setup and start training
+./scripts/gce_setup.sh setup
+./scripts/gce_setup.sh train
+
+# Resume from checkpoint
+./scripts/gce_setup.sh resume
+```
+
+### Modal
 
 Train on cloud GPUs using [Modal](https://modal.com/):
 
@@ -313,28 +389,17 @@ cd picode-model
 ./scripts/modal_setup.sh download ./checkpoints_modal
 ```
 
-The upload command automatically handles large datasets (like COCO with 118K images) by:
-1. Creating a tarball locally
-2. Uploading the single tarball to Modal
-3. Extracting on Modal's infrastructure
-4. Cleaning up the tarball
-
-## Model Architecture
-
-### StegaStamp
-- U-Net encoder with BatchNorm and ReLU
-- CNN decoder with 7 conv layers
-- Based on the CVPR 2020 paper by Tancik et al.
-- Proven architecture with excellent gradient flow and training stability
-
 ## Documentation
 
 - [Distortions Implementation](docs/distortions_implementation.md) - Technical comparison with original StegaStamp
 - [Model Implementation](docs/model_implementation.md) - Encoder, decoder, and training details
+- [Models Comparison](docs/models_comparison.md) - Comparison of all model architectures
 - [Gradient Flow Analysis](docs/gradient_flow_analysis.md) - Analysis of gradient behavior in different architectures
 - [Model Improvements](docs/model_improvements.md) - Architecture improvements and optimizations
 - [Detection Improvements](docs/detection_improvements.md) - Blind detection system design
+- [Mobile Deployment](docs/mobile_deployment.md) - iOS and mobile deployment guide
 - [Data Scraper](docs/data_scraper.md) - Distributed image collection pipeline
+- [Wisdom](docs/wisdom.md) - Lessons learned from training experiments
 
 ## License
 
