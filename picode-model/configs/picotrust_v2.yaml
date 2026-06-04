@@ -24,6 +24,10 @@ training:
   rnd_trans_ramp: 10000
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
+  residual_strength: 1.0               # Start unbounded — let encoder-decoder bootstrap
+  residual_strength_anneal_target: 0.03 # Target ±0.03 for ~38+ dB PSNR
+  residual_strength_anneal_start: 10000 # Start when image losses activate
+  residual_strength_anneal_steps: 60000 # Slow squeeze 1.0→0.03 over 60k steps
 
 loss:
   message:
@@ -39,10 +43,10 @@ loss:
     scale: 1.0
     ramp_steps: 50000
     delay_steps: 30000
-  mask_reg:
-    scale: 0.1
-    ramp_steps: 1                       # Active from step 0 — guides mask toward textures
+  # chroma: not needed — grayscale residual (1-channel E_post) eliminates colour shifts by construction
+  # mask_reg: not needed — bounded residual handles quality guarantee
   message_loss_type: mse
+  l2_edge_gain: 0.0                      # Disabled — was dominating loss, forcing content-agnostic residual
   use_border_falloff: true
   gan_config:
     enabled: true

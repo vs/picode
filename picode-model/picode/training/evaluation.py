@@ -178,7 +178,8 @@ class Evaluator:
                 )
                 decoded_logits = self._decode_picodeframe(encoded, mask)
             else:
-                encoded = self.encoder(images, messages).clamp(0.0, 1.0)
+                enc_out = self.encoder(images, messages)
+                encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
                 decoder_input = self._resize_for_decoder(encoded)
                 decoded_logits = self.decoder(decoder_input)
 
@@ -232,7 +233,8 @@ class Evaluator:
         if self.frame_pct is not None:
             encoded, mask, _ = self._encode_picodeframe(images, messages)
         else:
-            encoded = self.encoder(images, messages).clamp(0.0, 1.0)
+            enc_out = self.encoder(images, messages)
+            encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
             mask = None
 
         for name, strengths in distortions.items():

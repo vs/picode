@@ -82,7 +82,8 @@ class LossConfig:
 
     # Chrominance preservation loss — penalizes cross-channel residual variance.
     # Keeps colour shifts imperceptible while allowing full 3ch residual capacity.
-    chroma: LossRamp | None = None
+    # Delayed to avoid interfering with encoder-decoder bootstrap.
+    chroma: DelayedLossRamp | None = None
 
     # Focal Frequency Loss (FFL) - reduces frequency-domain artifacts
     # delay 20k, ramp 20k→60k
@@ -290,11 +291,11 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     if "loss" in data:
         loss_data = data["loss"]
         # Standard LossRamp fields
-        for key in ["message", "l2", "lpips", "chroma", "mask_reg"]:
+        for key in ["message", "l2", "lpips", "mask_reg"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
-        # DelayedLossRamp fields (ffl, gan, ssim)
-        for key in ["ffl", "gan", "ssim"]:
+        # DelayedLossRamp fields (ffl, gan, ssim, chroma)
+        for key in ["ffl", "gan", "ssim", "chroma"]:
             if key in loss_data and loss_data[key] is not None:
                 if isinstance(loss_data[key], dict):
                     loss_data[key] = DelayedLossRamp(**loss_data[key])

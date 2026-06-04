@@ -32,7 +32,27 @@ def load_checkpoint(path: Path, device: torch.device) -> tuple:
         encoder_size=model_cfg.get("encoder_size", 400),
         decoder_size=model_cfg.get("decoder_size", 400),
     )
-    encoder = create_encoder(mc, num_bits=num_bits).to(device)
+    # Detect v2 features from config
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+    training_cfg = config.get("training", {})
+    residual_strength = training_cfg.get("residual_strength", 0)
+    # Compute annealed strength at saved step (config stores initial value)
+    if residual_strength > 0:
+        step = data.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+        print(f"Residual strength: {strength:.4f} (annealed from {residual_strength} at step {step})")
+    else:
+        strength = None
+
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask).to(device)
     decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
     # Load weights
@@ -54,6 +74,7 @@ def evaluate_single_image(
     image_size: int = 400,
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
+    decoder_size: int | None = None,
 ) -> dict:
     """Encode a message in an image and decode it back."""
     image = Image.open(image_path).convert("RGB")
@@ -91,8 +112,14 @@ def evaluate_single_image(
             image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
             image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
-            encoded = encoder(image_tensor, message).clamp(0.0, 1.0)
-            decoded_logits = decoder(encoded)
+            enc_out = encoder(image_tensor, message)
+            encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
+            decoder_input = encoded
+            if decoder_size and encoded.shape[-1] != decoder_size:
+                decoder_input = F.interpolate(
+                    encoded, size=(decoder_size, decoder_size), mode="bilinear", align_corners=False,
+                )
+            decoded_logits = decoder(decoder_input)
             decoded = (decoded_logits > 0).float()
             mse = ((encoded - image_tensor) ** 2).mean().item()
 
@@ -116,6 +143,7 @@ def run_robustness_sweep(
     image_size: int = 400,
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
+    decoder_size: int | None = None,
 ) -> list:
     """Run robustness sweep on a single image."""
     image = Image.open(image_path).convert("RGB")
@@ -155,7 +183,7 @@ def run_robustness_sweep(
     else:
         image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
-        evaluator = Evaluator(encoder, decoder, device)
+        evaluator = Evaluator(encoder, decoder, device, decoder_size=decoder_size)
         return evaluator.robustness_sweep(image_tensor, message, DEFAULT_ROBUSTNESS_SWEEP)
 
 
@@ -170,6 +198,7 @@ def evaluate_directory(
     image_size: int = 400,
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
+    decoder_size: int | None = None,
 ) -> dict:
     """Evaluate on all images in a directory."""
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -197,7 +226,7 @@ def evaluate_directory(
 
         result = evaluate_single_image(
             encoder, decoder, image_path, device, num_bits, image_size,
-            model_type, frame_pct,
+            model_type, frame_pct, decoder_size,
         )
         all_bit_acc.append(result["bit_accuracy"])
         all_psnr.append(result["psnr"])
@@ -206,7 +235,7 @@ def evaluate_directory(
         if run_robustness:
             rob_results = run_robustness_sweep(
                 encoder, decoder, image_path, device, num_bits, image_size,
-                model_type, frame_pct,
+                model_type, frame_pct, decoder_size,
             )
             for r in rob_results:
                 if r.distortion not in all_robustness:
@@ -271,9 +300,13 @@ def main():
 
     num_bits = config.get("training", {}).get("num_bits", 100)
     image_size = config.get("model", {}).get("encoder_size", 400)
+    decoder_size_cfg = config.get("model", {}).get("decoder_size")
+    decoder_size = decoder_size_cfg if decoder_size_cfg and decoder_size_cfg != image_size else None
     model_type = config.get("model", {}).get("type", "stegastamp")
     step = config.get("step", "unknown")
     print(f"Checkpoint step: {step}, num_bits: {num_bits}, image_size: {image_size}")
+    if decoder_size:
+        print(f"Decoder size: {decoder_size} (downsampling from {image_size})")
     print(f"Model type: {model_type}")
 
     # Count parameters
@@ -285,13 +318,13 @@ def main():
         evaluate_directory(
             encoder, decoder, args.dir, device, num_bits,
             args.robustness, args.max_images, image_size,
-            model_type, args.frame_pct,
+            model_type, args.frame_pct, decoder_size,
         )
     elif args.image:
         print(f"\nEvaluating on: {args.image}")
         result = evaluate_single_image(
             encoder, decoder, args.image, device, num_bits, image_size,
-            model_type, args.frame_pct,
+            model_type, args.frame_pct, decoder_size,
         )
         print(f"  Bit accuracy: {result['bit_accuracy']:.4f}")
         print(f"  PSNR: {result['psnr']:.2f} dB")
@@ -300,7 +333,7 @@ def main():
             print("\nRobustness sweep:")
             results = run_robustness_sweep(
                 encoder, decoder, args.image, device, num_bits, image_size,
-                model_type, args.frame_pct,
+                model_type, args.frame_pct, decoder_size,
             )
             current_dist = None
             for r in results:

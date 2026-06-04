@@ -63,12 +63,13 @@ class Encoder(BaseEncoder):
 
         # E_post: TrustMark post-processing network
         # Replaces StegaStamp's single residual conv with a 3-layer refinement block
+        # Outputs 1 channel (luminance-only) → broadcast to RGB = zero colour shift
         self.e_post = nn.Sequential(
             nn.Conv2d(32, 32, 3, padding=1),  # Spatial refinement
             nn.ReLU(),
             nn.Conv2d(32, 16, 1),             # Channel reduction
             nn.SiLU(),
-            nn.Conv2d(16, 3, 1),              # Residual output (no activation)
+            nn.Conv2d(16, 1, 1),              # Grayscale residual (no activation)
         )
 
         # Learned spatial mask (PicoTrust v2)
@@ -85,7 +86,13 @@ class Encoder(BaseEncoder):
         self._init_weights()
 
     def _init_weights(self) -> None:
-        """Initialize weights with Kaiming normal (He normal)."""
+        """Initialize weights with Kaiming normal (He normal).
+
+        Special case: E_post's final Conv2d (16→3) is zero-initialized so that
+        tanh(0) = 0 and the residual starts at zero.  This keeps gradients in
+        tanh's linear region and avoids the saturation / gradient-death problem
+        that Kaiming init causes when ``strength * tanh(...)`` is used.
+        """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
@@ -95,6 +102,11 @@ class Encoder(BaseEncoder):
                 nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
+
+        # Zero-init E_post's last layer so residual starts at zero
+        last_conv = self.e_post[-1]
+        nn.init.zeros_(last_conv.weight)
+        nn.init.zeros_(last_conv.bias)
 
     def prepare_message(self, message: Tensor) -> Tensor:
         """Expand message bits to spatial feature map.
@@ -157,12 +169,18 @@ class Encoder(BaseEncoder):
         x = torch.cat([c1, x, inputs], dim=1)  # 32 + 32 + 6 = 70 (message skip)
         x = F.relu(self.conv9(x))
 
-        # E_post: spatial refinement -> raw residual
-        raw_residual = self.e_post(x)
+        # E_post: spatial refinement -> raw 1-channel residual
+        raw_residual = self.e_post(x)  # (B, 1, H, W)
+
+        # Broadcast to 3 channels (grayscale residual → no colour shift)
+        raw_residual = raw_residual.expand(-1, 3, -1, -1)
 
         # Apply amplitude bound if configured
         if self.strength is not None:
-            residual = self.strength * torch.tanh(raw_residual)
+            # Softsign-like bound: strength * x / (1 + |x|)
+            # Unlike tanh, gradient 1/(1+|x|)^2 never reaches zero —
+            # encoder always has signal to adjust spatial patterns.
+            residual = self.strength * raw_residual / (1.0 + raw_residual.abs())
         else:
             residual = raw_residual
 

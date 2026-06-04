@@ -1236,10 +1236,9 @@ class Trainer:
 
         # Chrominance loss — penalise cross-channel variance of the residual.
         # Zero when R=G=B delta (pure luminance); positive on colour shifts.
+        # Delayed to avoid interfering with encoder-decoder bootstrap.
         if not skip_image_loss and loss_cfg.chroma is not None:
-            chroma_scale = self._ramp(
-                loss_cfg.chroma.scale, loss_cfg.chroma.ramp_steps, effective_step
-            )
+            chroma_scale = self._delayed_ramp(loss_cfg.chroma, effective_step)
             if chroma_scale > 0:
                 residual = encoded - original                      # (B, 3, H, W)
                 loss_chroma = residual.var(dim=1).mean()           # scalar

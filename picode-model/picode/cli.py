@@ -30,7 +30,26 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
         encoder_size=model_cfg.get("encoder_size", 400),
         decoder_size=model_cfg.get("decoder_size", 400),
     )
-    encoder = create_encoder(mc, num_bits=num_bits).to(device)
+    # Detect v2 features from config
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+    training_cfg = config.get("training", {})
+    residual_strength = training_cfg.get("residual_strength", 0)
+    # Compute annealed strength at saved step (config stores initial value)
+    if residual_strength > 0:
+        step = data.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+    else:
+        strength = None
+
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask).to(device)
     decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
     encoder.load_state_dict(data["encoder_state"])
@@ -159,7 +178,8 @@ def encode_command(args: argparse.Namespace) -> None:
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
         with torch.no_grad():
-            encoded = encoder(image_tensor, message_tensor)
+            enc_out = encoder(image_tensor, message_tensor)
+            encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
 
         save_image(encoded, args.output)
 
@@ -208,7 +228,16 @@ def decode_command(args: argparse.Namespace) -> None:
             mask[:, :, frame_width:size - frame_width, frame_width:size - frame_width] = 1.0
             decoded_logits = decoder(image_tensor, mask=mask)
         else:
-            decoded_logits = decoder(image_tensor)
+            # Downsample for decoder if needed (e.g., 512 encoder -> 256 decoder)
+            decoder_size = data.get("config", {}).get("model", {}).get("decoder_size")
+            decoder_input = image_tensor
+            if decoder_size and image_tensor.shape[-1] != decoder_size:
+                import torch.nn.functional as F
+                decoder_input = F.interpolate(
+                    image_tensor, size=(decoder_size, decoder_size),
+                    mode="bilinear", align_corners=False,
+                )
+            decoded_logits = decoder(decoder_input)
         decoded_bits = (decoded_logits > 0).float().squeeze(0).cpu().numpy().tolist()
 
     decoded_bits = [int(b) for b in decoded_bits]
