@@ -147,6 +147,7 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v5 | 80 | 0.012 | 39.07 dB | 85.5% | 85.0% | High PSNR, accuracy too low |
 | v6a | 80 | 0.013 | 38.84 dB | 91.7% | 90.5% | De-annealed from v5 |
 | v6b | 80 | 0.014 | 38.13 dB | 93.6% | 92.1% | De-annealed from v6a |
+| **v6c** | **80** | **0.015** | **37.71 dB** | **94.6%** | **92.4%** | **De-annealed from v6b — best balance** |
 
 ### Strength-PSNR-Accuracy Relationship
 
@@ -157,48 +158,68 @@ Empirical curve from 80-bit models (50-image evaluation):
 | 0.012 | 39.07 | 85.5% | — | — |
 | 0.013 | 38.84 | 91.7% | -0.23 dB | +6.2% |
 | 0.014 | 38.13 | 93.6% | -0.71 dB | +1.9% |
-| 0.015 | ~37.5* | ~95-96%* | ~-0.6 dB* | ~+2%* |
+| 0.015 | 37.71 | 94.6% | -0.42 dB | +1.0% |
 
-*v6c (0.015) estimated, training in progress.
+All evaluated on 50 images from the training set. The relationship is nonlinear: the first 0.001 increment (0.012→0.013) gives the best accuracy-per-PSNR tradeoff. Diminishing returns above 0.014.
 
-The relationship is nonlinear: the first 0.001 increment (0.012→0.013) gives the best accuracy-per-PSNR tradeoff.
+In linear terms (RMS residual amplitude on 0-255 scale):
+- 0.012 strength → 39.1 dB → ~2.8 pixel levels modified per pixel
+- 0.015 strength → 37.7 dB → ~3.3 pixel levels modified per pixel
 
-### Robustness (v6b, strength 0.014, 50 images)
+### Robustness (v6c, strength 0.015, 50 images)
 
 | Distortion | Bit Accuracy |
 |------------|-------------|
-| Clean | 93.6% |
-| JPEG Q10 | 92.1% |
-| JPEG Q50 | 93.8% |
-| JPEG Q90 | 93.7% |
-| Gaussian noise σ=0.05 | 93.8% |
-| Gaussian noise σ=0.10 | 92.1% |
-| Gaussian blur σ=1.0 | 94.5% |
-| Gaussian blur σ=3.0 | 93.4% |
-| Brightness ±0.1 | 93.4% |
-| Brightness ±0.3 | 90.9% |
-| Brightness ±0.5 | 88.4% |
-| Contrast ±0.3 | 94.1% |
-| Contrast ±0.5 | 93.6% |
+| Clean | 94.6% |
+| JPEG Q10 | 92.4% |
+| JPEG Q50 | 94.5% |
+| JPEG Q90 | 94.7% |
+| Gaussian noise σ=0.05 | 94.7% |
+| Gaussian noise σ=0.10 | 93.2% |
+| Gaussian blur σ=1.0 | 95.1% |
+| Gaussian blur σ=3.0 | 94.4% |
+| Brightness ±0.1 | 93.8% |
+| Brightness ±0.3 | 91.9% |
+| Brightness ±0.5 | 88.8% |
+| Contrast ±0.3 | 94.2% |
+| Contrast ±0.5 | 93.7% |
 
 ### Error Correction (LDPC)
 
-Raw bit accuracy of 91-94% translates to ~5-7 errors per 80-bit message. With LDPC soft-decision decoding:
+Raw bit accuracy of 94.6% translates to ~4-5 errors per 80-bit message. With LDPC soft-decision decoding:
 
 - **LDPC(80, d_v=2, d_c=5)**: 49 payload bits from 80 coded bits (rate 0.613)
 - Soft-decision belief propagation uses raw decoder probabilities (not hard-thresholded bits)
-- At 94% raw accuracy: LDPC corrects to near-perfect recovery
-- At 91% raw accuracy: LDPC achieves ~93% payload accuracy (edge case)
+- At 94.6% raw accuracy (v6c): LDPC corrects to **99.8% payload accuracy** on clean images
 
-Comparison of ECC approaches (tested on v4, 100-bit model):
+#### ECC Results on v6c (strength 0.015, 5 images × 10 trials)
+
+| Distortion | Raw (80b) | BCH hard (36b) | LDPC soft (49b) |
+|------------|-----------|-----------------|-----------------|
+| Clean | 96.1% | 99.6% | **99.8%** |
+| JPEG Q5 | 94.9% | 99.6% | **99.8%** |
+| JPEG Q10 | 95.6% | 99.7% | **99.6%** |
+| Blur σ=2 | 96.4% | 100% | **100%** |
+| Blur σ=6 | 96.2% | 99.9% | **99.9%** |
+| Noise σ=0.05 | 95.5% | 99.3% | **99.7%** |
+| Noise σ=0.10 | 93.8% | 98.8% | **99.1%** |
+| Noise σ=0.15 | 91.1% | 93.6% | **97.5%** |
+| Noise σ=0.20 | 87.0% | 88.1% | 92.4% |
+| Brightness ±0.3 | 92.7% | 96.0% | **96.6%** |
+| Brightness ±0.5 | 90.0% | 93.0% | 92.8% |
+| Brightness ±0.7 | 88.0% | 87.9% | 90.0% |
+
+LDPC achieves near-perfect correction (99.6-100%) on all common distortions (JPEG, blur, moderate noise). Only extreme stress tests (noise σ>0.15, brightness ±0.5+) remain below 95%.
+
+#### ECC Comparison
 
 | Method | Input | Payload | Approach |
 |--------|-------|---------|----------|
-| No ECC | 100 raw bits | 100 bits | Hard threshold at 0.5 |
-| BCH(63,36) + BCH(31,21) | 94 coded bits | 57 bits | Hard-decision, corrects 5+2 errors |
-| LDPC(100, d_v=2, d_c=5) | 100 coded bits | 61 bits | Soft-decision belief propagation |
+| No ECC | 80 raw bits | 80 bits | Hard threshold at 0.5 |
+| BCH(63,36) | 63 coded bits + 17 padding | 36 bits | Hard-decision, corrects 5 errors |
+| LDPC(80, d_v=2, d_c=5) | 80 coded bits | 49 bits | Soft-decision belief propagation |
 
-LDPC with soft decoding is strictly superior: more payload bits (61 vs 57) and better correction from using decoder confidence information rather than discarding it with hard thresholding.
+LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and better correction from using decoder confidence information rather than discarding it with hard thresholding.
 
 ## Comparison with Other Models
 
@@ -215,6 +236,7 @@ LDPC with soft decoding is strictly superior: more payload bits (61 vs 57) and b
 | **PicoTrust v2** | 2026 | 100 | 512x512 | 32.82 | 98.4% | 98.6% (Q10) | **6.3M** |
 | **PicoTrust v4** | 2026 | 100 | 512x512 | 35.56 | 97.8% | 97.6% (Q10) | **6.3M** |
 | **PicoTrust v6b** | 2026 | 80 | 512x512 | 38.13 | 93.6% | 92.1% (Q10) | **6.3M** |
+| **PicoTrust v6c** | 2026 | 80 | 512x512 | 37.71 | 94.6% | 92.4% (Q10) | **6.3M** |
 
 *StegaStamp PSNR varies 30-37 dB across evaluations; lower numbers reflect aggressive encoding for physical print-and-photograph robustness.
 
@@ -227,9 +249,9 @@ LDPC with soft decoding is strictly superior: more payload bits (61 vs 57) and b
 - **Robust across all distortions**: No single failure mode (unlike TrustMark failing JPEG, or StegaStamp failing flips).
 
 **PicoTrust limitations:**
-- **PSNR gap**: 38 dB (v6b) vs 42-51 dB for TrustMark/InvisMark. Modern methods using pretrained backbones (ConvNeXT, etc.) achieve higher PSNR with comparable robustness.
+- **PSNR gap**: 37.7 dB (v6c) vs 42-51 dB for TrustMark/InvisMark. Modern methods using pretrained backbones (ConvNeXT, etc.) achieve higher PSNR with comparable robustness.
 - **Bootstrap fragility**: ~50% failure rate per attempt. The model either bootstraps within 1000 steps or collapses permanently.
-- **Strength-accuracy cliff**: Below strength ~0.015, accuracy drops sharply. The useful operating range is narrow (0.013-0.03).
+- **Strength-accuracy cliff**: Below strength ~0.013, accuracy drops below LDPC correction threshold. The useful operating range is 0.013-0.03 for 80 bits.
 
 **vs StegaStamp (direct ancestor):**
 PicoTrust v4 achieves +6 dB PSNR over StegaStamp with comparable accuracy, in an 8.5× smaller model. Key improvements: grayscale residual, softsign bounding, strength annealing, compact STN.
@@ -238,7 +260,10 @@ PicoTrust v4 achieves +6 dB PSNR over StegaStamp with comparable accuracy, in an
 TrustMark achieves 42+ dB PSNR but has notably weaker JPEG robustness (89.7%) and struggles with noise (69.9%). PicoTrust prioritizes robustness over PSNR — different design goals. TrustMark is better for pristine digital distribution; PicoTrust is better for real-world scenarios involving compression, social media re-encoding, and physical capture.
 
 **vs InvisMark (SOTA):**
-InvisMark (51.4 dB, 99.5% JPEG) represents the current state of the art using a much larger model (ConvNeXT-base decoder, 3-stage training). PicoTrust trades ~13 dB PSNR for 8.5× fewer parameters and a simpler training procedure.
+InvisMark (51.4 dB, 99.5% JPEG) represents the current state of the art using a much larger model (ConvNeXT-base decoder, 3-stage training). PicoTrust trades ~14 dB PSNR for 8.5× fewer parameters and a simpler training procedure.
+
+**Physical robustness (print-to-scan):**
+Neither TrustMark nor InvisMark tests physical robustness — they only evaluate digital distortions. StegaStamp remains the only model designed for print-to-photograph survival. PicoTrust inherits StegaStamp's STN for geometric correction and trains with perspective/JPEG/noise distortions. At v4's strength (0.02, 35.6 dB), the residual signal (~4.2 pixel levels RMS) is comparable to StegaStamp's and could plausibly survive physical capture. Higher-PSNR variants (v6a-c at 37-39 dB) trade physical robustness for digital invisibility.
 
 ## Checkpoints
 
@@ -275,10 +300,10 @@ python scripts/test_ecc.py checkpoints/best.pt --dir data/samples --max-images 1
 
 ## Configuration
 
-Example configuration (v6b — best PSNR/accuracy balance for 80 bits):
+Example configuration (v6c — best PSNR/accuracy balance for 80 bits):
 
 ```yaml
-experiment_name: picotrust_v6b
+experiment_name: picotrust_v6c
 
 model:
   type: picotrust
@@ -287,10 +312,10 @@ model:
 
 training:
   num_bits: 80
-  num_steps: 230000
+  num_steps: 260000
   lr: 0.0001
-  residual_strength: 0.014
-  residual_strength_anneal_target: 0.014
+  residual_strength: 0.015
+  residual_strength_anneal_target: 0.015
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
 
