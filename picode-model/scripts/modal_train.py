@@ -142,6 +142,26 @@ def train(
     print(f"LR: {trainer.config.training.lr}")
     print()
 
+    # Monkey-patch _train_step to detect bootstrap collapse early
+    _original_train_step = trainer._train_step
+    _bootstrap_check_step = 2000
+    _bootstrap_min_prob_std = 0.02
+
+    def _patched_train_step(images):
+        metrics = _original_train_step(images)
+        step = trainer.global_step
+        if step == _bootstrap_check_step:
+            prob_std = metrics.get("decoder_prob_std", 0.0)
+            if prob_std < _bootstrap_min_prob_std:
+                raise RuntimeError(
+                    f"BOOTSTRAP COLLAPSED at step {step}: "
+                    f"prob_std={prob_std:.4f} < {_bootstrap_min_prob_std}"
+                )
+            print(f"\nBootstrap OK at step {step}: prob_std={prob_std:.4f}")
+        return metrics
+
+    trainer._train_step = _patched_train_step
+
     # Train
     trainer.fit()
 
