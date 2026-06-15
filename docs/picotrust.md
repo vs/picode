@@ -147,7 +147,34 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v5 | 80 | 0.012 | 39.07 dB | 85.5% | 85.0% | High PSNR, accuracy too low |
 | v6a | 80 | 0.013 | 38.84 dB | 91.7% | 90.5% | De-annealed from v5 |
 | v6b | 80 | 0.014 | 38.13 dB | 93.6% | 92.1% | De-annealed from v6a |
-| **v6c** | **80** | **0.015** | **37.71 dB** | **94.6%** | **92.4%** | **De-annealed from v6b — best balance** |
+| **v6c** | **80** | **0.015** | **37.71 dB** | **94.6%** | **92.4%** | **De-annealed from v6b — best 80-bit balance** |
+| v7 | 128 | 0.015 | 38.17 dB | 93.8% | 88.6% | 512→512 decoder, 19.2M params |
+
+### Decoder Resolution Experiment (v7)
+
+v7 tested whether a full-resolution 512→512 decoder (no downsampling) could encode more bits at the same PSNR. Key findings:
+
+**Results (128 bits, 512→512, strength 0.015, 150k steps):**
+- PSNR: 38.17 dB — **higher** than v6c (37.71 dB) despite 60% more bits
+- Raw accuracy: 93.8% — slightly lower than v6c (94.6%)
+- LDPC(128, d_v=2, d_c=4): **65 payload bits** at 99.9% clean correction (+33% vs v6c's 49 bits)
+- Model size: 19.2M params (3× larger due to FC(32768→512) layer)
+
+**Perceptual quality issue:** Despite higher PSNR, v7's encoded images had more noticeable artifacts. The 512→512 decoder removes the low-pass filtering effect of downsampling, allowing the encoder to use high-frequency spatial patterns. These have low per-pixel amplitude (high PSNR) but are perceptually conspicuous.
+
+**Lesson:** The 512→256 downsampling in earlier versions wasn't just a bottleneck — it was an implicit perceptual quality constraint. It forced the encoder to use low-frequency, smooth residual patterns that are less visible to the human eye. PSNR doesn't capture this; LPIPS is a better metric for encoding invisibility.
+
+**Robustness comparison (50 images):**
+
+| Distortion | v6c (80b, 512→256) | v7 (128b, 512→512) |
+|------------|--------------------|--------------------|
+| Clean | 94.6% | 93.8% |
+| JPEG Q10 | 92.4% | 88.6% |
+| Blur σ=3 | 94.4% | 91.5% |
+| Noise σ=0.1 | 93.2% | 90.3% |
+| Brightness ±0.5 | 88.8% | 89.2% |
+
+v7 is weaker on JPEG and blur (distortions that destroy high-frequency patterns) but comparable on brightness (a low-frequency distortion). This confirms the encoder is relying on high-frequency patterns that don't survive common distortions.
 
 ### Strength-PSNR-Accuracy Relationship
 
@@ -237,6 +264,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v4** | 2026 | 100 | 512x512 | 35.56 | 97.8% | 97.6% (Q10) | **6.3M** |
 | **PicoTrust v6b** | 2026 | 80 | 512x512 | 38.13 | 93.6% | 92.1% (Q10) | **6.3M** |
 | **PicoTrust v6c** | 2026 | 80 | 512x512 | 37.71 | 94.6% | 92.4% (Q10) | **6.3M** |
+| **PicoTrust v7** | 2026 | 128 | 512x512 | 38.17 | 93.8% | 88.6% (Q10) | **19.2M** |
 
 *StegaStamp PSNR varies 30-37 dB across evaluations; lower numbers reflect aggressive encoding for physical print-and-photograph robustness.
 
@@ -331,11 +359,11 @@ distortion:
   strategy: curriculum
 ```
 
-See `picode-model/configs/` for all training configurations (v1-v6).
+See `picode-model/configs/` for all training configurations (v1-v8).
 
 ## Training Lessons
 
-Hard-won insights from 6 model versions:
+Hard-won insights from 8 model versions:
 
 1. **Bounded residuals from step 0 kill bootstrap** — must anneal from unbounded
 2. **Grayscale residual eliminates colour shifts** — architectural guarantee, no loss needed
@@ -346,4 +374,6 @@ Hard-won insights from 6 model versions:
 7. **ResNet50 decoder fails** — AdaptiveAvgPool2d destroys spatial information
 8. **GAN LR must be conservative** — 0.1× encoder LR, not 2× (causes collapse)
 9. **De-annealing works** — relaxing strength from a converged model is faster than training from scratch
-10. **Bootstrap detection** — if `prob_std < 0.01` by step 1000, kill and restart
+10. **Bootstrap detection** — if `prob_std < 0.02` by step 2000, kill and restart (~50% failure rate)
+11. **Downsampling is a feature, not a bottleneck** — 512→256 forces low-frequency residual patterns that are perceptually invisible. 512→512 allows high-frequency patterns that have higher PSNR but are more visible and less robust to JPEG/blur
+12. **More bits don't proportionally cost accuracy** — 128 bits at 512→512 achieved 93.8% vs 94.6% for 80 bits at 512→256, only -0.8% despite 60% more bits. Encoder capacity is underutilized at 80 bits
