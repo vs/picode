@@ -149,6 +149,9 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v6b | 80 | 0.014 | 38.13 dB | 93.6% | 92.1% | De-annealed from v6a |
 | **v6c** | **80** | **0.015** | **37.71 dB** | **94.6%** | **92.4%** | **De-annealed from v6b — best 80-bit balance** |
 | v7 | 128 | 0.015 | 38.17 dB | 93.8% | 88.6% | 512→512 decoder, 19.2M params |
+| v8 | 96 | 0.014 | 37.93 dB | 78.3%* | 76.0%* | 512→416, LPIPS 1.5, GAN 1.5, stopped early |
+
+*v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
 ### Decoder Resolution Experiment (v7)
 
@@ -175,6 +178,21 @@ v7 tested whether a full-resolution 512→512 decoder (no downsampling) could en
 | Brightness ±0.5 | 88.8% | 89.2% |
 
 v7 is weaker on JPEG and blur (distortions that destroy high-frequency patterns) but comparable on brightness (a low-frequency distortion). This confirms the encoder is relying on high-frequency patterns that don't survive common distortions.
+
+### Content-Adaptive Encoding Experiment (v8)
+
+v8 tested 96 bits with a 512→416 decoder (mild 1.23× downsampling) and stronger perceptual losses (LPIPS 1.5, GAN g_loss 1.5, disc_lr 1.5e-5) at strength 0.014.
+
+**Key finding: content-adaptive residual placement.** The increased LPIPS and GAN weights taught the encoder to concentrate residuals in textured/complex regions where changes are perceptually invisible, and avoid smooth areas (sky, walls) where artifacts are conspicuous. This is the first PicoTrust version to show strongly content-adaptive encoding.
+
+**Why it works:**
+- **LPIPS (1.5×)** uses VGG features that are more sensitive to changes in smooth/perceptually important regions. Hiding in texture costs less LPIPS penalty, so the encoder learns to exploit textured areas.
+- **GAN (1.5×)** reinforces this — the discriminator easily spots artifacts in uniform regions but struggles to detect changes in texture.
+- **416 decoder** provides enough spatial resolution for locally selective encoding, unlike the 256 decoder which forces coarse low-frequency patterns.
+
+**Accuracy issue:** 96 bits at strength 0.014 pushed the capacity limit too hard. After annealing completed at step 90k, accuracy dropped to 64-71% and recovered slowly to ~77% by step 101k. The model learned excellent spatial strategy but couldn't encode enough information in the tight budget. Stopped early — the content-adaptive behavior is the valuable finding, not the accuracy.
+
+**Implications for future training:** The LPIPS 1.5 + GAN 1.5 loss combination should be applied to models with proven capacity (e.g., 80 bits at strength 0.015) to get content-adaptive encoding without sacrificing accuracy.
 
 ### Strength-PSNR-Accuracy Relationship
 
@@ -265,6 +283,9 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v6b** | 2026 | 80 | 512x512 | 38.13 | 93.6% | 92.1% (Q10) | **6.3M** |
 | **PicoTrust v6c** | 2026 | 80 | 512x512 | 37.71 | 94.6% | 92.4% (Q10) | **6.3M** |
 | **PicoTrust v7** | 2026 | 128 | 512x512 | 38.17 | 93.8% | 88.6% (Q10) | **19.2M** |
+| PicoTrust v8 | 2026 | 96 | 512→416 | 37.93 | 78.3%* | 76.0%* (Q10) | 13.3M |
+
+*v8 stopped early (100k steps). Content-adaptive encoding but 96 bits exceeded capacity at strength 0.014.
 
 *StegaStamp PSNR varies 30-37 dB across evaluations; lower numbers reflect aggressive encoding for physical print-and-photograph robustness.
 
@@ -377,3 +398,4 @@ Hard-won insights from 8 model versions:
 10. **Bootstrap detection** — if `prob_std < 0.02` by step 2000, kill and restart (~50% failure rate)
 11. **Downsampling is a feature, not a bottleneck** — 512→256 forces low-frequency residual patterns that are perceptually invisible. 512→512 allows high-frequency patterns that have higher PSNR but are more visible and less robust to JPEG/blur
 12. **More bits don't proportionally cost accuracy** — 128 bits at 512→512 achieved 93.8% vs 94.6% for 80 bits at 512→256, only -0.8% despite 60% more bits. Encoder capacity is underutilized at 80 bits
+13. **LPIPS 1.5 + GAN 1.5 enables content-adaptive encoding** — higher perceptual loss weights teach the encoder to concentrate residuals in textured regions where changes are invisible, avoiding smooth areas. This is the right spatial strategy but must be paired with sufficient bits-per-strength budget
