@@ -121,6 +121,13 @@ class DistortionConfig:
     enable_jpeg: bool = True
     enable_blur: bool = True
 
+    # Print-to-photo distortions
+    resolution_loss: DistortionRamp | None = None
+    shot_noise: DistortionRamp | None = None
+    barrel_distortion: DistortionRamp | None = None
+    vignetting: DistortionRamp | None = None
+    chromatic_aberration: DistortionRamp | None = None
+
 
 @dataclass
 class TrainingConfig:

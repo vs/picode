@@ -14,7 +14,9 @@ from torch import Tensor
 
 from picode.distortions.base import Distortion
 from picode.distortions.native import (
+    BarrelDistortion,
     BrightnessHue,
+    ChromaticAberration,
     Compose,
     Contrast,
     GaussianBlur,
@@ -22,9 +24,12 @@ from picode.distortions.native import (
     JPEGCompression,
     PerspectiveWarp,
     RandomBlurKernel,
+    ResolutionLoss,
     Rotation,
     Saturation,
     Scale,
+    ShotNoise,
+    Vignetting,
 )
 from picode.training.config import DistortionConfig, DistortionRamp
 
@@ -216,6 +221,32 @@ class CurriculumDistortion:
         persp_strength = self._ramp(self.config.perspective, step)
         if persp_strength > 0:
             distortions.append(PerspectiveWarp(intensity=1.0, scale=persp_strength))
+
+        # Print-to-photo distortions (optional, enabled via config)
+        if self.config.resolution_loss is not None:
+            rl_strength = self._ramp(self.config.resolution_loss, step)
+            if rl_strength > 0:
+                distortions.append(ResolutionLoss(intensity=1.0, scale=1.0 - rl_strength))
+
+        if self.config.shot_noise is not None:
+            sn_strength = self._ramp(self.config.shot_noise, step)
+            if sn_strength > 0:
+                distortions.append(ShotNoise(intensity=1.0, scale=sn_strength))
+
+        if self.config.barrel_distortion is not None:
+            bd_strength = self._ramp(self.config.barrel_distortion, step)
+            if bd_strength > 0:
+                distortions.append(BarrelDistortion(intensity=1.0, k_range=(-bd_strength, bd_strength)))
+
+        if self.config.vignetting is not None:
+            vig_strength = self._ramp(self.config.vignetting, step)
+            if vig_strength > 0:
+                distortions.append(Vignetting(intensity=1.0, strength=vig_strength))
+
+        if self.config.chromatic_aberration is not None:
+            ca_strength = self._ramp(self.config.chromatic_aberration, step)
+            if ca_strength > 0:
+                distortions.append(ChromaticAberration(intensity=1.0, max_shift=ca_strength))
 
         if not distortions:
             return image
