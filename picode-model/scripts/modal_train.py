@@ -51,7 +51,7 @@ image = (
         "kornia>=0.7.0",
         "tensorboard>=2.0",
     )
-    .add_local_dir(".", remote_path="/root", copy=True, ignore=["data/", "checkpoints/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/"])
+    .add_local_dir(".", remote_path="/root", copy=True, ignore=["data/", "checkpoints*/", "kaggle_*/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/", "runs/", "*.pt", "notebooks/", "picode-model/"])
     .run_commands("cd /root && pip install -e .")
 )
 
@@ -62,7 +62,7 @@ CHECKPOINT_PATH = "/checkpoints"
 
 @app.function(
     image=image,
-    gpu="T4",  # Cheapest option for testing ($0.59/hr). Options: T4, A10G, A100, H100
+    gpu="A10G",  # A10G 24GB ($1.10/hr). Options: T4, A10G, A100, H100
     timeout=3600 * 12,  # 12 hour max
     volumes={
         DATA_PATH: data_volume,
