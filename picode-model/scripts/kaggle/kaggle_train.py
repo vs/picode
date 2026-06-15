@@ -28,6 +28,7 @@ MODEL_CONFIGS = {
     "picodelite": "picodelite_kaggle.yaml",
     "picodelite_256bit": "picodelite_256bit_kaggle.yaml",
     "picodeframe": "picodeframe_kaggle.yaml",
+    "picotrust_v9b": "picotrust_v9b.yaml",
 }
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
 
@@ -155,7 +156,31 @@ else:
     print("No resume checkpoint found, starting fresh")
 
 # --- Step 5: Create Trainer and run fit() ---
-CONFIG_PATH = os.path.join(PICODE_SOURCE, "configs", MODEL_CONFIGS[MODEL_NAME])
+# Search for config file — may be at PICODE_SOURCE/configs/ or PICODE_SOURCE/../configs/
+CONFIG_NAME = MODEL_CONFIGS[MODEL_NAME]
+CONFIG_PATH = None
+for candidate in [
+    os.path.join(PICODE_SOURCE, "configs", CONFIG_NAME),
+    os.path.join(os.path.dirname(PICODE_SOURCE), "configs", CONFIG_NAME),
+    os.path.join(PICODE_SOURCE, "picode-model", "configs", CONFIG_NAME),
+]:
+    if os.path.isfile(candidate):
+        CONFIG_PATH = candidate
+        break
+
+# Fallback: recursive search
+if CONFIG_PATH is None:
+    matches = glob.glob(f"/kaggle/input/**/{CONFIG_NAME}", recursive=True)
+    if matches:
+        CONFIG_PATH = matches[0]
+
+if CONFIG_PATH is None:
+    raise FileNotFoundError(
+        f"Config {CONFIG_NAME} not found. Searched under {PICODE_SOURCE}/configs/ "
+        f"and /kaggle/input/**/{CONFIG_NAME}"
+    )
+
+print(f"Config: {CONFIG_PATH}")
 CHECKPOINT_DIR = "/kaggle/working/checkpoints"
 
 overrides = parse_overrides([
