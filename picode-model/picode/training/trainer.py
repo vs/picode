@@ -259,7 +259,7 @@ class Trainer:
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type in ("picodelite", "picotrust"):
+        if config.model.type in ("picodelite", "picotrust", "picodetier"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":
@@ -273,7 +273,7 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe", "picotrust"):
+        if config.model.type in ("stegastamp", "picodeframe", "picotrust", "picodetier"):
             # StegaStamp, PicodeFrame, and PicoTrust have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
@@ -613,6 +613,8 @@ class Trainer:
         """
         if self.config.model.type == "picodeframe":
             return self._train_step_picodeframe(images)
+        elif self.config.model.type == "picodetier":
+            return self._train_step_picodetier(images)
         return self._train_step_default(images)
 
     def _train_step_default(self, images: Tensor) -> dict[str, float]:
@@ -851,6 +853,296 @@ class Trainer:
             metrics["mask_std"] = encoder_mask.std().item()
         if hasattr(self.encoder, 'strength') and self.encoder.strength is not None:
             metrics["strength"] = self.encoder.strength
+
+        return metrics
+
+    def _train_step_picodetier(self, images: Tensor) -> dict[str, float]:
+        """Execute a single training step for PicodeTier.
+
+        Similar to _train_step_default but with:
+        - Per-tier message generation with variable bit counts and masks
+        - Tier-aware strength annealing (each tier anneals to its own target)
+        - Masked message loss (only active bits contribute)
+        - Tier classifier cross-entropy loss
+
+        Args:
+            images: Batch of images (B, C, H, W) in [0, 1].
+
+        Returns:
+            Dict of metrics for this step.
+        """
+        from picode.models.picodetier.tiers import MAX_BITS, NUM_TIERS, TIERS
+
+        batch_size = images.shape[0]
+        image_size = images.shape[-1]
+
+        # --- Per-tier message generation ---
+        tiers = torch.randint(0, NUM_TIERS, (batch_size,), device=self.device)
+
+        messages = torch.zeros(batch_size, MAX_BITS, device=self.device)
+        masks = torch.zeros(batch_size, MAX_BITS, device=self.device)
+        for i in range(batch_size):
+            t_idx = int(tiers[i].item())
+            n_bits = int(TIERS[t_idx]["bits"])
+            messages[i, :n_bits] = torch.randint(
+                0, 2, (n_bits,), device=self.device,
+            ).float()
+            masks[i, :n_bits] = 1.0
+
+        # --- Perspective warp (same as _train_step_default) ---
+        rnd_trans = self.config.training.rnd_trans
+        rnd_trans_ramp = self.config.training.rnd_trans_ramp
+        if rnd_trans_ramp > 0:
+            perspective_strength = min(
+                rnd_trans * self.global_step / rnd_trans_ramp, rnd_trans
+            )
+        else:
+            perspective_strength = rnd_trans
+
+        if perspective_strength > 0:
+            M_forward, M_inverse = get_rand_transform_matrix(
+                batch_size, image_size, perspective_strength, self.device
+            )
+        else:
+            M_forward = get_identity_transform(batch_size, self.device)
+            M_inverse = get_identity_transform(batch_size, self.device)
+
+        images_warped = perspective_transform(images, M_inverse, padding_mode="border")
+
+        # --- Tier-aware strength annealing ---
+        if self.config.training.residual_strength > 0:
+            initial = self.config.training.residual_strength
+            start = self.config.training.residual_strength_anneal_start
+            steps = self.config.training.residual_strength_anneal_steps
+            progress = 0.0
+            if self.global_step >= start and steps > 0:
+                progress = min((self.global_step - start) / steps, 1.0)
+            for t_idx in range(NUM_TIERS):
+                target = float(TIERS[t_idx]["strength"])
+                self.encoder.tier_strengths[t_idx] = initial + progress * (target - initial)
+
+        # --- Encode ---
+        encoder_output = self.encoder(images_warped, messages, tiers)
+        encoded_warped = encoder_output["encoded"]
+
+        # --- Unwarp and border handling ---
+        residual_warped = encoded_warped - images_warped
+        residual_unwarped = perspective_transform(
+            residual_warped, M_forward, padding_mode="zeros"
+        )
+        encoded = self._apply_border_mode(
+            images, residual_unwarped, M_forward, self.config.training.borders
+        )
+
+        # --- Distortions ---
+        distorted = self.distortion(encoded, self.global_step)
+
+        # --- Resize to decoder size if needed ---
+        if distorted.shape[-1] != self._decoder_size:
+            decoder_input = F.interpolate(
+                distorted, size=(self._decoder_size, self._decoder_size),
+                mode="bilinear", align_corners=False,
+            )
+        else:
+            decoder_input = distorted
+
+        # --- Decode ---
+        decoded_logits, tier_logits = self.decoder(decoder_input, tier=tiers)
+
+        # --- Compute losses ---
+        residual = encoded - images
+        step = self.global_step
+        loss_cfg = self.config.loss
+        no_im = self.config.training.no_im_loss_steps
+        skip_im = step < no_im
+        eff_step = max(0, step - no_im)
+
+        # 1. Masked message loss
+        msg_scale = self._ramp(loss_cfg.message.scale, loss_cfg.message.ramp_steps, step)
+        if loss_cfg.message_loss_type == "mse":
+            decoded_probs = torch.sigmoid(decoded_logits)
+            loss_per_bit = (decoded_probs - messages) ** 2
+        else:
+            loss_per_bit = F.binary_cross_entropy_with_logits(
+                decoded_logits, messages, reduction="none",
+            )
+        loss_msg = (loss_per_bit * masks).sum() / masks.sum()
+
+        # 2. Tier classifier loss
+        tier_scale = self._ramp(
+            loss_cfg.tier_classifier.scale, loss_cfg.tier_classifier.ramp_steps, step,
+        )
+        loss_tier = F.cross_entropy(tier_logits, tiers)
+
+        # 3. STN regularization
+        if hasattr(self.decoder, "stn_scale_reg"):
+            loss_stn = self.decoder.stn_scale_reg()
+            weighted_stn = 0.1 * loss_stn
+        else:
+            loss_stn = torch.tensor(0.0, device=self.device)
+            weighted_stn = 0.0
+
+        # 4. Image losses (skip during no_im_loss phase)
+        loss_l2 = F.mse_loss(encoded, images)
+        if skip_im:
+            weighted_l2 = torch.tensor(0.0, device=self.device)
+        else:
+            l2_scale = self._ramp(loss_cfg.l2.scale, loss_cfg.l2.ramp_steps, eff_step)
+            weighted_l2 = l2_scale * loss_l2
+
+        total = msg_scale * loss_msg + tier_scale * loss_tier + weighted_l2 + weighted_stn
+
+        losses: dict[str, Tensor] = {
+            "loss_msg": loss_msg,
+            "loss_tier": loss_tier,
+            "loss_l2": loss_l2,
+            "loss_stn_reg": loss_stn,
+        }
+
+        # LPIPS
+        if not skip_im:
+            lpips_scale = self._ramp(
+                loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, eff_step,
+            )
+        else:
+            lpips_scale = 0.0
+        if lpips_scale > 0 and self._get_lpips_fn() is not None:
+            loss_lpips = self._compute_lpips(images, encoded)
+            total = total + lpips_scale * loss_lpips
+            losses["loss_lpips"] = loss_lpips
+
+        # FFL
+        if not skip_im and loss_cfg.ffl is not None:
+            ffl_scale = self._delayed_ramp(loss_cfg.ffl, eff_step)
+            if ffl_scale > 0:
+                loss_ffl = self._compute_ffl(images, encoded)
+                total = total + ffl_scale * loss_ffl
+                losses["loss_ffl"] = loss_ffl
+
+        # GAN generator loss
+        if (
+            not skip_im
+            and hasattr(self, "discriminator")
+            and self.discriminator is not None
+        ):
+            g_scale = self._ramp(
+                loss_cfg.gan_config.g_loss_scale,
+                loss_cfg.gan_config.g_loss_ramp_steps,
+                eff_step,
+            )
+            if g_scale > 0:
+                d_fake = self.discriminator(encoded)
+                if loss_cfg.gan_config.discriminator_type == "patchgan":
+                    loss_G = 0.5 * ((d_fake - 1) ** 2).mean()
+                else:
+                    loss_G = -d_fake.mean()
+                total = total + g_scale * loss_G
+                losses["loss_G"] = loss_G
+
+        losses["loss"] = total
+
+        # --- Warmup: message + tier only ---
+        if step < self.config.training.warmup_steps:
+            total_loss = msg_scale * loss_msg + tier_scale * loss_tier
+        else:
+            total_loss = total
+
+        # --- Backward and optimize ---
+        self.optimizer.zero_grad()
+        total_loss.backward()  # type: ignore[no-untyped-call]
+
+        if self.config.training.grad_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.encoder.parameters(), max_norm=self.config.training.grad_clip_norm,
+            )
+            torch.nn.utils.clip_grad_norm_(
+                self.decoder.parameters(), max_norm=self.config.training.grad_clip_norm,
+            )
+        elif self.config.training.generator_grad_clip > 0:
+            clip_val = self.config.training.generator_grad_clip
+            for p in self.encoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
+            for p in self.decoder.parameters():
+                if p.grad is not None:
+                    p.grad.data.clamp_(-clip_val, clip_val)
+
+        self.optimizer.step()
+
+        # Phase 2: reduce decoder LR
+        if (
+            not self._phase2_triggered
+            and self.config.training.phase2_step > 0
+            and self.global_step >= self.config.training.phase2_step
+        ):
+            self._phase2_triggered = True
+            scale = self.config.training.phase2_decoder_lr_scale
+            self.optimizer.param_groups[1]["lr"] *= scale
+            if len(self.optimizer.param_groups) > 2:
+                self.optimizer.param_groups[2]["lr"] *= scale
+
+        # GAN discriminator step
+        loss_D = torch.tensor(0.0, device=self.device)
+        if (
+            self.discriminator is not None
+            and self.d_optimizer is not None
+            and self.config.loss.gan_config.enabled
+        ):
+            self.d_optimizer.zero_grad()
+            d_real = self.discriminator(images)
+            d_fake = self.discriminator(encoded.detach())
+
+            if self.config.loss.gan_config.discriminator_type == "patchgan":
+                loss_D = 0.5 * ((d_real - 1) ** 2).mean() + 0.5 * (d_fake ** 2).mean()
+                loss_D.backward()
+                self.d_optimizer.step()
+            else:
+                loss_D = d_fake.mean() - d_real.mean()
+                loss_D.backward()
+                if self.config.loss.gan_config.gradient_clip > 0:
+                    clip_val = self.config.loss.gan_config.gradient_clip
+                    for p in self.discriminator.parameters():
+                        if p.grad is not None:
+                            p.grad.data.clamp_(-clip_val, clip_val)
+                self.d_optimizer.step()
+                clip_val = self.config.loss.gan_config.clip_weights
+                for p in self.discriminator.parameters():
+                    p.data.clamp_(-clip_val, clip_val)
+
+        # --- Metrics ---
+        metrics: dict[str, float] = {}
+
+        if self.discriminator is not None:
+            metrics["loss_D"] = loss_D.item() if isinstance(loss_D, Tensor) else loss_D
+
+        metrics.update({k: v.item() for k, v in losses.items()})
+
+        # Residual statistics
+        metrics["residual_mean"] = residual.mean().item()
+        metrics["residual_std"] = residual.std().item()
+        metrics["residual_abs_max"] = residual.abs().max().item()
+
+        # Decoder output distribution
+        with torch.no_grad():
+            decoded_probs = torch.sigmoid(decoded_logits)
+            metrics["decoder_prob_mean"] = decoded_probs.mean().item()
+            metrics["decoder_prob_std"] = decoded_probs.std().item()
+
+            # Masked bit accuracy (only active bits)
+            predicted_bits = (decoded_probs > 0.5).float()
+            correct_masked = ((predicted_bits == messages).float() * masks).sum()
+            bit_accuracy = (correct_masked / masks.sum()).item()
+            metrics["bit_accuracy"] = bit_accuracy
+
+            # Tier classification accuracy
+            tier_preds = tier_logits.argmax(dim=1)
+            tier_accuracy = (tier_preds == tiers).float().mean().item()
+            metrics["tier_accuracy"] = tier_accuracy
+
+        # Per-tier strength values
+        if hasattr(self.encoder, "tier_strengths"):
+            for t_idx in range(NUM_TIERS):
+                metrics[f"strength_tier{t_idx}"] = self.encoder.tier_strengths[t_idx].item()
 
         return metrics
 
