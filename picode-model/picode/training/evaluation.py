@@ -154,6 +154,10 @@ class Evaluator:
         Returns:
             EvalMetrics with averaged results.
         """
+        # Dispatch to PicodeTier-specific evaluation if applicable
+        if hasattr(self.encoder, "tier_embedding"):
+            return self._evaluate_picodetier(dataloader, max_batches)
+
         self.encoder.eval()
         self.decoder.eval()
 
@@ -203,6 +207,98 @@ class Evaluator:
             psnr=sum(all_psnr) / len(all_psnr),
             ssim=sum(all_ssim) / len(all_ssim),
             lpips=sum(all_lpips) / len(all_lpips) if all_lpips else None,
+        )
+
+    @torch.no_grad()
+    def _evaluate_picodetier(
+        self,
+        dataloader: Any,
+        max_batches: int | None = None,
+    ) -> EvalMetrics:
+        """Run per-tier evaluation for PicodeTier encoder/decoder.
+
+        Evaluates all tiers for each batch, using tier-specific message lengths
+        (zero-padded to MAX_BITS) and masked bit accuracy over the active bits only.
+
+        Args:
+            dataloader: DataLoader yielding image batches (tensors or (image, ...) tuples).
+            max_batches: Maximum number of batches to evaluate.
+
+        Returns:
+            EvalMetrics averaged across all tiers (message_accuracy and ssim set to 0.0
+            as they are not meaningful for variable-length messages).
+        """
+        from picode.models.picodetier.tiers import MAX_BITS, NUM_TIERS, TIERS
+
+        self.encoder.eval()
+        self.decoder.eval()
+
+        tier_metrics: dict[int, dict[str, list[float]]] = {
+            i: {"bit_acc": [], "psnr": []} for i in range(NUM_TIERS)
+        }
+
+        for batch_idx, batch in enumerate(dataloader):
+            if max_batches and batch_idx >= max_batches:
+                break
+
+            images = (
+                batch[0].to(self.device)
+                if isinstance(batch, (list, tuple))
+                else batch.to(self.device)
+            )
+
+            for tier_idx in range(NUM_TIERS):
+                n_bits = int(TIERS[tier_idx]["bits"])
+                batch_size = images.shape[0]
+
+                # Generate messages: random bits for active positions, zeros for padding
+                messages = torch.zeros(batch_size, MAX_BITS, device=self.device)
+                messages[:, :n_bits] = torch.randint(
+                    0, 2, (batch_size, n_bits), device=self.device
+                ).float()
+                tiers = torch.full(
+                    (batch_size,), tier_idx, device=self.device, dtype=torch.long
+                )
+
+                # Encode
+                enc_out = self.encoder(images, messages, tiers)
+                encoded = (
+                    enc_out["encoded"] if isinstance(enc_out, dict) else enc_out
+                ).clamp(0.0, 1.0)
+
+                # PSNR against original
+                mse = F.mse_loss(encoded, images)
+                psnr = 10 * torch.log10(1.0 / (mse + 1e-10))
+
+                # Decode (resize if needed)
+                decoder_input = self._resize_for_decoder(encoded)
+                decoded_logits, tier_logits = self.decoder(decoder_input, tier=tiers)
+
+                # Masked bit accuracy: only the first n_bits positions are meaningful
+                decoded_bits = (torch.sigmoid(decoded_logits[:, :n_bits]) > 0.5).float()
+                bit_acc = (decoded_bits == messages[:, :n_bits]).float().mean()
+
+                tier_metrics[tier_idx]["bit_acc"].append(bit_acc.item())
+                tier_metrics[tier_idx]["psnr"].append(psnr.item())
+
+        # Average across tiers
+        overall_bit_acc = 0.0
+        overall_psnr = 0.0
+        for i in range(NUM_TIERS):
+            n = len(tier_metrics[i]["bit_acc"])
+            if n > 0:
+                overall_bit_acc += sum(tier_metrics[i]["bit_acc"]) / n
+                overall_psnr += sum(tier_metrics[i]["psnr"]) / n
+
+        overall_bit_acc /= NUM_TIERS
+        overall_psnr /= NUM_TIERS
+
+        return EvalMetrics(
+            bit_accuracy=overall_bit_acc,
+            message_accuracy=0.0,  # Not meaningful for variable-length messages
+            psnr=overall_psnr,
+            ssim=0.0,
+            lpips=None,
         )
 
     @torch.no_grad()

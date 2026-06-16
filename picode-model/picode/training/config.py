@@ -99,6 +99,9 @@ class LossConfig:
     # Mask regularization — encourages learned mask to correlate with texture
     mask_reg: LossRamp | None = None
 
+    # Tier classifier loss (PicodeTier)
+    tier_classifier: LossRamp = field(default_factory=lambda: LossRamp(1.0, 1))
+
     # GAN training settings
     gan_config: GANConfig = field(default_factory=GANConfig)
 
@@ -247,6 +250,9 @@ class ModelConfig:
         if self.type == "picotrust" and self.encoder_size == 400 and self.decoder_size == 400:
             self.encoder_size = 256
             self.decoder_size = 256
+        elif self.type == "picodetier" and self.encoder_size == 400 and self.decoder_size == 400:
+            self.encoder_size = 512
+            self.decoder_size = 256
 
 
 @dataclass
@@ -298,7 +304,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     if "loss" in data:
         loss_data = data["loss"]
         # Standard LossRamp fields
-        for key in ["message", "l2", "lpips", "mask_reg"]:
+        for key in ["message", "l2", "lpips", "mask_reg", "tier_classifier"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
         # DelayedLossRamp fields (ffl, gan, ssim, chroma)
