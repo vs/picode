@@ -49,6 +49,11 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
     else:
         strength = None
 
+    if model_type == "picodetier":
+        from picode.models.picodetier.tiers import MAX_BITS
+
+        num_bits = MAX_BITS
+
     encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask).to(device)
     decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
@@ -131,7 +136,59 @@ def encode_command(args: argparse.Namespace) -> None:
 
     message_tensor = torch.tensor(bits, dtype=torch.float32, device=device).unsqueeze(0)
 
-    if model_type == "picodeframe":
+    if model_type == "picodetier":
+        from picode.models.picodetier.tiers import MAX_BITS, TIERS
+
+        if args.tier is None:
+            print("Error: --tier is required for picodetier models")
+            return
+
+        tier_idx = args.tier
+        tier_bits = int(TIERS[tier_idx]["bits"])
+
+        # Convert message to tier-specific bit count, then pad to MAX_BITS
+        if message.startswith("0b") or all(c in "01" for c in message):
+            tier_msg_bits = [int(c) for c in message.replace("0b", "")]
+        else:
+            tier_msg_bits = text_to_bits(message, tier_bits)
+
+        # Truncate/pad to tier bit count
+        if len(tier_msg_bits) < tier_bits:
+            tier_msg_bits.extend([0] * (tier_bits - len(tier_msg_bits)))
+        else:
+            tier_msg_bits = tier_msg_bits[:tier_bits]
+
+        # Pad to MAX_BITS with zeros
+        full_bits = tier_msg_bits + [0] * (MAX_BITS - tier_bits)
+
+        message_tensor = torch.tensor(full_bits, dtype=torch.float32, device=device).unsqueeze(0)
+        tier_tensor = torch.tensor([tier_idx], device=device)
+
+        # Load and resize image
+        image = Image.open(args.input).convert("RGB")
+        image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
+        to_tensor = transforms.ToTensor()
+        image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            enc_out = encoder(image_tensor, message_tensor, tier_tensor)
+            encoded = enc_out["encoded"].clamp(0.0, 1.0)
+
+        save_image(encoded, args.output)
+
+        if args.save_original:
+            save_image(image_tensor, args.save_original)
+            print(f"Saved original to {args.save_original}")
+
+        if args.save_residual:
+            residual = encoded - image_tensor
+            residual_vis = (residual * 10 + 0.5).clamp(0, 1)
+            save_image(residual_vis, args.save_residual)
+            print(f"Saved residual to {args.save_residual}")
+
+        print(f"Encoded message into {args.output} ({size}x{size})")
+        print(f"Tier: {tier_idx} ({tier_bits} bits, strength {TIERS[tier_idx]['strength']})")
+    elif model_type == "picodeframe":
         # PicodeFrame: resize to inner size, reflection-pad, encode with frame_width
         frame_pct = args.frame_pct or 0.04
         frame_width = int(size * frame_pct)
@@ -219,9 +276,38 @@ def decode_command(args: argparse.Namespace) -> None:
     image_tensor = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        if model_type == "picodeframe":
+        if model_type == "picodetier":
+            from picode.models.picodetier.tiers import TIERS
+
+            decoder_size = data.get("config", {}).get("model", {}).get("decoder_size")
+            decoder_input = image_tensor
+            if decoder_size and image_tensor.shape[-1] != decoder_size:
+                import torch.nn.functional as F
+
+                decoder_input = F.interpolate(
+                    image_tensor, size=(decoder_size, decoder_size),
+                    mode="bilinear", align_corners=False,
+                )
+
+            tier_idx, bits_list = decoder.decode(decoder_input)
+            t = tier_idx[0].item()
+            decoded_bits = [int(b.item()) for b in bits_list[0]]
+            bits_str = "".join(str(b) for b in decoded_bits)
+            decoded_text = bits_to_text(decoded_bits)
+            tier_bits = int(TIERS[t]["bits"])
+
+            if args.raw:
+                print(bits_str)
+            else:
+                print(f"Decoded from: {args.input}")
+                print(f"Detected tier: {t} ({tier_bits} bits)")
+                print(f"Text: {decoded_text}")
+                print(f"Bits: {bits_str[:50]}..." if len(bits_str) > 50 else f"Bits: {bits_str}")
+            return
+        elif model_type == "picodeframe":
             # PicodeFrame: create mask and pass to decoder for center-masking
             import torch.nn.functional as F
+
             frame_pct = args.frame_pct or 0.04
             frame_width = int(size * frame_pct)
             mask = torch.zeros(1, 1, size, size, device=device)
@@ -306,6 +392,10 @@ Examples:
     encode_parser.add_argument(
         "--frame-pct", type=float, default=None, dest="frame_pct",
         help="Frame width as fraction of image (PicodeFrame only, default: 0.04)"
+    )
+    encode_parser.add_argument(
+        "--tier", type=int, default=None, choices=[0, 1, 2, 3],
+        help="Tier for encoding (PicodeTier only): 0=16bits, 1=32bits, 2=64bits, 3=96bits"
     )
     encode_parser.set_defaults(func=encode_command)
 
