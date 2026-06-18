@@ -30,8 +30,11 @@ MODEL_CONFIGS = {
     "picodeframe": "picodeframe_kaggle.yaml",
     "picotrust_v9b": "picotrust_v9b.yaml",
     "picotrust_v10": "picotrust_v10.yaml",
+    "picotrust_v10_s012": "picotrust_v10_s012.yaml",
 }
+# Kaggle normalizes dataset slugs: underscores become hyphens
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
+CKPT_DATASET_SLUG = CKPT_DATASET_NAME.replace("_", "-")
 
 if MODEL_NAME not in MODEL_CONFIGS:
     raise ValueError(f"Unknown model: {MODEL_NAME}. Supported: {list(MODEL_CONFIGS.keys())}")
@@ -138,11 +141,20 @@ coco_path = find_coco_path()
 # Search for checkpoints from the dedicated checkpoint dataset only (not source dataset).
 # Filter to current model name to avoid loading wrong model's checkpoints.
 resume_checkpoint = None
-all_ckpts = sorted(glob.glob(
-    f"/kaggle/input/**/{CKPT_DATASET_NAME}/**/checkpoint_*.pt", recursive=True
-))
+# Try both underscore and hyphenated forms (Kaggle normalizes slugs)
+for ckpt_pattern in [CKPT_DATASET_NAME, CKPT_DATASET_SLUG]:
+    all_ckpts = sorted(glob.glob(
+        f"/kaggle/input/**/{ckpt_pattern}/**/checkpoint_*.pt", recursive=True
+    ))
+    if not all_ckpts:
+        # Also try flat layout (checkpoint directly in dataset root)
+        all_ckpts = sorted(glob.glob(
+            f"/kaggle/input/**/{ckpt_pattern}/checkpoint_*.pt", recursive=True
+        ))
+    if all_ckpts:
+        break
 if not all_ckpts:
-    # Also try direct pattern under checkpoint dataset
+    # Fallback: search by model name under any dataset
     all_ckpts = sorted(glob.glob(
         f"/kaggle/input/**/{MODEL_NAME}/checkpoint_*.pt", recursive=True
     ))
