@@ -114,13 +114,16 @@ def train(
 
     # Find checkpoint if resuming
     if resume_from:
-        # Resume from specific checkpoint
+        # Resume from specific checkpoint with NEW config
         import glob
         matches = glob.glob(f"{CHECKPOINT_PATH}/*/{resume_from}")
         if matches:
             checkpoint_path = matches[0]
             print(f"Resuming from specific checkpoint: {checkpoint_path}")
-            trainer = Trainer.from_checkpoint(checkpoint_path)
+            print(f"Using config: {config}")
+            trainer = Trainer.from_checkpoint(
+                checkpoint_path, config_path=config, overrides=override_dict,
+            )
         else:
             raise FileNotFoundError(f"Checkpoint not found: {resume_from}")
     elif resume:
@@ -129,7 +132,7 @@ def train(
         if checkpoints:
             latest = checkpoints[-1]
             print(f"Resuming from: {latest}")
-            trainer = Trainer.from_checkpoint(latest)
+            trainer = Trainer.from_checkpoint(latest, config_path=config, overrides=override_dict)
         else:
             print("No checkpoint found, starting fresh")
             trainer = Trainer.from_config(config, override_dict)
