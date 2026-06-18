@@ -2,7 +2,8 @@
 
 Architecture:
 - StegaStamp U-Net backbone (parameterized size, default 256x256)
-- E_post post-processing: Conv(32->32, 3x3) + ReLU -> Conv(32->16, 1x1) + SiLU -> Conv(16->3, 1x1)
+- E_post post-processing: Conv(32->32, 3x3) + ReLU -> Conv(32->32, 3x3, dilation=2)
+  + ReLU -> Conv(32->16, 1x1) + SiLU -> Conv(16->1, 1x1)
 - Residual encoding: encoded = image + residual
 - No normalization layers (matches StegaStamp)
 - Kaiming initialization
@@ -65,11 +66,13 @@ class Encoder(BaseEncoder):
         # Replaces StegaStamp's single residual conv with a 3-layer refinement block
         # Outputs 1 channel (luminance-only) → broadcast to RGB = zero colour shift
         self.e_post = nn.Sequential(
-            nn.Conv2d(32, 32, 3, padding=1),  # Spatial refinement
+            nn.Conv2d(32, 32, 3, padding=1),             # 3x3, RF=3
             nn.ReLU(),
-            nn.Conv2d(32, 16, 1),             # Channel reduction
+            nn.Conv2d(32, 32, 3, padding=2, dilation=2), # 3x3 dilated, effective RF=7
+            nn.ReLU(),
+            nn.Conv2d(32, 16, 1),                        # Channel reduction
             nn.SiLU(),
-            nn.Conv2d(16, 1, 1),              # Grayscale residual (no activation)
+            nn.Conv2d(16, 1, 1),                         # Grayscale residual (no activation)
         )
 
         # Learned spatial mask (PicoTrust v2)
@@ -119,7 +122,9 @@ class Encoder(BaseEncoder):
         """
         x = F.relu(self.secret_dense(message))  # (B, 7500)
         x = x.view(-1, 3, 50, 50)  # (B, 3, 50, 50)
-        x = F.interpolate(x, size=(self.image_size, self.image_size), mode="nearest")
+        x = F.interpolate(
+            x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False
+        )
         return x
 
     def forward(self, image: Tensor, message: Tensor) -> dict[str, Tensor] | Tensor:
