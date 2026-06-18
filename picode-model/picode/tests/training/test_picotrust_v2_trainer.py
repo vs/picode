@@ -43,6 +43,35 @@ class TestMaskRegularization:
         assert mask.grad is not None
 
 
+class TestLaplacianLoss:
+
+    def test_laplacian_zero_for_uniform_residual(self):
+        """A spatially uniform residual should have near-zero Laplacian.
+
+        Note: small non-zero value expected from zero-padding border effects.
+        """
+        residual = torch.ones(2, 3, 64, 64) * 0.01
+        loss = Trainer._compute_laplacian_loss(residual)
+        assert loss.item() < 1e-3
+
+    def test_laplacian_high_for_checkerboard(self):
+        """A high-frequency checkerboard pattern should have high Laplacian."""
+        residual = torch.zeros(2, 3, 64, 64)
+        residual[:, :, 0::2, 0::2] = 0.01
+        residual[:, :, 1::2, 1::2] = 0.01
+        residual[:, :, 0::2, 1::2] = -0.01
+        residual[:, :, 1::2, 0::2] = -0.01
+        loss = Trainer._compute_laplacian_loss(residual)
+        assert loss.item() > 0.01
+
+    def test_laplacian_has_gradient(self):
+        """Laplacian loss should propagate gradients."""
+        residual = torch.randn(2, 3, 64, 64, requires_grad=True)
+        loss = Trainer._compute_laplacian_loss(residual)
+        loss.backward()
+        assert residual.grad is not None
+
+
 class TestStrengthAnnealing:
 
     def test_strength_before_anneal(self):

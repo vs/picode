@@ -1559,6 +1559,15 @@ class Trainer:
                 total = total + ffl_scale * loss_ffl
                 losses["loss_ffl"] = loss_ffl
 
+        # Laplacian loss — penalizes high-frequency content in the residual.
+        if not skip_image_loss and loss_cfg.laplacian is not None:
+            lap_scale = self._delayed_ramp(loss_cfg.laplacian, effective_step)
+            if lap_scale > 0:
+                residual = encoded - original
+                loss_lap = self._compute_laplacian_loss(residual)
+                total = total + lap_scale * loss_lap
+                losses["loss_laplacian"] = loss_lap
+
         # SSIM loss -- structural similarity
         if not skip_image_loss and loss_cfg.ssim is not None:
             ssim_scale = self._delayed_ramp(loss_cfg.ssim, effective_step)
@@ -1819,6 +1828,28 @@ class Trainer:
         weight = weight / (weight.amax(dim=(-2, -1), keepdim=True) + 1e-8)
 
         return (weight * diff).mean()
+
+    @staticmethod
+    def _compute_laplacian_loss(residual: Tensor) -> Tensor:
+        """Penalize high-frequency content in the residual via Laplacian magnitude.
+
+        Computes the discrete Laplacian (2nd spatial derivative) of the residual
+        and returns the mean absolute value. High-frequency patterns have large
+        Laplacian; smooth patterns have near-zero.
+
+        Args:
+            residual: Residual tensor (B, C, H, W), typically encoded - original.
+
+        Returns:
+            Scalar Laplacian loss.
+        """
+        kernel = torch.tensor(
+            [[0, 1, 0], [1, -4, 1], [0, 1, 0]],
+            dtype=residual.dtype,
+            device=residual.device,
+        ).view(1, 1, 3, 3).expand(residual.shape[1], -1, -1, -1)
+        laplacian = F.conv2d(residual, kernel, padding=1, groups=residual.shape[1])
+        return laplacian.abs().mean()
 
     def _compute_lpips(self, original: Tensor, encoded: Tensor) -> Tensor:
         """Compute LPIPS loss.
