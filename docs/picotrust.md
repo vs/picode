@@ -154,6 +154,8 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v9 s013 | 32 | 0.013 | 39.29 dB | 98.9% | 97.7% | De-annealed from v9 |
 | v9 s012 | 32 | 0.012 | 39.75 dB | 99.1% | 97.6% | De-annealed from s013 |
 | **v9 s011** | **32** | **0.011** | **40.28 dB** | **98.8%** | **97.4%** | **De-annealed from s012 — 40 dB milestone** |
+| **v10** | **32** | **0.014** | **38.70 dB** | **99.4%** | **98.8%** | **512→256, bilinear upsample, dilated E_post, Laplacian loss, early FFL — smoothest residuals** |
+| v10 s012 | 32 | 0.012 | — | — | — | De-annealing from v10 (in progress) |
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -222,6 +224,40 @@ v9 tested the capacity floor: 32 bits with the v8 loss design (LPIPS 1.5, GAN 1.
 **De-annealing to 0.011:** Each 0.001 strength reduction costs only ~0.3% accuracy while gaining ~0.5 dB PSNR. At 0.011, v9 achieves **40.28 dB** — surpassing v3's PSNR (40.48 dB) with 98.8% accuracy vs v3's 67.6%. The difference: v3 had 100 bits, v9 has 32. This proves the capacity theory — fewer bits at the same strength yields dramatically better results.
 
 **Trade-off: bits vs perceptual quality.** With 32 bits the encoder has excess capacity, so the real constraint isn't accuracy but artifact visibility. High-frequency patterns remain visible with the 416 decoder despite 39+ dB PSNR. Techniques to suppress them: residual blurring, TV loss, lower-res residual generation, or 512→256 decoder.
+
+### HF Artifact Reduction Experiment (v10)
+
+v10 targeted the high-frequency artifact problem identified in v9. Five changes were applied simultaneously, training from scratch on 32 bits:
+
+1. **Bilinear message upsampling** — `F.interpolate(mode="bilinear")` replaces nearest-neighbor in `prepare_message`, eliminating 50×50 grid discontinuities
+2. **Dilated E_post** — added `Conv2d(32, 32, 3, dilation=2)` layer, increasing receptive field from ~7×7 to ~11×11
+3. **Decoder 256** — back to 512→256 downsampling (from 416), forcing low-frequency residual patterns
+4. **Early FFL** — Focal Frequency Loss activated from step 10k (was delayed to 40k in v9)
+5. **Laplacian loss** — new loss term penalizing `|Laplacian(residual)|`, directly suppresses high-frequency spatial patterns. Scale 1.0, ramped over 50k steps.
+
+**Results (32 bits, 512→256, 5-image evaluation):**
+
+| Strength | Steps | PSNR | Accuracy | JPEG Q10 | Blur σ=3 | Bright ±0.5 |
+|----------|-------|------|----------|----------|----------|-------------|
+| 0.014 | 200k | 38.70 dB | 99.4% | 98.8% | 99.4% | 90.0% |
+
+**Key findings:**
+- **Significantly smoother residuals** than v9. High-frequency grid artifacts are eliminated. Residual patterns are visibly lower-frequency and more uniform.
+- **Accuracy matches v9** (99.4% vs 99.2%) despite the additional constraints — 32 bits has enough capacity headroom.
+- **PSNR slightly lower** than v9 s012 (38.70 vs 39.75 dB at comparable accuracy) because the 256 decoder forces larger spatial patterns.
+- **Robustness excellent**: JPEG Q10 98.8%, blur σ=3 99.4% — better than v9 on blur (low-frequency patterns survive better).
+- **Brightness robustness weaker**: 90.0% vs 94.6% for v9 s012. The 256 decoder's coarser patterns are more affected by global brightness shifts.
+- **Bootstrap fastest ever**: 100% accuracy by step 900 (bilinear upsampling gives smoother gradients for the decoder to learn from).
+- **Recovery slower than v9**: After annealing completed at step 90k, accuracy dropped to ~65-75% and recovered to ~92% average by step 200k (vs v9 reaching 99% by 160k). The combined constraints make the squeeze phase harder.
+- **Not content-adaptive**: Unlike v9 which concentrated residuals in textured regions, v10 spreads residuals uniformly. The 256 decoder can't resolve fine spatial variations, so the encoder has no incentive for selective placement. Artifacts are smoother but equally visible in smooth regions (sky, walls) and textured regions.
+
+**Training dynamics:**
+- Steps 0-10k: Bootstrap phase (100% accuracy by step 900)
+- Steps 10k-90k: Annealing squeeze (strength 1.0→0.014), Laplacian and FFL active from step 10k
+- Steps 90k-200k: Recovery phase (65%→92% average accuracy, prob_std 0.25→0.43)
+- Laplacian loss: ~0.01 during squeeze, ~0.008-0.010 at convergence (fading as residual amplitude shrinks)
+
+**Implication:** The 256 decoder solves HF artifacts but prevents content-adaptive encoding. Future directions: 416 decoder + residual blurring (smooth patterns with spatial selectivity), or learned spatial mask (`use_mask=True`) with 256 decoder.
 
 ### Strength-PSNR-Accuracy Relationship
 
@@ -345,6 +381,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v7** | 2026 | 128 | 512x512 | 38.17 | 93.8% | 88.6% (Q10) | **19.2M** |
 | PicoTrust v8 | 2026 | 96 | 512→416 | 37.93 | 78.3%* | 76.0%* (Q10) | 13.3M |
 | **PicoTrust v9** | 2026 | 32 | 512→416 | 40.28 | 98.8% | 97.4% (Q10) | 12.8M |
+| **PicoTrust v10** | 2026 | 32 | 512→256 | 38.70 | 99.4% | 98.8% (Q10) | **6.3M** |
 
 *v8 stopped early (100k steps). Content-adaptive encoding but 96 bits exceeded capacity at strength 0.014.
 
@@ -359,7 +396,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 - **Robust across all distortions**: No single failure mode (unlike TrustMark failing JPEG, or StegaStamp failing flips).
 
 **PicoTrust limitations:**
-- **PSNR gap**: 40.3 dB (v9) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — within ~2 dB of TrustMark-Q. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
+- **PSNR gap**: 38.7-40.3 dB (v9/v10) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — within ~2 dB of TrustMark-Q. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
 - **Bootstrap fragility**: ~50% failure rate per attempt. The model either bootstraps within 1000 steps or collapses permanently.
 - **Strength-accuracy cliff**: Depends on bit count. For 80 bits, below ~0.013 accuracy drops below LDPC threshold. For 32 bits, strength 0.013 gives 98.9% accuracy — the cliff is much lower.
 
@@ -441,7 +478,7 @@ distortion:
   strategy: curriculum
 ```
 
-See `picode-model/configs/` for all training configurations (v1-v9).
+See `picode-model/configs/` for all training configurations (v1-v10).
 
 ## Training Lessons
 
@@ -461,4 +498,7 @@ Hard-won insights from 9 model versions:
 12. **More bits don't proportionally cost accuracy** — 128 bits at 512→512 achieved 93.8% vs 94.6% for 80 bits at 512→256, only -0.8% despite 60% more bits. Encoder capacity is underutilized at 80 bits
 13. **LPIPS 1.5 + GAN 1.5 enables content-adaptive encoding** — higher perceptual loss weights teach the encoder to concentrate residuals in textured regions where changes are invisible, avoiding smooth areas. This is the right spatial strategy but must be paired with sufficient bits-per-strength budget
 14. **32 bits is the sweet spot for accuracy** — at 32 bits with strength 0.013, the model achieves 98.9% accuracy and 39.3 dB PSNR. The encoder has excess capacity, bootstraps instantly (no collapse), and de-anneals gracefully. Tradeoff: only 32 raw bits (4 bytes) of payload
-15. **High-frequency artifacts persist with 416/512 decoder** — even at 39+ dB PSNR with content-adaptive LPIPS/GAN losses, artifacts remain visible when the decoder resolution is close to the encoder's. The 512→256 downsampling remains the best perceptual quality mechanism found so far. Future work: residual blurring, TV loss, or low-res residual generation to suppress HF without downsampling
+15. **High-frequency artifacts persist with 416/512 decoder** — even at 39+ dB PSNR with content-adaptive LPIPS/GAN losses, artifacts remain visible when the decoder resolution is close to the encoder's. The 512→256 downsampling remains the best perceptual quality mechanism found so far
+16. **Bilinear upsampling + dilated E_post + Laplacian loss produce smoother residuals** — v10 combined all three with 256 decoder and early FFL. Grid artifacts eliminated, residuals visibly smoother. But the 256 decoder prevents content-adaptive encoding — residuals are uniform rather than texture-concentrated
+17. **256 decoder and content-adaptivity are mutually exclusive** — the 256 decoder can't resolve fine spatial detail, so the encoder has no incentive for selective placement. Getting both smooth AND content-adaptive requires a different approach: either 416 decoder + residual blurring, or learned spatial masks with 256 decoder
+18. **Laplacian loss fades under strength annealing** — once residual amplitude anneals to 0.014, the Laplacian values become small (~0.01). The loss is most useful during the squeeze phase (steps 10k-90k) when residuals are still large. After annealing, the strength bound itself constrains HF patterns
