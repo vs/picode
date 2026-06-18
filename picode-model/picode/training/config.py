@@ -96,6 +96,10 @@ class LossConfig:
     # SSIM loss — structural similarity for image quality
     ssim: DelayedLossRamp | None = None
 
+    # Laplacian loss — penalizes high-frequency content in the residual.
+    # Computes mean absolute Laplacian of (encoded - original).
+    laplacian: DelayedLossRamp | None = None
+
     # Mask regularization — encourages learned mask to correlate with texture
     mask_reg: LossRamp | None = None
 
@@ -308,7 +312,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
         # DelayedLossRamp fields (ffl, gan, ssim, chroma)
-        for key in ["ffl", "gan", "ssim", "chroma"]:
+        for key in ["ffl", "gan", "ssim", "chroma", "laplacian"]:
             if key in loss_data and loss_data[key] is not None:
                 if isinstance(loss_data[key], dict):
                     loss_data[key] = DelayedLossRamp(**loss_data[key])

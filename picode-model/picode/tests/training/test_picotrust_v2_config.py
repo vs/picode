@@ -1,6 +1,7 @@
 """Tests for PicoTrust v2 configuration fields."""
 
 from picode.training.config import (
+    DelayedLossRamp,
     GANConfig,
     LossConfig,
     LossRamp,
@@ -75,3 +76,28 @@ def test_load_picotrust_v2_config(tmp_path):
     assert cfg.loss.mask_reg is not None
     assert cfg.loss.mask_reg.scale == 0.1
     assert cfg.loss.gan_config.discriminator_type == "patchgan"
+
+
+def test_loss_config_has_laplacian_field():
+    cfg = LossConfig()
+    assert cfg.laplacian is None
+
+
+def test_load_laplacian_from_yaml(tmp_path):
+    yaml_content = tmp_path / "test.yaml"
+    yaml_content.write_text(
+        "experiment_name: test_lap\n"
+        "data:\n"
+        "  source: folder\n"
+        "  path: ./data/train\n"
+        "loss:\n"
+        "  laplacian:\n"
+        "    scale: 1.0\n"
+        "    ramp_steps: 50000\n"
+        "    delay_steps: 0\n"
+    )
+    cfg = load_config(str(yaml_content))
+    assert cfg.loss.laplacian is not None
+    assert isinstance(cfg.loss.laplacian, DelayedLossRamp)
+    assert cfg.loss.laplacian.scale == 1.0
+    assert cfg.loss.laplacian.delay_steps == 0
