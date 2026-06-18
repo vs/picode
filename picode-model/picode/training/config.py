@@ -311,7 +311,7 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
         for key in ["message", "l2", "lpips", "mask_reg", "tier_classifier"]:
             if key in loss_data and isinstance(loss_data[key], dict):
                 loss_data[key] = LossRamp(**loss_data[key])
-        # DelayedLossRamp fields (ffl, gan, ssim, chroma)
+        # DelayedLossRamp fields (ffl, gan, ssim, chroma, laplacian)
         for key in ["ffl", "gan", "ssim", "chroma", "laplacian"]:
             if key in loss_data and loss_data[key] is not None:
                 if isinstance(loss_data[key], dict):
