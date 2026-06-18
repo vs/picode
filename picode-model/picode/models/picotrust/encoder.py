@@ -21,8 +21,8 @@ class Encoder(BaseEncoder):
     """U-Net encoder with E_post refinement that embeds a bit message into an image.
 
     Based on StegaStamp encoder with TrustMark post-processing network (E_post).
-    The E_post block replaces StegaStamp's single residual conv with a 3-layer
-    refinement that improves PSNR by ~1.6 dB.
+    The E_post block replaces StegaStamp's single residual conv with a 4-layer
+    refinement (including dilated conv) that improves PSNR by ~1.6 dB.
 
     Args:
         num_bits: Number of bits in the message (default: 100).
@@ -63,7 +63,7 @@ class Encoder(BaseEncoder):
         self.conv9 = nn.Conv2d(70, 32, 3, padding=1)  # 32 + 32 + 6 = 70
 
         # E_post: TrustMark post-processing network
-        # Replaces StegaStamp's single residual conv with a 3-layer refinement block
+        # Replaces StegaStamp's single residual conv with a 4-layer refinement block
         # Outputs 1 channel (luminance-only) → broadcast to RGB = zero colour shift
         self.e_post = nn.Sequential(
             nn.Conv2d(32, 32, 3, padding=1),             # 3x3, RF=3
