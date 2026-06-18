@@ -29,6 +29,7 @@ MODEL_CONFIGS = {
     "picodelite_256bit": "picodelite_256bit_kaggle.yaml",
     "picodeframe": "picodeframe_kaggle.yaml",
     "picotrust_v9b": "picotrust_v9b.yaml",
+    "picotrust_v10": "picotrust_v10.yaml",
 }
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
 
