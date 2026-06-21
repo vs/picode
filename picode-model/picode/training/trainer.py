@@ -683,6 +683,18 @@ class Trainer:
                 schedule=self.config.training.anneal_schedule,
             )
 
+        # Update blur sigma if ramping is active
+        if (
+            hasattr(self.encoder, 'residual_blur_sigma')
+            and self.config.training.residual_blur_sigma > 0
+            and self.config.training.residual_blur_sigma_ramp_steps > 0
+        ):
+            start = self.config.training.residual_blur_sigma_start
+            target = self.config.training.residual_blur_sigma
+            ramp = self.config.training.residual_blur_sigma_ramp_steps
+            progress = min(self.global_step / max(ramp, 1), 1.0)
+            self.encoder.residual_blur_sigma = start + progress * (target - start)
+
         # 2. Encode in warped space
         encoder_output = self.encoder(images_warped, messages)
 

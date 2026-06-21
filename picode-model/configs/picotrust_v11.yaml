@@ -29,7 +29,9 @@ training:
   residual_strength_anneal_start: 10000
   residual_strength_anneal_steps: 120000
   anneal_schedule: exponential
-  residual_blur_sigma: 2.0
+  residual_blur_sigma: 1.0
+  residual_blur_sigma_start: 0.1
+  residual_blur_sigma_ramp_steps: 10000
 
 loss:
   message:

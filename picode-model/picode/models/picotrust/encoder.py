@@ -90,21 +90,13 @@ class Encoder(BaseEncoder):
         # Initialize weights (Kaiming normal)
         self._init_weights()
 
-        # Gaussian blur kernel for residual smoothing (registered after _init_weights
-        # so it's not affected by Kaiming init)
+        # Blur kernel size fixed at max sigma (for consistent padding)
         if residual_blur_sigma > 0:
             import math
-
-            kernel_size = 2 * math.ceil(3 * residual_blur_sigma) + 1
-            ax = torch.arange(kernel_size, dtype=torch.float32) - kernel_size // 2
-            xx, yy = torch.meshgrid(ax, ax, indexing="ij")
-            kernel = torch.exp(-(xx**2 + yy**2) / (2 * residual_blur_sigma**2))
-            kernel = kernel / kernel.sum()
-            # Shape: (1, 1, K, K) for single-channel conv
-            self.register_buffer("blur_kernel", kernel.view(1, 1, kernel_size, kernel_size))
-            self._blur_pad = kernel_size // 2
+            self._blur_kernel_size = 2 * math.ceil(3 * residual_blur_sigma) + 1
+            self._blur_pad = self._blur_kernel_size // 2
         else:
-            self.blur_kernel = None
+            self._blur_kernel_size = 0
             self._blur_pad = 0
 
     def _init_weights(self) -> None:
@@ -145,6 +137,14 @@ class Encoder(BaseEncoder):
             x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False
         )
         return x
+
+    def _make_blur_kernel(self, sigma: float, device: torch.device) -> Tensor:
+        """Build a normalized 2D Gaussian kernel at the given sigma."""
+        k = self._blur_kernel_size
+        ax = torch.arange(k, dtype=torch.float32, device=device) - k // 2
+        xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+        kernel = torch.exp(-(xx ** 2 + yy ** 2) / (2 * sigma ** 2))
+        return (kernel / kernel.sum()).view(1, 1, k, k)
 
     def forward(self, image: Tensor, message: Tensor) -> dict[str, Tensor] | Tensor:
         """Encode message into image.
@@ -197,10 +197,9 @@ class Encoder(BaseEncoder):
         raw_residual_1ch = self.e_post(x)  # (B, 1, H, W)
 
         # Apply Gaussian blur to 1-channel residual (before broadcast)
-        if self.blur_kernel is not None:
-            raw_residual_1ch = F.conv2d(
-                raw_residual_1ch, self.blur_kernel, padding=self._blur_pad,
-            )
+        if self.residual_blur_sigma > 0 and self._blur_kernel_size > 0:
+            kernel = self._make_blur_kernel(self.residual_blur_sigma, raw_residual_1ch.device)
+            raw_residual_1ch = F.conv2d(raw_residual_1ch, kernel, padding=self._blur_pad)
 
         # Broadcast to 3 channels (grayscale residual → no colour shift)
         raw_residual = raw_residual_1ch.expand(-1, 3, -1, -1)
