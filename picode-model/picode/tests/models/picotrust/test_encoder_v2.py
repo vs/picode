@@ -1,6 +1,7 @@
 """Tests for PicoTrust v2 encoder with amplitude control and spatial mask."""
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from picode.models.picotrust.encoder import Encoder
@@ -105,3 +106,71 @@ class TestEncoderV10:
         residual = result["encoded"] - sample_image_256
         assert torch.allclose(residual[:, 0], residual[:, 1], atol=1e-6)
         assert torch.allclose(residual[:, 1], residual[:, 2], atol=1e-6)
+
+
+class TestResidualBlur:
+
+    def test_encoder_accepts_blur_sigma(self):
+        enc = Encoder(num_bits=64, image_size=256, strength=0.03, residual_blur_sigma=2.0)
+        assert enc.residual_blur_sigma == 2.0
+
+    def test_default_blur_sigma_is_zero(self):
+        enc = Encoder(num_bits=64, image_size=256, strength=0.03)
+        assert enc.residual_blur_sigma == 0.0
+
+    def test_blur_reduces_high_frequency(self, sample_image_256, sample_message):
+        """Blurred residual should have less high-frequency energy than unblurred."""
+        enc_no_blur = Encoder(num_bits=100, image_size=256, strength=0.05)
+        enc_blur = Encoder(num_bits=100, image_size=256, strength=0.05, residual_blur_sigma=2.0)
+        # Use same weights
+        enc_blur.load_state_dict(enc_no_blur.state_dict(), strict=False)
+
+        # E_post last layer is zero-initialized, so give it non-zero weights
+        # to produce a non-trivial residual for this test
+        with torch.no_grad():
+            torch.manual_seed(99)
+            nn.init.kaiming_normal_(enc_no_blur.e_post[-1].weight)
+            enc_blur.e_post[-1].weight.copy_(enc_no_blur.e_post[-1].weight)
+
+        res_no_blur = enc_no_blur(sample_image_256, sample_message)["encoded"] - sample_image_256
+        res_blur = enc_blur(sample_image_256, sample_message)["encoded"] - sample_image_256
+
+        # Measure HF via Laplacian
+        kernel = torch.tensor([[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32)
+        kernel = kernel.view(1, 1, 3, 3)
+        hf_no_blur = F.conv2d(res_no_blur[:, :1], kernel, padding=1).abs().mean()
+        hf_blur = F.conv2d(res_blur[:, :1], kernel, padding=1).abs().mean()
+        assert hf_blur < hf_no_blur
+
+    def test_blur_residual_still_bounded(self, sample_image_256, sample_message):
+        """Blur should not increase residual beyond strength bound."""
+        enc = Encoder(num_bits=100, image_size=256, strength=0.03, residual_blur_sigma=2.0)
+        result = enc(sample_image_256, sample_message)
+        residual = result["encoded"] - sample_image_256
+        assert residual.abs().max().item() < 0.03 + 1e-6
+
+    def test_blur_residual_still_grayscale(self, sample_image_256, sample_message):
+        """Blurred residual should still be R=G=B."""
+        enc = Encoder(num_bits=100, image_size=256, strength=0.03, residual_blur_sigma=2.0)
+        result = enc(sample_image_256, sample_message)
+        residual = result["encoded"] - sample_image_256
+        assert torch.allclose(residual[:, 0], residual[:, 1], atol=1e-6)
+        assert torch.allclose(residual[:, 1], residual[:, 2], atol=1e-6)
+
+    def test_blur_has_gradient(self, sample_image_256, sample_message):
+        """Blur is differentiable — gradients flow through."""
+        enc = Encoder(num_bits=100, image_size=256, strength=0.05, residual_blur_sigma=2.0)
+        result = enc(sample_image_256, sample_message)
+        result["encoded"].sum().backward()
+        assert enc.e_post[-1].weight.grad is not None
+
+    def test_no_blur_when_sigma_zero(self, sample_image_256, sample_message):
+        """sigma=0 should produce identical output to no blur param."""
+        enc_default = Encoder(num_bits=100, image_size=256, strength=0.05)
+        enc_zero = Encoder(num_bits=100, image_size=256, strength=0.05, residual_blur_sigma=0.0)
+        enc_zero.load_state_dict(enc_default.state_dict(), strict=False)
+        torch.manual_seed(42)
+        r1 = enc_default(sample_image_256, sample_message)["encoded"]
+        torch.manual_seed(42)
+        r2 = enc_zero(sample_image_256, sample_message)["encoded"]
+        assert torch.allclose(r1, r2, atol=1e-6)

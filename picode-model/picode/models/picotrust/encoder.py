@@ -35,12 +35,14 @@ class Encoder(BaseEncoder):
         image_size: int = 256,
         strength: float | None = None,
         use_mask: bool = False,
+        residual_blur_sigma: float = 0.0,
     ) -> None:
         super().__init__()
         self.num_bits = num_bits
         self.image_size = image_size
         self.strength = strength
         self.use_mask = use_mask
+        self.residual_blur_sigma = residual_blur_sigma
 
         # Message preparation: num_bits -> 7500 -> (3, 50, 50) -> upsample to image_size
         self.secret_dense = nn.Linear(num_bits, 7500)
@@ -87,6 +89,23 @@ class Encoder(BaseEncoder):
 
         # Initialize weights (Kaiming normal)
         self._init_weights()
+
+        # Gaussian blur kernel for residual smoothing (registered after _init_weights
+        # so it's not affected by Kaiming init)
+        if residual_blur_sigma > 0:
+            import math
+
+            kernel_size = 2 * math.ceil(3 * residual_blur_sigma) + 1
+            ax = torch.arange(kernel_size, dtype=torch.float32) - kernel_size // 2
+            xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+            kernel = torch.exp(-(xx**2 + yy**2) / (2 * residual_blur_sigma**2))
+            kernel = kernel / kernel.sum()
+            # Shape: (1, 1, K, K) for single-channel conv
+            self.register_buffer("blur_kernel", kernel.view(1, 1, kernel_size, kernel_size))
+            self._blur_pad = kernel_size // 2
+        else:
+            self.blur_kernel = None
+            self._blur_pad = 0
 
     def _init_weights(self) -> None:
         """Initialize weights with Kaiming normal (He normal).
@@ -175,10 +194,16 @@ class Encoder(BaseEncoder):
         x = F.relu(self.conv9(x))
 
         # E_post: spatial refinement -> raw 1-channel residual
-        raw_residual = self.e_post(x)  # (B, 1, H, W)
+        raw_residual_1ch = self.e_post(x)  # (B, 1, H, W)
+
+        # Apply Gaussian blur to 1-channel residual (before broadcast)
+        if self.blur_kernel is not None:
+            raw_residual_1ch = F.conv2d(
+                raw_residual_1ch, self.blur_kernel, padding=self._blur_pad,
+            )
 
         # Broadcast to 3 channels (grayscale residual → no colour shift)
-        raw_residual = raw_residual.expand(-1, 3, -1, -1)
+        raw_residual = raw_residual_1ch.expand(-1, 3, -1, -1)
 
         # Apply amplitude bound if configured
         if self.strength is not None:
