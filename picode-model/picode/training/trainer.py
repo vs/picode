@@ -679,6 +679,7 @@ class Trainer:
                 start_step=self.config.training.residual_strength_anneal_start,
                 anneal_steps=self.config.training.residual_strength_anneal_steps,
                 current_step=self.global_step,
+                schedule=self.config.training.anneal_schedule,
             )
 
         # 2. Encode in warped space
@@ -1730,11 +1731,9 @@ class Trainer:
     def _compute_strength(
         initial: float, target: float,
         start_step: int, anneal_steps: int, current_step: int,
+        schedule: str = "linear",
     ) -> float:
         """Compute annealed residual strength.
-
-        Returns initial before start_step, linearly interpolates to target
-        over anneal_steps, and clamps at target afterwards.
 
         Args:
             initial: Starting strength value.
@@ -1742,6 +1741,7 @@ class Trainer:
             start_step: Step at which annealing begins.
             anneal_steps: Number of steps to anneal over.
             current_step: Current training step.
+            schedule: "linear" or "exponential".
 
         Returns:
             Interpolated strength value.
@@ -1749,6 +1749,8 @@ class Trainer:
         if current_step < start_step:
             return initial
         progress = min((current_step - start_step) / max(anneal_steps, 1), 1.0)
+        if schedule == "exponential" and initial > 0 and target > 0:
+            return initial * (target / initial) ** progress
         return initial + progress * (target - initial)
 
     def _compute_edge_loss(self, original: Tensor, encoded: Tensor) -> Tensor:

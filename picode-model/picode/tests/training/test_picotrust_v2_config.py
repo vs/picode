@@ -78,6 +78,11 @@ def test_load_picotrust_v2_config(tmp_path):
     assert cfg.loss.gan_config.discriminator_type == "patchgan"
 
 
+def test_training_config_has_anneal_schedule():
+    cfg = TrainingConfig()
+    assert cfg.anneal_schedule == "linear"
+
+
 def test_loss_config_has_laplacian_field():
     cfg = LossConfig()
     assert cfg.laplacian is None

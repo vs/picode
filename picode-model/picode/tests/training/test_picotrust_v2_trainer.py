@@ -94,3 +94,46 @@ class TestStrengthAnnealing:
             anneal_steps=20000, current_step=70000,
         )
         assert abs(s - 0.04) < 1e-6
+
+    def test_exponential_before_anneal(self):
+        s = Trainer._compute_strength(
+            initial=1.0, target=0.014, start_step=10000,
+            anneal_steps=120000, current_step=5000,
+            schedule="exponential",
+        )
+        assert s == 1.0
+
+    def test_exponential_after_anneal(self):
+        s = Trainer._compute_strength(
+            initial=1.0, target=0.014, start_step=10000,
+            anneal_steps=120000, current_step=200000,
+            schedule="exponential",
+        )
+        assert abs(s - 0.014) < 1e-6
+
+    def test_exponential_midway(self):
+        """At progress=0.5, exponential should give sqrt(target/initial) * initial."""
+        s = Trainer._compute_strength(
+            initial=1.0, target=0.014, start_step=10000,
+            anneal_steps=120000, current_step=70000,
+            schedule="exponential",
+        )
+        expected = 1.0 * (0.014 / 1.0) ** 0.5  # ~0.1183
+        assert abs(s - expected) < 1e-4
+
+    def test_linear_still_works_with_schedule_param(self):
+        """Existing linear behavior unchanged when schedule='linear'."""
+        s = Trainer._compute_strength(
+            initial=0.05, target=0.03, start_step=60000,
+            anneal_steps=20000, current_step=70000,
+            schedule="linear",
+        )
+        assert abs(s - 0.04) < 1e-6
+
+    def test_default_schedule_is_linear(self):
+        """Omitting schedule param defaults to linear (backward compat)."""
+        s = Trainer._compute_strength(
+            initial=0.05, target=0.03, start_step=60000,
+            anneal_steps=20000, current_step=70000,
+        )
+        assert abs(s - 0.04) < 1e-6

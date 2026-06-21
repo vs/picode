@@ -181,6 +181,7 @@ class TrainingConfig:
     residual_strength_anneal_target: float = 0.03  # Anneal to this in phase 2
     residual_strength_anneal_start: int = 60000  # Step to start annealing
     residual_strength_anneal_steps: int = 20000  # Steps to anneal over
+    anneal_schedule: str = "linear"  # "linear" or "exponential"
 
     # Two-phase training
     phase2_step: int = 0  # 0 means disabled. Step to enter phase 2
