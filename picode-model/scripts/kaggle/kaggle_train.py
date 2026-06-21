@@ -31,6 +31,7 @@ MODEL_CONFIGS = {
     "picotrust_v9b": "picotrust_v9b.yaml",
     "picotrust_v10": "picotrust_v10.yaml",
     "picotrust_v10_s012": "picotrust_v10_s012.yaml",
+    "picotrust_v10_s010": "picotrust_v10_s010.yaml",
 }
 # Kaggle normalizes dataset slugs: underscores become hyphens
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
