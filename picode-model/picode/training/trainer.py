@@ -252,6 +252,7 @@ class Trainer:
         self.encoder: BaseEncoder = create_encoder(
             config.model, num_bits, strength=_strength, use_mask=_use_mask,
             max_residual_amplitude=_max_res_amp,
+            residual_blur_sigma=config.training.residual_blur_sigma,
         ).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 

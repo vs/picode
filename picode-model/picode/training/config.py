@@ -182,6 +182,7 @@ class TrainingConfig:
     residual_strength_anneal_start: int = 60000  # Step to start annealing
     residual_strength_anneal_steps: int = 20000  # Steps to anneal over
     anneal_schedule: str = "linear"  # "linear" or "exponential"
+    residual_blur_sigma: float = 0.0  # Gaussian blur sigma on residual (0 = disabled)
 
     # Two-phase training
     phase2_step: int = 0  # 0 means disabled. Step to enter phase 2

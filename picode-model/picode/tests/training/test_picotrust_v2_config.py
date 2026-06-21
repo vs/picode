@@ -83,6 +83,11 @@ def test_training_config_has_anneal_schedule():
     assert cfg.anneal_schedule == "linear"
 
 
+def test_training_config_has_residual_blur_sigma():
+    cfg = TrainingConfig()
+    assert cfg.residual_blur_sigma == 0.0
+
+
 def test_loss_config_has_laplacian_field():
     cfg = LossConfig()
     assert cfg.laplacian is None

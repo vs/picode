@@ -26,6 +26,7 @@ def create_encoder(
     strength: float | None = None,
     use_mask: bool = False,
     max_residual_amplitude: float = 0.0,
+    residual_blur_sigma: float = 0.0,
 ) -> BaseEncoder:
     """Create an encoder based on model configuration.
 
@@ -71,6 +72,7 @@ def create_encoder(
         return PicoTrustEncoder(
             num_bits=num_bits, image_size=config.encoder_size,
             strength=strength, use_mask=use_mask,
+            residual_blur_sigma=residual_blur_sigma,
         )
     elif config.type == "picodetier":
         from picode.models.picodetier import Encoder as TierEncoder

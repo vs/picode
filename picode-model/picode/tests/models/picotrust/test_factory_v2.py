@@ -29,6 +29,18 @@ def test_factory_default_no_strength():
     assert enc.strength is None
 
 
+def test_factory_passes_blur_sigma_to_encoder():
+    config = ModelConfig(type="picotrust", encoder_size=512, decoder_size=512)
+    enc = create_encoder(config, num_bits=64, strength=0.014, residual_blur_sigma=2.0)
+    assert enc.residual_blur_sigma == 2.0
+
+
+def test_factory_default_no_blur():
+    config = ModelConfig(type="picotrust", encoder_size=256, decoder_size=256)
+    enc = create_encoder(config, num_bits=100, strength=0.03)
+    assert enc.residual_blur_sigma == 0.0
+
+
 def test_factory_other_models_unaffected():
     """StegaStamp factory call should still work without new params."""
     config = ModelConfig(type="stegastamp")
