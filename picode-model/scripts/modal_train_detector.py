@@ -105,7 +105,8 @@ def train_detector(
         DetectionLoss,
         DetectionTrainer,
     )
-    from picode.models.stegastamp import Encoder
+    from picode.models.factory import create_encoder
+    from picode.training.config import ModelConfig
 
     # Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -123,17 +124,39 @@ def train_detector(
         raise FileNotFoundError(f"Encoder checkpoint not found: {encoder_path}")
 
     ckpt = torch.load(encoder_path, map_location=device, weights_only=False)
-    num_bits = 100
-    if "config" in ckpt:
-        config = ckpt["config"]
-        if isinstance(config, dict) and "training" in config:
-            num_bits = config["training"].get("num_bits", 100)
+    config = ckpt.get("config", {})
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
+    encoder_size = model_cfg.get("encoder_size", 400)
+    training_cfg = config.get("training", {})
+    num_bits = training_cfg.get("num_bits", 100)
 
-    encoder = Encoder(num_bits=num_bits)
+    # Compute strength for picotrust models
+    residual_strength = training_cfg.get("residual_strength", 0)
+    strength = None
+    if residual_strength > 0:
+        step = ckpt.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=encoder_size,
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.to(device)
     encoder.eval()
-    print(f"Encoder loaded on {device} for fast data generation (num_bits={num_bits})")
+    print(f"Encoder loaded: type={model_type}, num_bits={num_bits}, size={encoder_size}")
 
     # Create datasets
     data_dir = f"{DATA_PATH}/train2017"
@@ -153,6 +176,7 @@ def train_detector(
         num_bits=num_bits,
         positive_ratio=0.5,
         input_size=320,
+        encoder_input_size=encoder_size,
         perspective_strength=(0.05, 0.20),
         transform=augmentation,
     )
@@ -265,7 +289,8 @@ def evaluate_detector(
 
     from picode.detection.fast_detector import FastDetector
     from picode.detection.training import DetectionDataset, DetectionEvaluator
-    from picode.models.stegastamp import Encoder
+    from picode.models.factory import create_encoder
+    from picode.training.config import ModelConfig
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -279,13 +304,38 @@ def evaluate_detector(
     encoder_path = f"{CHECKPOINT_PATH}/{encoder_checkpoint}"
     print(f"Loading encoder: {encoder_path}")
     ckpt = torch.load(encoder_path, map_location=device, weights_only=False)
-    num_bits = 100
-    if "config" in ckpt and isinstance(ckpt["config"], dict):
-        num_bits = ckpt["config"].get("training", {}).get("num_bits", 100)
+    config = ckpt.get("config", {})
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
+    encoder_size = model_cfg.get("encoder_size", 400)
+    training_cfg = config.get("training", {})
+    num_bits = training_cfg.get("num_bits", 100)
 
-    encoder = Encoder(num_bits=num_bits)
+    # Compute strength for picotrust models
+    residual_strength = training_cfg.get("residual_strength", 0)
+    strength = None
+    if residual_strength > 0:
+        step = ckpt.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=encoder_size,
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.to(device).eval()
+    print(f"Encoder loaded: type={model_type}, num_bits={num_bits}, size={encoder_size}")
 
     # Create evaluation dataset
     data_dir = f"{DATA_PATH}/train2017"
@@ -293,7 +343,9 @@ def evaluate_detector(
     dataset = DetectionDataset(
         image_dir=data_dir,
         encoder=encoder,
+        num_bits=num_bits,
         positive_ratio=0.5,
+        encoder_input_size=encoder_size,
     )
 
     # Limit samples

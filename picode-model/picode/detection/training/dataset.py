@@ -28,6 +28,7 @@ class DetectionDataset(Dataset):
         num_bits: Number of message bits (default 100)
         positive_ratio: Ratio of positive (watermarked) samples
         input_size: Output image size for detector (default 320)
+        encoder_input_size: Input size expected by encoder (default 400)
         perspective_strength: Range of perspective distortion (min, max)
         transform: Optional additional transforms
 
@@ -46,6 +47,7 @@ class DetectionDataset(Dataset):
         num_bits: int = 100,
         positive_ratio: float = 0.5,
         input_size: int = 320,
+        encoder_input_size: int = 400,
         perspective_strength: tuple[float, float] = (0.0, 0.15),
         transform: Callable[[Tensor], Tensor] | None = None,
     ) -> None:
@@ -67,7 +69,7 @@ class DetectionDataset(Dataset):
         # Image loading transform
         self._load_transform = transforms.Compose(
             [
-                transforms.Resize((400, 400)),  # Encoder input size
+                transforms.Resize((encoder_input_size, encoder_input_size)),
                 transforms.ToTensor(),
             ]
         )
@@ -100,7 +102,12 @@ class DetectionDataset(Dataset):
         with torch.no_grad():
             # Encoder returns unclamped image (allows gradients during training)
             # We clamp to [0, 1] for detector training dataset
-            watermarked = self.encoder(image_on_device, message)
+            output = self.encoder(image_on_device, message)
+            # PicoTrust with strength returns dict {"encoded": tensor}
+            if isinstance(output, dict):
+                watermarked = output["encoded"]
+            else:
+                watermarked = output
             watermarked = torch.clamp(watermarked, 0, 1)
         watermarked = watermarked.squeeze(0)
 

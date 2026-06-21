@@ -33,21 +33,50 @@ from tqdm import tqdm
 
 
 def load_encoder(checkpoint_path: str, device: torch.device):
-    """Load encoder from checkpoint."""
-    from picode.models.stegastamp import Encoder
+    """Load encoder from checkpoint (any model type).
+
+    Returns:
+        Tuple of (encoder, num_bits, encoder_input_size).
+    """
+    from picode.models.factory import create_encoder
+    from picode.training.config import ModelConfig
 
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    num_bits = 100
-    if "config" in ckpt:
-        config = ckpt["config"]
-        if isinstance(config, dict) and "training" in config:
-            num_bits = config["training"].get("num_bits", 100)
+    config = ckpt.get("config", {})
 
-    encoder = Encoder(num_bits=num_bits)
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
+    encoder_size = model_cfg.get("encoder_size", 400)
+    training_cfg = config.get("training", {})
+    num_bits = training_cfg.get("num_bits", 100)
+
+    # Compute strength for picotrust models
+    residual_strength = training_cfg.get("residual_strength", 0)
+    strength = None
+    if residual_strength > 0:
+        step = ckpt.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=encoder_size,
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.to(device)
     encoder.eval()
-    return encoder, num_bits
+    print(f"Encoder loaded: type={model_type}, num_bits={num_bits}, size={encoder_size}")
+    return encoder, num_bits, encoder_size
 
 
 def random_perspective_corners(strength_range: tuple[float, float] = (0.05, 0.20)) -> torch.Tensor:
@@ -97,7 +126,12 @@ def generate_sample(
         image_input = image_tensor.unsqueeze(0).to(device)
 
         with torch.no_grad():
-            watermarked = encoder(image_input, message)
+            output = encoder(image_input, message)
+            # PicoTrust with strength returns dict {"encoded": tensor}
+            if isinstance(output, dict):
+                watermarked = output["encoded"]
+            else:
+                watermarked = output
             watermarked = torch.clamp(watermarked, 0, 1)
 
         # Resize to detector input size
@@ -159,8 +193,7 @@ def main():
 
     # Load encoder
     print(f"Loading encoder from {args.encoder_checkpoint}...")
-    encoder, num_bits = load_encoder(args.encoder_checkpoint, device)
-    print(f"Encoder loaded (num_bits={num_bits})")
+    encoder, num_bits, encoder_size = load_encoder(args.encoder_checkpoint, device)
 
     # Collect image paths
     image_dir = Path(args.image_dir)
@@ -196,7 +229,7 @@ def main():
         try:
             sample = generate_sample(
                 image_path, encoder, num_bits, device,
-                is_positive=True, input_size=args.input_size
+                is_positive=True, input_size=args.input_size, encoder_size=encoder_size
             )
             samples.append(sample)
         except Exception as e:
@@ -213,7 +246,7 @@ def main():
         try:
             sample = generate_sample(
                 image_path, encoder, num_bits, device,
-                is_positive=False, input_size=args.input_size
+                is_positive=False, input_size=args.input_size, encoder_size=encoder_size
             )
             samples.append(sample)
         except Exception as e:

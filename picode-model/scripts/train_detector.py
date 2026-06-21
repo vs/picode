@@ -23,7 +23,8 @@ from picode.detection.training import (
     DetectionTrainer,
 )
 from picode.detection.training.augmentation import DomainRandomizedAugmentation
-from picode.models.stegastamp import Encoder
+from picode.models.factory import create_encoder
+from picode.training.config import ModelConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,29 +62,63 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_encoder(checkpoint_path: str, device: torch.device) -> Encoder:
-    """Load trained encoder from checkpoint."""
+def load_encoder(
+    checkpoint_path: str, device: torch.device,
+) -> tuple[torch.nn.Module, int, int]:
+    """Load trained encoder from checkpoint (any model type).
+
+    Returns:
+        Tuple of (encoder, num_bits, encoder_input_size).
+    """
     print(f"Loading encoder from {checkpoint_path}...")
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    config = ckpt.get("config", {})
 
-    # Get num_bits from config if available
-    num_bits = 100
-    if "config" in ckpt:
-        config = ckpt["config"]
-        if isinstance(config, dict) and "training" in config:
-            num_bits = config["training"].get("num_bits", 100)
+    # Extract model config
+    model_cfg = config.get("model", {})
+    model_type = model_cfg.get("type", "stegastamp")
+    encoder_size = model_cfg.get("encoder_size", 400)
 
-    encoder = Encoder(num_bits=num_bits)
+    # Extract training config
+    training_cfg = config.get("training", {})
+    num_bits = training_cfg.get("num_bits", 100)
+
+    # Compute strength for picotrust models
+    residual_strength = training_cfg.get("residual_strength", 0)
+    strength = None
+    if residual_strength > 0:
+        step = ckpt.get("step", 0)
+        anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
+        anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
+        anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        if step >= anneal_start and anneal_steps > 0:
+            t = min((step - anneal_start) / anneal_steps, 1.0)
+            strength = residual_strength + t * (anneal_target - residual_strength)
+        else:
+            strength = residual_strength
+
+    # Detect mask usage
+    loss_cfg = config.get("loss", {})
+    use_mask = loss_cfg.get("mask_reg") is not None
+
+    mc = ModelConfig(
+        type=model_type,
+        encoder_size=encoder_size,
+        decoder_size=model_cfg.get("decoder_size", 400),
+    )
+    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask)
     encoder.load_state_dict(ckpt["encoder_state"])
     encoder.to(device)
     encoder.eval()
-    print(f"Encoder loaded (num_bits={num_bits})")
-    return encoder
+    print(f"Encoder loaded: type={model_type}, num_bits={num_bits}, size={encoder_size}")
+    return encoder, num_bits, encoder_size
 
 
 def create_datasets(
-    encoder: Encoder,
+    encoder: torch.nn.Module,
     data_dir: str,
+    num_bits: int,
+    encoder_input_size: int,
     val_split: float,
     seed: int = 42,
     use_domain_randomization: bool = False,
@@ -110,9 +145,10 @@ def create_datasets(
     full_dataset = DetectionDataset(
         image_dir=data_dir,
         encoder=encoder,
-        num_bits=encoder.num_bits,
+        num_bits=num_bits,
         positive_ratio=0.5,
         input_size=320,
+        encoder_input_size=encoder_input_size,
         perspective_strength=(0.05, 0.20),
         transform=augmentation,
     )
@@ -138,35 +174,45 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     # Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Using device: {device}")
 
     # Load encoder
-    encoder = load_encoder(args.encoder, device)
+    encoder, num_bits, encoder_input_size = load_encoder(args.encoder, device)
 
     # Create datasets
     train_dataset, val_dataset = create_datasets(
         encoder=encoder,
         data_dir=args.data_dir,
+        num_bits=num_bits,
+        encoder_input_size=encoder_input_size,
         val_split=args.val_split,
         seed=args.seed,
         use_domain_randomization=args.domain_randomization,
     )
 
     # Create data loaders
+    # Encoder lives on GPU/MPS in main process — workers can't access it
+    num_workers = 0 if device.type in ("cuda", "mps") else args.num_workers
+    pin_memory = device.type == "cuda"
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
     )
 
     # Create model

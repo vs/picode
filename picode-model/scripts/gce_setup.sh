@@ -37,6 +37,8 @@ Commands:
     setup-data      Download COCO train2017 on the VM (~18GB)
     train           Start training in a tmux session (detached)
     train --resume  Resume training from latest checkpoint
+    train-detector  Train FastDetector using encoder checkpoint
+    upload-ckpt     Upload a local checkpoint to the VM
     logs            Tail the training console output
     attach          Attach to the tmux training session
     list            List checkpoints on the VM
@@ -236,7 +238,7 @@ cmd_train() {
     # CLI: picode-train CONFIG [--resume PATH] [key=value overrides...]
     # Note: \$HOME is escaped so it expands on the VM, not locally
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && picode-train \
-        configs/picotrust_v7.yaml \
+        configs/picotrust_v11.yaml \
         $resume \
         checkpoint.dir=\$HOME/checkpoints \
         data.path=\$HOME/data/train \
@@ -248,6 +250,66 @@ cmd_train() {
 
     echo ""
     echo "Training launched in background tmux session."
+    echo ""
+    echo "Useful commands:"
+    echo "  ./scripts/gce_setup.sh logs       # tail training output"
+    echo "  ./scripts/gce_setup.sh attach     # attach to tmux session"
+    echo "  ./scripts/gce_setup.sh list       # list checkpoints"
+    echo "  ./scripts/gce_setup.sh stop       # stop VM (pause billing)"
+}
+
+cmd_upload_ckpt() {
+    check_gcloud
+    local_path="$1"
+    if [ -z "$local_path" ]; then
+        echo "Error: Please provide local checkpoint path"
+        echo "Usage: ./scripts/gce_setup.sh upload-ckpt <path-to-checkpoint.pt>"
+        exit 1
+    fi
+
+    if [ ! -f "$local_path" ]; then
+        echo "Error: File does not exist: $local_path"
+        exit 1
+    fi
+
+    # Preserve directory structure relative to checkpoints/
+    # e.g. kaggle_ckpts/checkpoints/picotrust_v10_s010/best.pt -> ~/checkpoints/picotrust_v10_s010/best.pt
+    local basename
+    basename=$(basename "$(dirname "$local_path")")
+    echo "Uploading checkpoint to VM:~/checkpoints/$basename/ ..."
+    vm_ssh "mkdir -p ~/checkpoints/$basename"
+    gcloud compute scp "$local_path" "$VM_NAME:~/checkpoints/$basename/" --zone="$ZONE"
+    echo "Upload complete!"
+    vm_ssh "ls -lh ~/checkpoints/$basename/"
+}
+
+cmd_train_detector() {
+    check_gcloud
+    encoder_ckpt="${1:-picotrust_v10_s010/best.pt}"
+    epochs="${2:-50}"
+    batch_size="${3:-16}"
+
+    echo "Training FastDetector..."
+    echo "  Encoder:    ~/checkpoints/$encoder_ckpt"
+    echo "  Epochs:     $epochs"
+    echo "  Batch size: $batch_size"
+    echo ""
+
+    train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python scripts/train_detector.py \
+        --encoder \$HOME/checkpoints/$encoder_ckpt \
+        --data-dir \$HOME/data/train \
+        --output-dir \$HOME/checkpoints/detection \
+        --epochs $epochs \
+        --batch-size $batch_size \
+        --num-workers 4 \
+        --domain-randomization"
+
+    echo "Launching detector training in tmux session '$TMUX_SESSION'..."
+    vm_ssh "tmux kill-session -t $TMUX_SESSION 2>/dev/null || true; \
+        tmux new-session -d -s $TMUX_SESSION \"$train_cmd; echo '=== Training finished (exit code: '\$'?) ==='; read\""
+
+    echo ""
+    echo "Detector training launched in background tmux session."
     echo ""
     echo "Useful commands:"
     echo "  ./scripts/gce_setup.sh logs       # tail training output"
@@ -343,6 +405,8 @@ case "${1:-}" in
     upload-code) cmd_upload_code ;;
     setup-data)  cmd_setup_data ;;
     train)       shift; cmd_train "$@" ;;
+    train-detector) shift; cmd_train_detector "$@" ;;
+    upload-ckpt) shift; cmd_upload_ckpt "$@" ;;
     logs)        cmd_logs ;;
     attach)      cmd_attach ;;
     list)        cmd_list ;;
