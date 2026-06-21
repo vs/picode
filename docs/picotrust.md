@@ -155,7 +155,8 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v9 s012 | 32 | 0.012 | 39.75 dB | 99.1% | 97.6% | De-annealed from s013 |
 | **v9 s011** | **32** | **0.011** | **40.28 dB** | **98.8%** | **97.4%** | **De-annealed from s012 — 40 dB milestone** |
 | **v10** | **32** | **0.014** | **38.70 dB** | **99.4%** | **98.8%** | **512→256, bilinear upsample, dilated E_post, Laplacian loss, early FFL — smoothest residuals** |
-| v10 s012 | 32 | 0.012 | — | — | — | De-annealing from v10 (in progress) |
+| v10 s012 | 32 | 0.012 | — | — | — | De-annealed from v10 |
+| **v10 s010** | **32** | **0.010** | **41.06 dB** | **97.5%** | **95.6%** | **De-annealed from v10 — 41 dB milestone, highest PSNR** |
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -283,7 +284,14 @@ The first 0.001 increment (0.012→0.013) gives the best accuracy-per-PSNR trade
 | 0.012 | 39.75 | 99.1% | +0.46 dB | +0.2% |
 | 0.011 | 40.28 | 98.8% | +0.53 dB | -0.3% |
 
-With 32 bits, de-annealing barely costs accuracy. Each 0.001 step gains ~0.5 dB PSNR for ~0.3% accuracy. At 0.011, the model crosses 40 dB — matching TrustMark-B territory while maintaining 98.8% accuracy and 97.4% JPEG Q10 robustness.
+**32-bit models (512→256 decoder, v10 architecture):**
+
+| Strength | PSNR (dB) | Raw Accuracy | PSNR delta | Accuracy delta |
+|----------|-----------|-------------|------------|----------------|
+| 0.014 | 38.70 | 99.4% | — | — |
+| 0.010 | 41.06 | 97.5% | +2.36 dB | -1.9% |
+
+With 32 bits, de-annealing barely costs accuracy. Each 0.001 step gains ~0.5 dB PSNR for ~0.3% accuracy. At 0.011, the v9 model crosses 40 dB — matching TrustMark-B territory. The v10 architecture (256 decoder, Laplacian loss, smooth residuals) pushes further: v10 s010 reaches **41.06 dB** with 97.5% accuracy and 95.6% JPEG Q10 robustness.
 
 In linear terms (RMS residual amplitude on 0-255 scale):
 - 0.013 strength → 39.3 dB → ~2.8 pixel levels modified per pixel
@@ -382,6 +390,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | PicoTrust v8 | 2026 | 96 | 512→416 | 37.93 | 78.3%* | 76.0%* (Q10) | 13.3M |
 | **PicoTrust v9** | 2026 | 32 | 512→416 | 40.28 | 98.8% | 97.4% (Q10) | 12.8M |
 | **PicoTrust v10** | 2026 | 32 | 512→256 | 38.70 | 99.4% | 98.8% (Q10) | **6.3M** |
+| **PicoTrust v10 s010** | 2026 | 32 | 512→256 | 41.06 | 97.5% | 95.6% (Q10) | **6.3M** |
 
 *v8 stopped early (100k steps). Content-adaptive encoding but 96 bits exceeded capacity at strength 0.014.
 
@@ -396,7 +405,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 - **Robust across all distortions**: No single failure mode (unlike TrustMark failing JPEG, or StegaStamp failing flips).
 
 **PicoTrust limitations:**
-- **PSNR gap**: 38.7-40.3 dB (v9/v10) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — within ~2 dB of TrustMark-Q. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
+- **PSNR gap**: 38.7-41.1 dB (v9/v10) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — v10 s010 at 41 dB is within ~1 dB of TrustMark-Q. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
 - **Bootstrap fragility**: ~50% failure rate per attempt. The model either bootstraps within 1000 steps or collapses permanently.
 - **Strength-accuracy cliff**: Depends on bit count. For 80 bits, below ~0.013 accuracy drops below LDPC threshold. For 32 bits, strength 0.013 gives 98.9% accuracy — the cliff is much lower.
 
