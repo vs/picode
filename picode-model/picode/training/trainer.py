@@ -847,6 +847,11 @@ class Trainer:
             bit_accuracy = (predicted_bits == messages).float().mean().item()
             metrics["bit_accuracy"] = bit_accuracy
 
+            # Per-image accuracy: std and min across batch
+            per_image_acc = (predicted_bits == messages).float().mean(dim=1)  # (B,)
+            metrics["bit_acc_std"] = per_image_acc.std().item()
+            metrics["bit_acc_min"] = per_image_acc.min().item()
+
         # v2 diagnostic metrics
         if encoder_mask is not None:
             metrics["mask_mean"] = encoder_mask.mean().item()
@@ -1370,6 +1375,11 @@ class Trainer:
             predicted_bits = (decoded_probs > 0.5).float()
             bit_accuracy = (predicted_bits == messages).float().mean().item()
             metrics["bit_accuracy"] = bit_accuracy
+
+            # Per-image accuracy: std and min across batch
+            per_image_acc = (predicted_bits == messages).float().mean(dim=1)  # (B,)
+            metrics["bit_acc_std"] = per_image_acc.std().item()
+            metrics["bit_acc_min"] = per_image_acc.min().item()
 
         return metrics
 
