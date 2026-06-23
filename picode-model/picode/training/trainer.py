@@ -765,10 +765,30 @@ class Trainer:
         # Compute residual for diagnostics (encoded - original)
         residual = encoded - images
 
+        # Compute blurred encoded for perceptual losses (LPIPS, GAN)
+        # The actual encoded image stays clean; blur only affects loss computation
+        # to drive content-adaptive residual placement
+        if self._decoder_blur_kernel is not None:
+            encoded_for_perceptual = F.conv2d(
+                encoded, self._decoder_blur_kernel,
+                padding=self._decoder_blur_pad, groups=3,
+            )
+            original_for_perceptual = F.conv2d(
+                images, self._decoder_blur_kernel,
+                padding=self._decoder_blur_pad, groups=3,
+            )
+        else:
+            encoded_for_perceptual = encoded
+            original_for_perceptual = images
+
         metrics: dict[str, float] = {}
 
         # Compute losses (decoder outputs logits, loss uses BCE with logits)
-        losses = self._compute_ramped_losses(images, encoded, messages, decoded_logits)
+        losses = self._compute_ramped_losses(
+            images, encoded, messages, decoded_logits,
+            original_for_perceptual=original_for_perceptual,
+            encoded_for_perceptual=encoded_for_perceptual,
+        )
 
         # Mask regularization (PicoTrust v2)
         if encoder_mask is not None and self.config.loss.mask_reg is not None:
@@ -839,8 +859,8 @@ class Trainer:
             and self.config.loss.gan_config.enabled
         ):
             self.d_optimizer.zero_grad()
-            d_real = self.discriminator(images)
-            d_fake = self.discriminator(encoded.detach())
+            d_real = self.discriminator(original_for_perceptual)
+            d_fake = self.discriminator(encoded_for_perceptual.detach())
 
             if self.config.loss.gan_config.discriminator_type == "patchgan":
                 # LSGAN loss: D(real) -> 1, D(fake) -> 0
@@ -1508,6 +1528,9 @@ class Trainer:
         encoded: Tensor,
         messages: Tensor,
         decoded_logits: Tensor,
+        *,
+        original_for_perceptual: Tensor | None = None,
+        encoded_for_perceptual: Tensor | None = None,
     ) -> dict[str, Tensor]:
         """Compute all losses with ramping applied.
 
@@ -1595,7 +1618,9 @@ class Trainer:
                 loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, effective_step
             )
         if lpips_scale > 0 and self._get_lpips_fn() is not None:
-            loss_lpips = self._compute_lpips(original, encoded)
+            _orig_lp = original_for_perceptual if original_for_perceptual is not None else original
+            _enc_lp = encoded_for_perceptual if encoded_for_perceptual is not None else encoded
+            loss_lpips = self._compute_lpips(_orig_lp, _enc_lp)
             weighted_lpips = lpips_scale * loss_lpips
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
@@ -1638,7 +1663,8 @@ class Trainer:
                 effective_step,
             )
             if g_scale > 0:
-                d_fake = self.discriminator(encoded)
+                _enc_g = encoded_for_perceptual if encoded_for_perceptual is not None else encoded
+                d_fake = self.discriminator(_enc_g)
                 if self.config.loss.gan_config.discriminator_type == "patchgan":
                     # LSGAN generator loss: D(fake) -> 1
                     loss_G = 0.5 * ((d_fake - 1) ** 2).mean()
