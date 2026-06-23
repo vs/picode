@@ -256,6 +256,21 @@ class Trainer:
         ).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 
+        # Precompute decoder-input blur kernel (training-time only)
+        self._decoder_blur_kernel: Tensor | None = None
+        self._decoder_blur_pad: int = 0
+        if config.training.decoder_blur_sigma > 0:
+            import math
+            sigma = config.training.decoder_blur_sigma
+            k = 2 * math.ceil(3 * sigma) + 1
+            ax = torch.arange(k, dtype=torch.float32) - k // 2
+            xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+            kernel = torch.exp(-(xx ** 2 + yy ** 2) / (2 * sigma ** 2))
+            kernel = (kernel / kernel.sum()).view(1, 1, k, k)
+            # Expand to 3 channels (groups=3)
+            self._decoder_blur_kernel = kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
+            self._decoder_blur_pad = k // 2
+
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
@@ -736,6 +751,13 @@ class Trainer:
             )
         else:
             decoder_input = distorted
+
+        # 7b. Apply decoder-input blur (training-time smoothing)
+        if self._decoder_blur_kernel is not None:
+            decoder_input = F.conv2d(
+                decoder_input, self._decoder_blur_kernel,
+                padding=self._decoder_blur_pad, groups=3,
+            )
 
         # 8. Decode
         decoded_logits = self.decoder(decoder_input)

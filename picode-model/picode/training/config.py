@@ -186,6 +186,7 @@ class TrainingConfig:
     residual_blur_sigma_start: float = 0.0  # Starting sigma for ramp
     residual_blur_sigma_ramp_start: int = 0  # Step to begin ramping blur sigma
     residual_blur_sigma_ramp_steps: int = 0  # Steps to ramp sigma (0 = no ramp, fixed)
+    decoder_blur_sigma: float = 0.0  # Gaussian blur on decoder input during training (0 = disabled)
 
     # Two-phase training
     phase2_step: int = 0  # 0 means disabled. Step to enter phase 2
