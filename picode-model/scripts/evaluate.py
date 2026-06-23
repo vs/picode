@@ -43,16 +43,24 @@ def load_checkpoint(path: Path, device: torch.device) -> tuple:
         anneal_target = training_cfg.get("residual_strength_anneal_target", residual_strength)
         anneal_start = training_cfg.get("residual_strength_anneal_start", 0)
         anneal_steps = training_cfg.get("residual_strength_anneal_steps", 1)
+        anneal_schedule = training_cfg.get("anneal_schedule", "linear")
         if step >= anneal_start and anneal_steps > 0:
             t = min((step - anneal_start) / anneal_steps, 1.0)
-            strength = residual_strength + t * (anneal_target - residual_strength)
+            if anneal_schedule == "exponential" and residual_strength > 0 and anneal_target > 0:
+                strength = residual_strength * (anneal_target / residual_strength) ** t
+            else:
+                strength = residual_strength + t * (anneal_target - residual_strength)
         else:
             strength = residual_strength
         print(f"Residual strength: {strength:.4f} (annealed from {residual_strength} at step {step})")
     else:
         strength = None
 
-    encoder = create_encoder(mc, num_bits=num_bits, strength=strength, use_mask=use_mask).to(device)
+    blur_sigma = training_cfg.get("residual_blur_sigma", 0.0)
+    encoder = create_encoder(
+        mc, num_bits=num_bits, strength=strength, use_mask=use_mask,
+        residual_blur_sigma=blur_sigma,
+    ).to(device)
     decoder = create_decoder(mc, num_bits=num_bits).to(device)
 
     # Load weights
