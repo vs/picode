@@ -183,7 +183,8 @@ class TrainingConfig:
     residual_strength_anneal_steps: int = 20000  # Steps to anneal over
     anneal_schedule: str = "linear"  # "linear" or "exponential"
     residual_blur_sigma: float = 0.0  # Gaussian blur sigma on residual (0 = disabled)
-    residual_blur_sigma_start: float = 0.0  # Starting sigma for ramp (0 = use residual_blur_sigma)
+    residual_blur_sigma_start: float = 0.0  # Starting sigma for ramp
+    residual_blur_sigma_ramp_start: int = 0  # Step to begin ramping blur sigma
     residual_blur_sigma_ramp_steps: int = 0  # Steps to ramp sigma (0 = no ramp, fixed)
 
     # Two-phase training

@@ -687,13 +687,17 @@ class Trainer:
         if (
             hasattr(self.encoder, 'residual_blur_sigma')
             and self.config.training.residual_blur_sigma > 0
-            and self.config.training.residual_blur_sigma_ramp_steps > 0
         ):
-            start = self.config.training.residual_blur_sigma_start
-            target = self.config.training.residual_blur_sigma
-            ramp = self.config.training.residual_blur_sigma_ramp_steps
-            progress = min(self.global_step / max(ramp, 1), 1.0)
-            self.encoder.residual_blur_sigma = start + progress * (target - start)
+            ramp_start = self.config.training.residual_blur_sigma_ramp_start
+            ramp_steps = self.config.training.residual_blur_sigma_ramp_steps
+            start_val = self.config.training.residual_blur_sigma_start
+            target_val = self.config.training.residual_blur_sigma
+            if ramp_steps > 0 and self.global_step >= ramp_start:
+                progress = min((self.global_step - ramp_start) / ramp_steps, 1.0)
+                self.encoder.residual_blur_sigma = start_val + progress * (target_val - start_val)
+            elif ramp_steps > 0:
+                self.encoder.residual_blur_sigma = start_val
+            # else: no ramp, use fixed value from init
 
         # 2. Encode in warped space
         encoder_output = self.encoder(images_warped, messages)
