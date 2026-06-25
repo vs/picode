@@ -297,7 +297,37 @@ v12 solved the central tension of the v9-v11 line: how to get content-adaptive r
 
 **Per-image adaptive strength:** The trained strength (0.010-0.014) can be adjusted at inference. The encoder produces a raw residual bounded by softsign — changing strength just scales the amplitude. Use lower strength (0.008-0.010) for easy images with lots of texture (better PSNR), bump to 0.015-0.020 for hard images with smooth regions (better accuracy). No retraining needed.
 
-**Texture masking:** Post-processing step that attenuates the residual in smooth image regions using a texture map. Reduces visibility of artifacts in smooth areas at the cost of some accuracy. Available via `picode encode --texture-mask`.
+**Texture masking:** Post-processing step that attenuates the residual in smooth image regions based on local variance of the input image. Computes a spatial mask in `[floor, 1.0]` where smooth regions get `floor` and textured regions get ~1.0, then multiplies the residual by the mask before adding to the image. No retraining needed — the decoder tolerates partial attenuation. Available via `picode encode --texture-mask --mask-floor 0.3`.
+
+v12 at 200k steps (strength 0.014), evaluated on 20 images:
+
+| Mode | PSNR | Bit acc | Clean msg | JPEG Q50 | JPEG Q10 | Noise 0.05 | Blur 2.0 |
+|------|------|---------|-----------|----------|----------|------------|----------|
+| No mask | 38.0 dB | 98.1% | — | — | — | — | — |
+| floor=0.5 | 39.4 dB | — | — | — | — | — | — |
+| floor=0.3 | 40.0 dB | 95.9% | — | — | — | — | — |
+
+With BCH(63,36,t=5) hard decoding (36 data bits):
+
+| Mode | Clean | JPEG Q50 | JPEG Q10 | Noise 0.05 | Blur 2.0 |
+|------|-------|----------|----------|------------|----------|
+| No mask | 85% | 90% | 75% | 65% | 85% |
+| floor=0.5 | 80% | 75% | 45% | 50% | 75% |
+| floor=0.3 | 50% | 40% | 35% | 20% | 55% |
+
+With LDPC(60,32) soft decoding (32 data bits) — **much better**:
+
+| Mode | Clean | JPEG Q50 | JPEG Q10 | Noise 0.05 | Blur 2.0 |
+|------|-------|----------|----------|------------|----------|
+| No mask | 95% | 95% | 100% | 90% | 95% |
+| floor=0.5 | 100% | 95% | 80% | 75% | 100% |
+| floor=0.3 | 90% | 95% | 65% | 50% | 100% |
+
+**Key findings:**
+- Texture masking trades accuracy for PSNR: +2.0 dB at floor=0.3, +1.4 dB at floor=0.5
+- BCH hard decoding suffers disproportionately because the mask pushes some images past the correction threshold
+- LDPC soft decoding exploits decoder logit confidence and tolerates the mask much better — at floor=0.5 it's near-perfect on clean/JPEG Q50 while gaining +1.4 dB PSNR
+- **Recommended production config:** LDPC soft decoding + texture mask floor=0.5 (39.4 dB, 100% clean recovery, 95% JPEG Q50)
 
 **Bootstrap at 64 bits:** ~9% success rate per attempt (1 in 11). Much harder than 32 bits (~50%). Auto-retry loop needed. The decoder-side blur does not interfere with bootstrapping since the encoder's residual is unblurred during the bootstrap phase.
 
@@ -608,3 +638,5 @@ Hard-won insights from 9 model versions:
 23. **64 bits bootstraps ~9% of the time** — vs ~50% at 32 bits. The decoder has 2× more outputs to learn, making random initialization less likely to produce useful signal. Auto-retry loop essential
 24. **Strength is adjustable at inference** — the softsign bound `strength × raw/(1+|raw|)` can be evaluated at any strength without retraining. Use lower strength for easy (textured) images, higher for hard (smooth) images. Per-image adaptive strength for production use
 25. **L2 on real output + LPIPS on blurred output = clean + adaptive** — L2 maintains pixel quality of the actual encoded image. LPIPS on the blurred version provides content-adaptive spatial guidance. Using the same blur for both would give stronger adaptivity but no pixel-level quality control on the real output
+26. **LDPC soft decoding >> BCH hard decoding** — at ~96% bit accuracy, BCH treats every bit as equally certain and fails when error count exceeds `t`. LDPC exploits soft probabilities from decoder logits (via sigmoid), gaining ~20% message recovery over BCH at comparable code rates. The confidence information in logits is valuable — bits the decoder is uncertain about get less weight in belief propagation. Use LDPC for production
+27. **Texture masking + LDPC is the right production combo** — post-processing texture mask (floor=0.5) attenuates residuals in smooth regions, gaining +1.4 dB PSNR. BCH can't tolerate the accuracy drop, but LDPC soft decoding handles it gracefully: 100% clean message recovery, 95% at JPEG Q50, 80% at JPEG Q10
