@@ -236,16 +236,30 @@ def encode_command(args: argparse.Namespace) -> None:
         print(f"Frame width: {frame_width}px ({frame_pct*100:.0f}%)")
         print(f"Inner image: {inner_size}x{inner_size}")
     else:
-        # StegaStamp/PicodeLite: standard full-image encoding
+        # StegaStamp/PicodeLite/PicoTrust: standard full-image encoding
         image = Image.open(args.input).convert("RGB")
         image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
 
         to_tensor = transforms.ToTensor()
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
+        # Determine texture mask settings before encoding
+        use_texture_mask = args.texture_mask or args.mask_floor is not None
+        mask_floor = args.mask_floor if args.mask_floor is not None else 0.3
+
         with torch.no_grad():
             enc_out = encoder(image_tensor, message_tensor)
-            encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
+            encoded_raw = enc_out["encoded"] if isinstance(enc_out, dict) else enc_out
+
+            # Apply texture mask if requested
+            if use_texture_mask:
+                from picode.models.picotrust.texture_mask import compute_texture_mask
+
+                residual = encoded_raw - image_tensor
+                tex_mask = compute_texture_mask(image_tensor, floor=mask_floor)
+                encoded = (image_tensor + residual * tex_mask).clamp(0.0, 1.0)
+            else:
+                encoded = encoded_raw.clamp(0.0, 1.0)
 
         save_image(encoded, args.output)
 
@@ -260,6 +274,8 @@ def encode_command(args: argparse.Namespace) -> None:
             print(f"Saved residual to {args.save_residual}")
 
         print(f"Encoded message into {args.output} ({size}x{size})")
+        if use_texture_mask:
+            print(f"Texture mask: floor={mask_floor:.2f}")
 
     print(f"Message: {message}")
     print(f"Bits used: {num_bits}")
@@ -405,6 +421,14 @@ Examples:
     encode_parser.add_argument(
         "--tier", type=int, default=None, choices=[0, 1, 2, 3],
         help="Tier for encoding (PicodeTier only): 0=16bits, 1=32bits, 2=64bits, 3=96bits"
+    )
+    encode_parser.add_argument(
+        "--texture-mask", action="store_true", default=False,
+        help="Enable texture-based residual masking (attenuates residual in smooth regions)"
+    )
+    encode_parser.add_argument(
+        "--mask-floor", type=float, default=None, dest="mask_floor",
+        help="Minimum mask value for texture masking (default: 0.3, implies --texture-mask)"
     )
     encode_parser.set_defaults(func=encode_command)
 

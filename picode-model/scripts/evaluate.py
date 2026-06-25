@@ -83,6 +83,7 @@ def evaluate_single_image(
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
     decoder_size: int | None = None,
+    texture_mask_floor: float | None = None,
 ) -> dict:
     """Encode a message in an image and decode it back."""
     image = Image.open(image_path).convert("RGB")
@@ -121,11 +122,21 @@ def evaluate_single_image(
             image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
             enc_out = encoder(image_tensor, message)
-            encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
+            encoded_raw = enc_out["encoded"] if isinstance(enc_out, dict) else enc_out
+
+            if texture_mask_floor is not None:
+                from picode.models.picotrust.texture_mask import compute_texture_mask
+
+                residual = encoded_raw - image_tensor
+                tex_mask = compute_texture_mask(image_tensor, floor=texture_mask_floor)
+                encoded = (image_tensor + residual * tex_mask).clamp(0.0, 1.0)
+            else:
+                encoded = encoded_raw.clamp(0.0, 1.0)
             decoder_input = encoded
             if decoder_size and encoded.shape[-1] != decoder_size:
                 decoder_input = F.interpolate(
-                    encoded, size=(decoder_size, decoder_size), mode="bilinear", align_corners=False,
+                    encoded, size=(decoder_size, decoder_size),
+                    mode="bilinear", align_corners=False,
                 )
             decoded_logits = decoder(decoder_input)
             decoded = (decoded_logits > 0).float()
@@ -152,6 +163,7 @@ def run_robustness_sweep(
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
     decoder_size: int | None = None,
+    texture_mask_floor: float | None = None,
 ) -> list:
     """Run robustness sweep on a single image."""
     image = Image.open(image_path).convert("RGB")
@@ -191,8 +203,50 @@ def run_robustness_sweep(
     else:
         image_cropped = ImageOps.fit(image, (image_size, image_size), method=Image.LANCZOS)
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
-        evaluator = Evaluator(encoder, decoder, device, decoder_size=decoder_size)
-        return evaluator.robustness_sweep(image_tensor, message, DEFAULT_ROBUSTNESS_SWEEP)
+
+        if texture_mask_floor is not None:
+            from picode.models.picotrust.texture_mask import compute_texture_mask
+            from picode.training.evaluation import RobustnessResult
+
+            results: list = []
+            with torch.no_grad():
+                enc_out = encoder(image_tensor, message)
+                encoded_raw = enc_out["encoded"] if isinstance(enc_out, dict) else enc_out
+                residual = encoded_raw - image_tensor
+                tex_mask = compute_texture_mask(image_tensor, floor=texture_mask_floor)
+                encoded = (image_tensor + residual * tex_mask).clamp(0.0, 1.0)
+
+                evaluator = Evaluator(encoder, decoder, device, decoder_size=decoder_size)
+                for name, strengths in DEFAULT_ROBUSTNESS_SWEEP.items():
+                    for strength in strengths:
+                        distortion = evaluator._create_distortion(name, strength)
+                        distorted = distortion(encoded)
+                        decoder_input = distorted
+                        if decoder_size and distorted.shape[-1] != decoder_size:
+                            decoder_input = F.interpolate(
+                                distorted,
+                                size=(decoder_size, decoder_size),
+                                mode="bilinear",
+                                align_corners=False,
+                            )
+                        decoded_logits = decoder(decoder_input)
+                        decoded_binary = (decoded_logits > 0).float()
+                        bit_acc = (decoded_binary == message).float().mean().item()
+                        msg_acc = (
+                            (decoded_binary == message).all(dim=1).float().mean().item()
+                        )
+                        results.append(
+                            RobustnessResult(
+                                distortion=name,
+                                strength=strength,
+                                bit_accuracy=bit_acc,
+                                message_accuracy=msg_acc,
+                            )
+                        )
+            return results
+        else:
+            evaluator = Evaluator(encoder, decoder, device, decoder_size=decoder_size)
+            return evaluator.robustness_sweep(image_tensor, message, DEFAULT_ROBUSTNESS_SWEEP)
 
 
 def evaluate_directory(
@@ -207,6 +261,7 @@ def evaluate_directory(
     model_type: str = "stegastamp",
     frame_pct: float = 0.04,
     decoder_size: int | None = None,
+    texture_mask_floor: float | None = None,
 ) -> dict:
     """Evaluate on all images in a directory."""
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -234,7 +289,7 @@ def evaluate_directory(
 
         result = evaluate_single_image(
             encoder, decoder, image_path, device, num_bits, image_size,
-            model_type, frame_pct, decoder_size,
+            model_type, frame_pct, decoder_size, texture_mask_floor,
         )
         all_bit_acc.append(result["bit_accuracy"])
         all_psnr.append(result["psnr"])
@@ -243,7 +298,7 @@ def evaluate_directory(
         if run_robustness:
             rob_results = run_robustness_sweep(
                 encoder, decoder, image_path, device, num_bits, image_size,
-                model_type, frame_pct, decoder_size,
+                model_type, frame_pct, decoder_size, texture_mask_floor,
             )
             for r in rob_results:
                 if r.distortion not in all_robustness:
@@ -287,6 +342,14 @@ def main():
         "--frame-pct", type=float, default=0.04, dest="frame_pct",
         help="Frame width as fraction of image (PicodeFrame only, default: 0.04)",
     )
+    parser.add_argument(
+        "--texture-mask", action="store_true", default=False,
+        help="Enable texture-based residual masking",
+    )
+    parser.add_argument(
+        "--mask-floor", type=float, default=None, dest="mask_floor",
+        help="Minimum mask value for texture masking (default: 0.3, implies --texture-mask)",
+    )
     args = parser.parse_args()
 
     # Select device
@@ -317,6 +380,12 @@ def main():
         print(f"Decoder size: {decoder_size} (downsampling from {image_size})")
     print(f"Model type: {model_type}")
 
+    # Compute texture mask floor
+    texture_mask_floor: float | None = None
+    if args.texture_mask or args.mask_floor is not None:
+        texture_mask_floor = args.mask_floor if args.mask_floor is not None else 0.3
+        print(f"Texture mask: floor={texture_mask_floor:.2f}")
+
     # Count parameters
     enc_params = sum(p.numel() for p in encoder.parameters())
     dec_params = sum(p.numel() for p in decoder.parameters())
@@ -326,13 +395,13 @@ def main():
         evaluate_directory(
             encoder, decoder, args.dir, device, num_bits,
             args.robustness, args.max_images, image_size,
-            model_type, args.frame_pct, decoder_size,
+            model_type, args.frame_pct, decoder_size, texture_mask_floor,
         )
     elif args.image:
         print(f"\nEvaluating on: {args.image}")
         result = evaluate_single_image(
             encoder, decoder, args.image, device, num_bits, image_size,
-            model_type, args.frame_pct, decoder_size,
+            model_type, args.frame_pct, decoder_size, texture_mask_floor,
         )
         print(f"  Bit accuracy: {result['bit_accuracy']:.4f}")
         print(f"  PSNR: {result['psnr']:.2f} dB")
@@ -341,7 +410,7 @@ def main():
             print("\nRobustness sweep:")
             results = run_robustness_sweep(
                 encoder, decoder, args.image, device, num_bits, image_size,
-                model_type, args.frame_pct, decoder_size,
+                model_type, args.frame_pct, decoder_size, texture_mask_floor,
             )
             current_dist = None
             for r in results:
