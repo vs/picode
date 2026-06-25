@@ -83,9 +83,12 @@ The key innovation enabling high-PSNR steganography. The residual amplitude is b
 
 ```
 Steps 0-10k:     strength = 1.0 (unbounded — encoder-decoder bootstrap)
-Steps 10k-90k:   linear anneal from 1.0 → target (e.g., 0.013)
-Steps 90k+:      strength = target (fine-tuning at fixed budget)
+Steps 10k-130k:  exponential anneal from 1.0 → target (e.g., 0.014)
+                  strength = 1.0 × (0.014)^progress
+Steps 130k-200k: strength = target (fine-tuning at fixed budget)
 ```
+
+Exponential annealing (v11+) is preferred over linear for ranges spanning multiple orders of magnitude. Linear annealing rushes through the critical low-strength regime.
 
 Without annealing, bounded residuals from step 0 prevent encoder-decoder bootstrapping — the encoder can't create patterns strong enough for an untrained decoder to learn from.
 
@@ -157,6 +160,11 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | **v10** | **32** | **0.014** | **38.70 dB** | **99.4%** | **98.8%** | **512→256, bilinear upsample, dilated E_post, Laplacian loss, early FFL — smoothest residuals** |
 | v10 s012 | 32 | 0.012 | — | — | — | De-annealed from v10 |
 | **v10 s010** | **32** | **0.010** | **41.06 dB** | **97.5%** | **95.6%** | **De-annealed from v10 — 41 dB milestone, highest PSNR** |
+| v11 | 64 | 0.014 | 38.09 dB | 95.0%* | 92.8%* | 512→416, encoder-side blur σ=1.0, exponential annealing — superseded by v12 |
+| **v12** | **64** | **0.014** | **38.11 dB** | **95.5%** | **93.2%** | **512→416, decoder-side blur σ=0.8, blurred LPIPS/GAN, clean output, content-adaptive — production model** |
+| **v12 s010** | **64** | **0.010** | **40.72 dB** | **94.0%** | **89.8%** | **De-annealed from v12 — 40 dB at 64 bits** |
+
+*v11 evaluated at 130k (5 images only). v12 evaluated at 200k (50 images).
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -260,6 +268,53 @@ v10 targeted the high-frequency artifact problem identified in v9. Five changes 
 
 **Implication:** The 256 decoder solves HF artifacts but prevents content-adaptive encoding. Future directions: 416 decoder + residual blurring (smooth patterns with spatial selectivity), or learned spatial mask (`use_mask=True`) with 256 decoder.
 
+### Content-Adaptive Clean Output (v12 — Production Model)
+
+v12 solved the central tension of the v9-v11 line: how to get content-adaptive residual placement (encoder concentrates signal in textured regions) with clean, sharp encoded images (no blur artifacts).
+
+**Architecture**: 64 bits, 512→416 decoder, exponential strength annealing, decoder-side Gaussian blur (σ=0.8).
+
+**Key innovations:**
+
+1. **Exponential strength annealing** — `strength = initial × (target/initial)^progress`. Spends equal time per order of magnitude, much smoother than linear for the 1.0→0.014 range. Anneal window: steps 10k-130k.
+
+2. **Decoder-side blur** — Gaussian blur (σ=0.8) applied to the decoder's input during training. The decoder learns to decode from blurred images, forcing the encoder to create low-frequency patterns that survive the blur. At inference, no blur is applied — the encoded image stays clean and sharp.
+
+3. **Blurred LPIPS/GAN for content-adaptive gradients** — LPIPS and GAN discriminator receive `blur(encoded)` instead of `encoded`. The blur converts the residual into large-scale patterns that LPIPS can differentially penalize by image region: high penalty in smooth areas (sky, walls), low penalty in textured areas (grass, fabric). This drives the encoder to concentrate residuals in texture. L2 and FFL see the real (unblurred) encoded image to maintain pixel-level quality.
+
+**Why blurred LPIPS drives content-adaptivity:**
+- Without blur, the encoder can hide signal in fine per-pixel noise that LPIPS can't detect well → no spatial selectivity
+- With blur, the residual patterns are visible to LPIPS at a coarse scale → LPIPS penalizes more in smooth regions → encoder avoids smooth regions
+- The blur doesn't affect the actual output — it only shapes the gradient signal
+
+**Results (50-image evaluation):**
+
+| Strength | Steps | PSNR | Accuracy | JPEG Q10 | Blur σ=3 | Bright ±0.5 |
+|----------|-------|------|----------|----------|----------|-------------|
+| 0.014 | 200k | 38.11 dB | 95.5% | 93.2% | 95.7% | 92.1% |
+| 0.012 | 230k | 39.11 dB | 93.2% | 90.9% | 94.5% | 89.8% |
+| **0.010** | **260k** | **40.72 dB** | **94.0%** | **89.8%** | **93.6%** | **87.3%** |
+
+**Per-image adaptive strength:** The trained strength (0.010-0.014) can be adjusted at inference. The encoder produces a raw residual bounded by softsign — changing strength just scales the amplitude. Use lower strength (0.008-0.010) for easy images with lots of texture (better PSNR), bump to 0.015-0.020 for hard images with smooth regions (better accuracy). No retraining needed.
+
+**Texture masking:** Post-processing step that attenuates the residual in smooth image regions using a texture map. Reduces visibility of artifacts in smooth areas at the cost of some accuracy. Available via `picode encode --texture-mask`.
+
+**Bootstrap at 64 bits:** ~9% success rate per attempt (1 in 11). Much harder than 32 bits (~50%). Auto-retry loop needed. The decoder-side blur does not interfere with bootstrapping since the encoder's residual is unblurred during the bootstrap phase.
+
+### Exponential vs Linear Annealing (v11/v12)
+
+Linear annealing spends most of its time in the high-strength regime and rushes through the critical low-strength transition. Exponential annealing treats each order of magnitude equally:
+
+| Step | Progress | Exponential | Linear |
+|------|----------|-------------|--------|
+| 10k  | 0.00 | 1.000 | 1.000 |
+| 50k  | 0.33 | 0.242 | 0.675 |
+| 70k  | 0.50 | 0.118 | 0.507 |
+| 90k  | 0.67 | 0.057 | 0.340 |
+| 130k | 1.00 | 0.014 | 0.014 |
+
+The exponential schedule gives the encoder more time in the 0.1→0.014 range where fine-tuning efficiency matters most. Implemented as `anneal_schedule: exponential` in the config.
+
 ### Strength-PSNR-Accuracy Relationship
 
 Empirical curves from 50-image evaluations:
@@ -293,7 +348,18 @@ The first 0.001 increment (0.012→0.013) gives the best accuracy-per-PSNR trade
 
 With 32 bits, de-annealing barely costs accuracy. Each 0.001 step gains ~0.5 dB PSNR for ~0.3% accuracy. At 0.011, the v9 model crosses 40 dB — matching TrustMark-B territory. The v10 architecture (256 decoder, Laplacian loss, smooth residuals) pushes further: v10 s010 reaches **41.06 dB** with 97.5% accuracy and 95.6% JPEG Q10 robustness.
 
+**64-bit models (512→416 decoder, LPIPS 1.5, GAN 1.5, decoder blur σ=0.8):**
+
+| Strength | PSNR (dB) | Raw Accuracy | PSNR delta | Accuracy delta |
+|----------|-----------|-------------|------------|----------------|
+| 0.014 | 38.11 | 95.5% | — | — |
+| 0.012 | 39.11 | 93.2% | +1.0 dB | -2.3% |
+| 0.010 | 40.72 | 94.0% | +1.6 dB | +0.8% |
+
+With 64 bits, de-annealing from 0.014→0.010 trades ~1.5% accuracy for +2.6 dB PSNR. The accuracy recovery at 0.010 (94.0% vs 93.2% at 0.012) suggests the model benefits from more fine-tuning time at the target strength.
+
 In linear terms (RMS residual amplitude on 0-255 scale):
+- 0.010 strength → 40.7 dB → ~2.3 pixel levels modified per pixel
 - 0.013 strength → 39.3 dB → ~2.8 pixel levels modified per pixel
 - 0.015 strength → 37.7 dB → ~3.3 pixel levels modified per pixel
 
@@ -332,6 +398,24 @@ In linear terms (RMS residual amplitude on 0-255 scale):
 | Brightness ±0.5 | 88.8% |
 | Contrast ±0.3 | 94.2% |
 | Contrast ±0.5 | 93.7% |
+
+### Robustness (v12, 64 bits, strength 0.014, 50 images — production model)
+
+| Distortion | Bit Accuracy |
+|------------|-------------|
+| Clean | 95.5% |
+| JPEG Q10 | 93.2% |
+| JPEG Q50 | 95.7% |
+| JPEG Q90 | 95.8% |
+| Gaussian noise σ=0.05 | 95.2% |
+| Gaussian noise σ=0.10 | 92.6% |
+| Gaussian blur σ=1.0 | 96.6% |
+| Gaussian blur σ=3.0 | 95.7% |
+| Brightness ±0.1 | 95.1% |
+| Brightness ±0.3 | 93.3% |
+| Brightness ±0.5 | 92.1% |
+| Contrast ±0.3 | 95.6% |
+| Contrast ±0.5 | 95.2% |
 
 ### Error Correction (LDPC)
 
@@ -391,6 +475,8 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v9** | 2026 | 32 | 512→416 | 40.28 | 98.8% | 97.4% (Q10) | 12.8M |
 | **PicoTrust v10** | 2026 | 32 | 512→256 | 38.70 | 99.4% | 98.8% (Q10) | **6.3M** |
 | **PicoTrust v10 s010** | 2026 | 32 | 512→256 | 41.06 | 97.5% | 95.6% (Q10) | **6.3M** |
+| **PicoTrust v12** | 2026 | 64 | 512→416 | 38.11 | 95.5% | 93.2% (Q10) | 12.8M |
+| **PicoTrust v12 s010** | 2026 | 64 | 512→416 | 40.72 | 94.0% | 89.8% (Q10) | 12.8M |
 
 *v8 stopped early (100k steps). Content-adaptive encoding but 96 bits exceeded capacity at strength 0.014.
 
@@ -405,9 +491,9 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 - **Robust across all distortions**: No single failure mode (unlike TrustMark failing JPEG, or StegaStamp failing flips).
 
 **PicoTrust limitations:**
-- **PSNR gap**: 38.7-41.1 dB (v9/v10) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — v10 s010 at 41 dB is within ~1 dB of TrustMark-Q. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
-- **Bootstrap fragility**: ~50% failure rate per attempt. The model either bootstraps within 1000 steps or collapses permanently.
-- **Strength-accuracy cliff**: Depends on bit count. For 80 bits, below ~0.013 accuracy drops below LDPC threshold. For 32 bits, strength 0.013 gives 98.9% accuracy — the cliff is much lower.
+- **PSNR gap**: 38-41 dB (v9/v10/v12) vs 42-51 dB for TrustMark/InvisMark. Gap is closing — v12 s010 at 40.7 dB is within ~1 dB of TrustMark-Q at 64 bits. Modern methods use pretrained backbones (ConvNeXT, etc.) for higher PSNR.
+- **Bootstrap fragility**: ~50% failure rate at 32 bits, ~9% at 64 bits. Auto-retry loop needed for higher bit counts.
+- **Strength-accuracy cliff**: Depends on bit count. For 64 bits at 0.010, accuracy is 94%. For 32 bits at 0.010, accuracy is 97.5%. Higher bit counts have steeper cliffs.
 
 **vs StegaStamp (direct ancestor):**
 PicoTrust v4 achieves +6 dB PSNR over StegaStamp with comparable accuracy, in an 8.5× smaller model. Key improvements: grayscale residual, softsign bounding, strength annealing, compact STN.
@@ -456,38 +542,42 @@ python scripts/test_ecc.py checkpoints/best.pt --dir data/samples --max-images 1
 
 ## Configuration
 
-Example configuration (v6c — best PSNR/accuracy balance for 80 bits):
+Example configuration (v12 — production model, 64 bits, content-adaptive):
 
 ```yaml
-experiment_name: picotrust_v6c
+experiment_name: picotrust_v12
 
 model:
   type: picotrust
   encoder_size: 512
-  decoder_size: 256
+  decoder_size: 416
 
 training:
-  num_bits: 80
-  num_steps: 260000
+  num_bits: 64
+  num_steps: 200000
   lr: 0.0001
-  residual_strength: 0.015
-  residual_strength_anneal_target: 0.015
+  residual_strength: 1.0
+  residual_strength_anneal_target: 0.014
+  residual_strength_anneal_start: 10000
+  residual_strength_anneal_steps: 120000
+  anneal_schedule: exponential
+  decoder_blur_sigma: 0.8
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
 
 loss:
   message: { scale: 5.0 }
   l2: { scale: 1.5, ramp_steps: 50000 }
-  lpips: { scale: 1.0, ramp_steps: 50000 }
-  ffl: { scale: 1.0, ramp_steps: 50000, delay_steps: 30000 }
+  lpips: { scale: 1.5, ramp_steps: 50000 }
+  ffl: { scale: 1.0, ramp_steps: 50000, delay_steps: 0 }
   message_loss_type: mse
-  gan_config: { enabled: true, discriminator_lr: 0.00001 }
+  gan_config: { enabled: true, discriminator_lr: 0.000015, g_loss_scale: 1.5 }
 
 distortion:
   strategy: curriculum
 ```
 
-See `picode-model/configs/` for all training configurations (v1-v10).
+See `picode-model/configs/` for all training configurations (v1-v12).
 
 ## Training Lessons
 
@@ -511,3 +601,10 @@ Hard-won insights from 9 model versions:
 16. **Bilinear upsampling + dilated E_post + Laplacian loss produce smoother residuals** — v10 combined all three with 256 decoder and early FFL. Grid artifacts eliminated, residuals visibly smoother. But the 256 decoder prevents content-adaptive encoding — residuals are uniform rather than texture-concentrated
 17. **256 decoder and content-adaptivity are mutually exclusive** — the 256 decoder can't resolve fine spatial detail, so the encoder has no incentive for selective placement. Getting both smooth AND content-adaptive requires a different approach: either 416 decoder + residual blurring, or learned spatial masks with 256 decoder
 18. **Laplacian loss fades under strength annealing** — once residual amplitude anneals to 0.014, the Laplacian values become small (~0.01). The loss is most useful during the squeeze phase (steps 10k-90k) when residuals are still large. After annealing, the strength bound itself constrains HF patterns
+19. **Encoder-side blur prevents bootstrap** — even σ=0.1 at step 0 collapses bootstrap (0/15 attempts at 64 bits). The blur destroys the spatial structure the decoder needs to initially learn from. Fix: use decoder-side blur only, or delay encoder blur until after bootstrap
+20. **Exponential annealing > linear** — for multiplicative parameters like strength spanning 2 orders of magnitude (1.0→0.014), exponential decay spends equal time per order of magnitude. Linear wastes time at high strength and rushes through the critical low-strength regime
+21. **Decoder-side blur teaches low-frequency decoding** — blurring the decoder's input during training forces the decoder to rely only on low-frequency patterns. The encoder naturally learns to create patterns that survive the blur (low-frequency) without any architectural constraint on its output. Clean encoded images at inference
+22. **Blurred LPIPS drives content-adaptivity without modifying output** — computing LPIPS on `blur(encoded)` makes the residual visible to LPIPS at a coarse scale, enabling differential penalization by image region (more in smooth areas, less in textured). The actual encoded image remains unblurred. The blur scale for LPIPS and decoder should match (same σ) since LPIPS guides patterns at the scale the decoder uses
+23. **64 bits bootstraps ~9% of the time** — vs ~50% at 32 bits. The decoder has 2× more outputs to learn, making random initialization less likely to produce useful signal. Auto-retry loop essential
+24. **Strength is adjustable at inference** — the softsign bound `strength × raw/(1+|raw|)` can be evaluated at any strength without retraining. Use lower strength for easy (textured) images, higher for hard (smooth) images. Per-image adaptive strength for production use
+25. **L2 on real output + LPIPS on blurred output = clean + adaptive** — L2 maintains pixel quality of the actual encoded image. LPIPS on the blurred version provides content-adaptive spatial guidance. Using the same blur for both would give stronger adaptivity but no pixel-level quality control on the real output
