@@ -2,22 +2,20 @@
 
 import torch
 
+from picode.models.picotrust.texture_mask import compute_texture_mask
+
 
 class TestComputeTextureMask:
     """Tests for compute_texture_mask."""
 
     def test_output_shape_matches_input(self):
         """Mask spatial dims match input image."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         image = torch.rand(1, 3, 64, 64)
         mask = compute_texture_mask(image, floor=0.3)
         assert mask.shape == (1, 1, 64, 64)
 
     def test_output_range(self):
         """All mask values in [floor, 1.0]."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         image = torch.rand(1, 3, 128, 128)
         floor = 0.3
         mask = compute_texture_mask(image, floor=floor)
@@ -25,17 +23,13 @@ class TestComputeTextureMask:
         assert mask.max() <= 1.0 + 1e-6
 
     def test_constant_image_returns_floor(self):
-        """A constant image (zero variance everywhere) should produce mask ≈ floor."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
+        """A constant image (zero variance everywhere) should produce mask ~ floor."""
         image = torch.full((1, 3, 64, 64), 0.5)
         mask = compute_texture_mask(image, floor=0.3)
         assert torch.allclose(mask, torch.full_like(mask, 0.3), atol=1e-4)
 
     def test_noisy_image_near_one(self):
         """A uniformly noisy image should produce mask values near 1.0."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         torch.manual_seed(42)
         image = torch.rand(1, 3, 64, 64)
         mask = compute_texture_mask(image, floor=0.3)
@@ -44,8 +38,6 @@ class TestComputeTextureMask:
 
     def test_smooth_region_lower_than_textured(self):
         """Smooth region gets lower mask value than textured region."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         image = torch.zeros(1, 3, 64, 64)
         # Left half: smooth (constant)
         image[:, :, :, :32] = 0.5
@@ -60,24 +52,27 @@ class TestComputeTextureMask:
 
     def test_batch_dimension(self):
         """Works with batch size > 1."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         image = torch.rand(4, 3, 64, 64)
         mask = compute_texture_mask(image, floor=0.3)
         assert mask.shape == (4, 1, 64, 64)
 
-    def test_floor_zero(self):
-        """Floor=0 allows mask values down to 0."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
+    def test_floor_zero_constant_image(self):
+        """Floor=0 on constant image produces near-zero mask."""
         image = torch.full((1, 3, 64, 64), 0.5)
         mask = compute_texture_mask(image, floor=0.0)
         assert mask.min() >= -1e-6
+        assert mask.max() < 0.01
+
+    def test_floor_zero_textured_image(self):
+        """Floor=0 on textured image still produces high values."""
+        torch.manual_seed(42)
+        image = torch.rand(1, 3, 64, 64)
+        mask = compute_texture_mask(image, floor=0.0)
+        assert mask.min() >= -1e-6
+        assert mask.mean() > 0.5
 
     def test_small_image_no_error(self):
         """Images smaller than default kernel size don't crash."""
-        from picode.models.picotrust.texture_mask import compute_texture_mask
-
         image = torch.rand(1, 3, 8, 8)
         mask = compute_texture_mask(image, floor=0.3)
         assert mask.shape == (1, 1, 8, 8)
