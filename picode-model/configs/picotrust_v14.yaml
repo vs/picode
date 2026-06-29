@@ -3,7 +3,7 @@ experiment_name: picotrust_v14
 model:
   type: picotrust
   encoder_size: 512
-  decoder_size: 416
+  decoder_size: 512
 
 data:
   source: folder
@@ -11,7 +11,7 @@ data:
   batch_size: 4
 
 training:
-  num_steps: 200000
+  num_steps: 140000
   lr: 0.0001
   num_bits: 64
   image_size: 512
@@ -27,7 +27,7 @@ training:
   residual_strength: 1.0
   residual_strength_anneal_target: 0.025
   residual_strength_anneal_start: 10000
-  residual_strength_anneal_steps: 120000
+  residual_strength_anneal_steps: 90000
   anneal_schedule: exponential
   decoder_blur_sigma: 1.0
 
