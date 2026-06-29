@@ -163,8 +163,9 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v11 | 64 | 0.014 | 38.09 dB | 95.0%* | 92.8%* | 512→416, encoder-side blur σ=1.0, exponential annealing — superseded by v12 |
 | **v12** | **64** | **0.014** | **38.11 dB** | **95.5%** | **93.2%** | **512→416, decoder-side blur σ=0.8, blurred LPIPS/GAN, clean output, content-adaptive — production model** |
 | **v12 s010** | **64** | **0.010** | **40.72 dB** | **94.0%** | **89.8%** | **De-annealed from v12 — 40 dB at 64 bits** |
+| v13 | 64 | 0.020 | 35.84 dB | 98.5% | 97.3% | Learned mask, no blurred LPIPS — stopped early, unsuccessful |
 
-*v11 evaluated at 130k (5 images only). v12 evaluated at 200k (50 images).
+*v11 evaluated at 130k (5 images only). v12 evaluated at 200k (50 images). v13 evaluated at 150k (50 images), stopped early.
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -330,6 +331,21 @@ With LDPC(60,32) soft decoding (32 data bits) — **much better**:
 - **Recommended production config:** LDPC soft decoding + texture mask floor=0.5 (39.4 dB, 100% clean recovery, 95% JPEG Q50)
 
 **Bootstrap at 64 bits:** ~9% success rate per attempt (1 in 11). Much harder than 32 bits (~50%). Auto-retry loop needed. The decoder-side blur does not interfere with bootstrapping since the encoder's residual is unblurred during the bootstrap phase.
+
+### Learned Spatial Mask Experiment (v13 — Unsuccessful)
+
+v13 attempted to replace the blurred LPIPS/GAN approach with a learned per-pixel spatial mask. The mask head (4,641 params, 0.3% of encoder) predicted `mask(x,y) ∈ [0, 1]` from U-Net features, with `residual = strength × softsign(raw) × mask`. All losses (L2, LPIPS, GAN, FFL) received the real encoded image — no blurred LPIPS/GAN. Strength target 0.020 (higher than v12's 0.014 to give the mask headroom for selectivity).
+
+**Results (50-image evaluation at 150k steps):** 98.5% accuracy, 35.84 dB PSNR, JPEG Q10 97.3%.
+
+**Why it failed:**
+- **Diagonal curve artifacts**: the encoder learned structured spatial patterns (diagonal curves) visible in the encoded images. Without blurred LPIPS, nothing suppressed these HF structured patterns — LPIPS on the real output couldn't penalize them effectively.
+- **Mask not selective enough**: `mask_mean=0.83, mask_std=0.20` — the mask reduced residual to ~83% on average but didn't sharply separate textured from smooth regions. With effective residual of `0.020 × 0.83 = 0.017`, artifacts were more visible than v12's 0.014.
+- **High accuracy, poor visual quality**: 98.5% accuracy was excellent (better than v12's 95.5%), but the encoded images looked worse due to the structured artifacts.
+
+**Key lesson**: the learned mask controls WHERE to place residual, but not WHAT SHAPE the residual takes. Without blurred LPIPS, the encoder is free to create structured HF patterns that are perceptually conspicuous. The mask and blurred LPIPS solve different problems — the mask handles spatial selectivity, blurred LPIPS handles pattern smoothness. Both may be needed together.
+
+**Implication for future work**: a v14 could combine the learned mask (spatial control) with blurred LPIPS (pattern smoothness). The mask would route residual to textured regions while blurred LPIPS ensures the residual patterns in those regions are smooth and invisible.
 
 ### Exponential vs Linear Annealing (v11/v12)
 
@@ -640,3 +656,5 @@ Hard-won insights from 9 model versions:
 25. **L2 on real output + LPIPS on blurred output = clean + adaptive** — L2 maintains pixel quality of the actual encoded image. LPIPS on the blurred version provides content-adaptive spatial guidance. Using the same blur for both would give stronger adaptivity but no pixel-level quality control on the real output
 26. **LDPC soft decoding >> BCH hard decoding** — at ~96% bit accuracy, BCH treats every bit as equally certain and fails when error count exceeds `t`. LDPC exploits soft probabilities from decoder logits (via sigmoid), gaining ~20% message recovery over BCH at comparable code rates. The confidence information in logits is valuable — bits the decoder is uncertain about get less weight in belief propagation. Use LDPC for production
 27. **Texture masking + LDPC is the right production combo** — post-processing texture mask (floor=0.5) attenuates residuals in smooth regions, gaining +1.4 dB PSNR. BCH can't tolerate the accuracy drop, but LDPC soft decoding handles it gracefully: 100% clean message recovery, 95% at JPEG Q50, 80% at JPEG Q10
+28. **Learned mask alone doesn't solve visual quality** — a learned spatial mask (v13) successfully controls WHERE residual goes (mask_mean=0.83, high accuracy) but doesn't control WHAT SHAPE the residual takes. Without blurred LPIPS, the encoder creates structured HF patterns (diagonal curves) that are perceptually conspicuous. The mask and blurred LPIPS address different problems: mask = spatial selectivity, blurred LPIPS = pattern smoothness. Both are needed for high visual quality
+29. **High accuracy ≠ good visual quality** — v13 achieved 98.5% accuracy (better than v12's 95.5%) but worse visual quality due to structured artifacts. Optimizing for bit accuracy alone doesn't produce invisible encoding — perceptual loss design matters as much as the spatial strategy
