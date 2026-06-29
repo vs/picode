@@ -32,8 +32,8 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
     )
     # Detect v2 features from config
     loss_cfg = config.get("loss", {})
-    use_mask = loss_cfg.get("mask_reg") is not None
     training_cfg = config.get("training", {})
+    use_mask = training_cfg.get("use_mask", False) or loss_cfg.get("mask_reg") is not None
     residual_strength = training_cfg.get("residual_strength", 0)
     # Compute annealed strength at saved step (config stores initial value)
     if residual_strength > 0:
