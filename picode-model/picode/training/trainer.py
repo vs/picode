@@ -752,19 +752,24 @@ class Trainer:
         else:
             decoder_input = distorted
 
-        # 7b. Apply blur to encoded image (decoder input + perceptual losses)
+        # 7b. Apply blur (decoder gets sharp image + blurred residual,
+        #     perceptual losses get blur(encoded))
         if self._decoder_blur_kernel is not None:
-            blurred_encoded = F.conv2d(
-                distorted, self._decoder_blur_kernel,
+            # Decoder: original + blur(residual) — sharp image, blurred signal
+            distorted_residual = distorted - images
+            blurred_residual = F.conv2d(
+                distorted_residual, self._decoder_blur_kernel,
                 padding=self._decoder_blur_pad, groups=3,
             )
-            if blurred_encoded.shape[-1] != self._decoder_size:
+            decoder_blurred = images + blurred_residual
+            if decoder_blurred.shape[-1] != self._decoder_size:
                 decoder_input = F.interpolate(
-                    blurred_encoded, size=(self._decoder_size, self._decoder_size),
+                    decoder_blurred, size=(self._decoder_size, self._decoder_size),
                     mode="bilinear", align_corners=False,
                 )
             else:
-                decoder_input = blurred_encoded
+                decoder_input = decoder_blurred
+            # Perceptual losses: blur(encoded) — v12 style
             encoded_for_perceptual = F.conv2d(
                 encoded, self._decoder_blur_kernel,
                 padding=self._decoder_blur_pad, groups=3,
