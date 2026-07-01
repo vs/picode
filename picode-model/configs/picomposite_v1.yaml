@@ -8,7 +8,7 @@
 #   UHQ: 30 bits, strength 0.010, blur σ=1.4 → LDPC(30,17) = 17 data bits
 #   HQ:  48 bits, strength 0.012, blur σ=1.0 → LDPC(48,26) = 26 data bits
 #   MQ:  72 bits, strength 0.016, blur σ=0.8 → LDPC(72,38) = 38 data bits
-#   LQ:  96 bits, strength 0.020, blur σ=0.6 → LDPC(96,50) = 50 data bits
+#   LQ:  96 bits, strength 0.018, blur σ=0.6 → LDPC(96,50) = 50 data bits
 
 experiment_name: picomposite_v1
 

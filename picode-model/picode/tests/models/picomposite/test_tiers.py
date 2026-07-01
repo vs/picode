@@ -36,7 +36,7 @@ class TestTierDefinitions:
         assert TIERS[0] == {"bits": 30, "strength": 0.010, "blur_sigma": 1.4}
         assert TIERS[1] == {"bits": 48, "strength": 0.012, "blur_sigma": 1.0}
         assert TIERS[2] == {"bits": 72, "strength": 0.016, "blur_sigma": 0.8}
-        assert TIERS[3] == {"bits": 96, "strength": 0.020, "blur_sigma": 0.6}
+        assert TIERS[3] == {"bits": 96, "strength": 0.018, "blur_sigma": 0.6}
 
     def test_tier_names(self):
         assert TIER_NAMES == {0: "UHQ", 1: "HQ", 2: "MQ", 3: "LQ"}
