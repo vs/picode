@@ -919,6 +919,21 @@ class Trainer:
             metrics["bit_acc_std"] = per_image_acc.std().item()
             metrics["bit_acc_min"] = per_image_acc.min().item()
 
+            # Texture-Region Concentration (TRC)
+            # Measures how much residual energy is in textured vs smooth regions
+            # 0.5 = uniform, 1.0 = all in texture
+            gray = images.mean(dim=1, keepdim=True)
+            trc_kernel = torch.ones(1, 1, 7, 7, device=images.device) / 49.0
+            local_mean = F.conv2d(gray, trc_kernel, padding=3)
+            local_var = F.conv2d(gray ** 2, trc_kernel, padding=3) - local_mean ** 2
+            local_var = local_var.clamp(min=0)
+            median_var = local_var.median()
+            textured = (local_var > median_var).float()
+            res_energy = residual.pow(2).mean(dim=1, keepdim=True)  # per-pixel energy
+            energy_tex = (res_energy * textured).sum()
+            energy_total = res_energy.sum() + 1e-8
+            metrics["trc"] = (energy_tex / energy_total).item()
+
         # v2 diagnostic metrics
         if encoder_mask is not None:
             metrics["mask_mean"] = encoder_mask.mean().item()
