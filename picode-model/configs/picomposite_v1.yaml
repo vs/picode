@@ -1,9 +1,17 @@
+# PicoMposite v1 — 4-tier model with per-tier decoder blur
+#
+# Tiers (defined in picode/models/picomposite/tiers.py):
+#   UHQ: 30 bits, strength 0.010, blur σ=1.4 → LDPC(30,17) = 17 data bits
+#   HQ:  48 bits, strength 0.012, blur σ=1.0 → LDPC(48,26) = 26 data bits
+#   MQ:  72 bits, strength 0.016, blur σ=0.8 → LDPC(72,38) = 38 data bits
+#   LQ:  96 bits, strength 0.020, blur σ=0.6 → LDPC(96,50) = 50 data bits
+
 experiment_name: picomposite_v1
 
 model:
   type: picomposite
   encoder_size: 512
-  decoder_size: 256
+  decoder_size: 416
 
 data:
   source: folder
@@ -26,8 +34,9 @@ training:
   phase2_decoder_lr_scale: 0.1
   residual_strength: 1.0
   residual_strength_anneal_start: 10000
-  residual_strength_anneal_steps: 80000
+  residual_strength_anneal_steps: 120000
   residual_strength_anneal_target: 1.0
+  anneal_schedule: exponential
 
 loss:
   message: { scale: 5.0, ramp_steps: 1 }
@@ -36,8 +45,6 @@ loss:
   lpips: { scale: 1.5, ramp_steps: 50000 }
   ffl: { scale: 1.0, ramp_steps: 50000, delay_steps: 30000 }
   message_loss_type: mse
-  use_border_falloff: true
-  l2_edge_gain: 0.0
   gan_config:
     enabled: true
     discriminator_lr: 0.000015
@@ -46,26 +53,6 @@ loss:
 
 distortion:
   strategy: curriculum
-  perspective:
-    strength: 0.1
-    ramp_steps: 10000
-  brightness:
-    strength: 0.3
-    ramp_steps: 1000
-  saturation:
-    strength: 1.0
-    ramp_steps: 1000
-  hue:
-    strength: 0.1
-    ramp_steps: 1000
-  noise:
-    strength: 0.02
-    ramp_steps: 1000
-  jpeg_quality:
-    strength: 25
-    ramp_steps: 1000
-  enable_jpeg: true
-  enable_blur: true
 
 checkpoint:
   dir: checkpoints

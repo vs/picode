@@ -271,6 +271,22 @@ class Trainer:
             self._decoder_blur_kernel = kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._decoder_blur_pad = k // 2
 
+        # Precompute per-tier blur kernels for picomposite
+        self._tier_blur_kernels: list[tuple[Tensor, int]] = []
+        if config.model.type == "picomposite":
+            import math  # noqa: F811
+
+            from picode.models.picomposite.tiers import TIERS
+            for t_idx in sorted(TIERS.keys()):
+                sigma = float(TIERS[t_idx]["blur_sigma"])
+                k = 2 * math.ceil(3 * sigma) + 1
+                ax = torch.arange(k, dtype=torch.float32) - k // 2
+                xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+                kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
+                kernel = (kernel / kernel.sum()).view(1, 1, k, k)
+                kernel_3ch = kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
+                self._tier_blur_kernels.append((kernel_3ch, k // 2))
+
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
@@ -1024,14 +1040,55 @@ class Trainer:
         # --- Distortions ---
         distorted = self.distortion(encoded, self.global_step)
 
-        # --- Resize to decoder size if needed ---
-        if distorted.shape[-1] != self._decoder_size:
-            decoder_input = F.interpolate(
-                distorted, size=(self._decoder_size, self._decoder_size),
-                mode="bilinear", align_corners=False,
-            )
+        # --- Per-tier decoder blur ---
+        # Each sample gets blurred with its tier's sigma. Group by tier for
+        # efficient batched convolution instead of per-sample loops.
+        if self._tier_blur_kernels:
+            # Decoder input: original + blur(residual) — sharp image, blurred signal
+            distorted_residual = distorted - images
+            decoder_blurred = torch.zeros_like(distorted)
+            # Also build blurred versions for perceptual losses
+            encoded_for_perceptual = torch.zeros_like(encoded)
+            original_for_perceptual = torch.zeros_like(images)
+
+            for t_idx, (kernel, pad) in enumerate(self._tier_blur_kernels):
+                tier_mask = (tiers == t_idx)
+                if not tier_mask.any():
+                    continue
+                idx = tier_mask.nonzero(as_tuple=True)[0]
+
+                # Blur distorted residual for decoder
+                res_t = distorted_residual[idx]
+                blurred_res = F.conv2d(res_t, kernel, padding=pad, groups=3)
+                decoder_blurred[idx] = images[idx] + blurred_res
+
+                # Blur encoded for perceptual losses (v12 pattern)
+                encoded_for_perceptual[idx] = F.conv2d(
+                    encoded[idx], kernel, padding=pad, groups=3,
+                )
+                original_for_perceptual[idx] = F.conv2d(
+                    images[idx], kernel, padding=pad, groups=3,
+                )
+
+            # Resize to decoder size if needed
+            if decoder_blurred.shape[-1] != self._decoder_size:
+                decoder_input = F.interpolate(
+                    decoder_blurred, size=(self._decoder_size, self._decoder_size),
+                    mode="bilinear", align_corners=False,
+                )
+            else:
+                decoder_input = decoder_blurred
         else:
-            decoder_input = distorted
+            encoded_for_perceptual = encoded
+            original_for_perceptual = images
+            # Resize to decoder size if needed
+            if distorted.shape[-1] != self._decoder_size:
+                decoder_input = F.interpolate(
+                    distorted, size=(self._decoder_size, self._decoder_size),
+                    mode="bilinear", align_corners=False,
+                )
+            else:
+                decoder_input = distorted
 
         # --- Decode ---
         decoded_logits, tier_logits = self.decoder(decoder_input, tier=tiers)
@@ -1069,7 +1126,7 @@ class Trainer:
             loss_stn = torch.tensor(0.0, device=self.device)
             weighted_stn = 0.0
 
-        # 4. Image losses (skip during no_im_loss phase)
+        # 4. Image losses (L2 on real encoded, perceptual on blurred)
         loss_l2 = F.mse_loss(encoded, images)
         if skip_im:
             weighted_l2 = torch.tensor(0.0, device=self.device)
@@ -1086,7 +1143,7 @@ class Trainer:
             "loss_stn_reg": loss_stn,
         }
 
-        # LPIPS
+        # LPIPS (on blurred encoded/original for content-adaptive gradients)
         if not skip_im:
             lpips_scale = self._ramp(
                 loss_cfg.lpips.scale, loss_cfg.lpips.ramp_steps, eff_step,
@@ -1094,11 +1151,13 @@ class Trainer:
         else:
             lpips_scale = 0.0
         if lpips_scale > 0 and self._get_lpips_fn() is not None:
-            loss_lpips = self._compute_lpips(images, encoded)
+            loss_lpips = self._compute_lpips(
+                original_for_perceptual, encoded_for_perceptual,
+            )
             total = total + lpips_scale * loss_lpips
             losses["loss_lpips"] = loss_lpips
 
-        # FFL
+        # FFL (on real encoded)
         if not skip_im and loss_cfg.ffl is not None:
             ffl_scale = self._delayed_ramp(loss_cfg.ffl, eff_step)
             if ffl_scale > 0:
@@ -1106,7 +1165,7 @@ class Trainer:
                 total = total + ffl_scale * loss_ffl
                 losses["loss_ffl"] = loss_ffl
 
-        # GAN generator loss
+        # GAN generator loss (on blurred encoded for content-adaptive gradients)
         if (
             not skip_im
             and hasattr(self, "discriminator")
@@ -1118,7 +1177,7 @@ class Trainer:
                 eff_step,
             )
             if g_scale > 0:
-                d_fake = self.discriminator(encoded)
+                d_fake = self.discriminator(encoded_for_perceptual)
                 if loss_cfg.gan_config.discriminator_type == "patchgan":
                     loss_G = 0.5 * ((d_fake - 1) ** 2).mean()
                 else:
