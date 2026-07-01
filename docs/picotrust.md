@@ -164,8 +164,10 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | **v12** | **64** | **0.014** | **38.11 dB** | **95.5%** | **93.2%** | **512→416, decoder-side blur σ=0.8, blurred LPIPS/GAN, clean output, content-adaptive — production model** |
 | **v12 s010** | **64** | **0.010** | **40.72 dB** | **94.0%** | **89.8%** | **De-annealed from v12 — 40 dB at 64 bits** |
 | v13 | 64 | 0.020 | 35.84 dB | 98.5% | 97.3% | Learned mask, no blurred LPIPS — stopped early, unsuccessful |
+| **v14** | **64** | **0.025** | **33.85 dB** | **98.4%** | **97.7%** | **512→512, blur(encoded) σ=1.0, content-adaptive, clean output — best adaptivity** |
+| **v14 s020** | **64** | **0.020** | **35.15 dB** | **98.2%** | **96.8%** | **Post-annealed from v14 — TRC 0.572** |
 
-*v11 evaluated at 130k (5 images only). v12 evaluated at 200k (50 images). v13 evaluated at 150k (50 images), stopped early.
+*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early.
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -347,6 +349,50 @@ v13 attempted to replace the blurred LPIPS/GAN approach with a learned per-pixel
 
 **Implication for future work**: a v14 could combine the learned mask (spatial control) with blurred LPIPS (pattern smoothness). The mask would route residual to textured regions while blurred LPIPS ensures the residual patterns in those regions are smooth and invisible.
 
+### Full-Resolution Decoder with Blur (v14 — Best Content-Adaptive Model)
+
+v14 combined insights from v7 (512→512 decoder), v12 (blur(encoded) for LPIPS/GAN), and the higher strength approach. The 512 decoder gives full spatial resolution for content-adaptive placement, while `blur(encoded)` σ=1.0 suppresses HF artifacts.
+
+**Architecture**: 64 bits, 512→512 decoder, `blur(encoded)` σ=1.0 for LPIPS/GAN/decoder, L2/FFL on real encoded. Exponential annealing 1.0→0.025 over 10k-100k, 40k fine-tuning, 140k total.
+
+**Key design choices:**
+- **512→512 decoder**: full-resolution spatial bandwidth, unlike 416 (v12) or 256 (v10). The encoder can place residual with pixel-level precision.
+- **blur(encoded) σ=1.0**: blurs the WHOLE encoded image (not just residual). This worked where `original + blur(residual)` failed (v14 first attempt showed diagonal curve artifacts). The blur needs to smooth image+residual together for LPIPS to guide content-adaptive patterns effectively.
+- **Strength 0.025**: higher than v12's 0.014 — gives the encoder headroom for content-adaptive selectivity. At inference, strength can be reduced (0.015-0.020) or texture mask applied.
+- **Decoder blur at inference**: the decoder receives `blur(encoded)` both during training and inference, eliminating domain gap.
+
+**Results (50-image evaluation):**
+
+| Strength | Steps | PSNR | Accuracy | JPEG Q10 | TRC |
+|----------|-------|------|----------|----------|-----|
+| 0.025 | 140k | 33.85 dB | 98.4% | 97.7% | 0.591 |
+| 0.020 | 190k | 35.15 dB | 98.2% | 96.8% | 0.572 |
+
+**TRC (Texture-Region Concentration)**: measures fraction of residual energy in textured vs smooth image regions. 0.50 = uniform (no adaptivity), 1.0 = all in texture. v14 at 0.591 means 59% of energy goes to the textured half — strong content-adaptive placement.
+
+**Inference-time tuning (no retraining needed):**
+
+| Config | Accuracy | PSNR |
+|--------|----------|------|
+| s=0.025, no mask | 99.3% | 33.9 dB |
+| s=0.025, mask floor=0.85 | 98.7% | 35.2 dB |
+| s=0.025, mask floor=0.75 | 97.8% | 36.3 dB |
+| s=0.020, no mask | 98.3% | 35.8 dB |
+| s=0.020, mask floor=0.85 | 97.3% | 37.2 dB |
+
+**LDPC soft decoding (v14 s020, 33 payload bits from 64 coded):**
+
+| Distortion | Raw Acc | LDPC Acc |
+|------------|---------|----------|
+| Clean | 98.3% | 99.8% |
+| JPEG Q10 | 98.2% | 99.8% |
+| Blur σ=6 | 97.5% | 99.8% |
+| Noise σ=0.15 | 95.0% | 99.3% |
+| Brightness ±0.5 | 94.3% | 97.5% |
+
+**Why blur(encoded) works but original+blur(residual) doesn't:**
+The failed v14 first attempt used `original + blur(residual)` for LPIPS/GAN. This produced diagonal curve artifacts — the encoder learned structured HF patterns in the residual that survived the blur because only the residual was smoothed, not the image context. With `blur(encoded)`, the blur smooths image+residual together, making the residual patterns contextually invisible to LPIPS. LPIPS compares `blur(encoded)` against `blur(original)` — both blurred the same way — so it judges the residual patterns in the context of the blurred image.
+
 ### Exponential vs Linear Annealing (v11/v12)
 
 Linear annealing spends most of its time in the high-strength regime and rushes through the critical low-strength transition. Exponential annealing treats each order of magnitude equally:
@@ -523,6 +569,8 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v10 s010** | 2026 | 32 | 512→256 | 41.06 | 97.5% | 95.6% (Q10) | **6.3M** |
 | **PicoTrust v12** | 2026 | 64 | 512→416 | 38.11 | 95.5% | 93.2% (Q10) | 12.8M |
 | **PicoTrust v12 s010** | 2026 | 64 | 512→416 | 40.72 | 94.0% | 89.8% (Q10) | 12.8M |
+| **PicoTrust v14** | 2026 | 64 | 512→512 | 33.85 | 98.4% | 97.7% (Q10) | 19.2M |
+| **PicoTrust v14 s020** | 2026 | 64 | 512→512 | 35.15 | 98.2% | 96.8% (Q10) | 19.2M |
 
 *v8 stopped early (100k steps). Content-adaptive encoding but 96 bits exceeded capacity at strength 0.014.
 
@@ -658,3 +706,8 @@ Hard-won insights from 9 model versions:
 27. **Texture masking + LDPC is the right production combo** — post-processing texture mask (floor=0.5) attenuates residuals in smooth regions, gaining +1.4 dB PSNR. BCH can't tolerate the accuracy drop, but LDPC soft decoding handles it gracefully: 100% clean message recovery, 95% at JPEG Q50, 80% at JPEG Q10
 28. **Learned mask alone doesn't solve visual quality** — a learned spatial mask (v13) successfully controls WHERE residual goes (mask_mean=0.83, high accuracy) but doesn't control WHAT SHAPE the residual takes. Without blurred LPIPS, the encoder creates structured HF patterns (diagonal curves) that are perceptually conspicuous. The mask and blurred LPIPS address different problems: mask = spatial selectivity, blurred LPIPS = pattern smoothness. Both are needed for high visual quality
 29. **High accuracy ≠ good visual quality** — v13 achieved 98.5% accuracy (better than v12's 95.5%) but worse visual quality due to structured artifacts. Optimizing for bit accuracy alone doesn't produce invisible encoding — perceptual loss design matters as much as the spatial strategy
+30. **blur(encoded) works, original+blur(residual) doesn't for LPIPS** — blurring the whole image smooths image+residual together, making residual patterns contextually invisible to LPIPS. Blurring only the residual leaves the image sharp, allowing the encoder to create structured HF patterns that survive the residual-only blur
+31. **512→512 decoder + blur(encoded) σ=1.0 = best content-adaptivity** — full-resolution decoder provides maximum spatial bandwidth for adaptive placement, while σ=1.0 blur suppresses HF artifacts (stronger than v12's σ=0.8). The residual maps show clear object silhouettes — the encoder learns semantic image structure
+32. **Higher target strength enables content-adaptivity** — v14 at 0.025 has TRC=0.591 (strong adaptivity). v12 at 0.014 has weaker adaptivity because the tight budget forces uniform distribution. Train at higher strength for adaptivity, reduce at inference or apply texture mask for PSNR
+33. **Post-annealing preserves TRC** — reducing strength from 0.025→0.020 drops TRC only from 0.591→0.572 (barely changed). Adaptivity is preserved during post-annealing, unlike training from scratch at low strength
+34. **Decoder blur at inference matches training** — the decoder trained on `blur(encoded)` should also receive `blur(encoded)` at inference. This eliminates the domain gap and improves accuracy by ~0.5%. The blur is a cheap 7×7 convolution
