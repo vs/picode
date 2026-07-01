@@ -13,9 +13,9 @@ Tier summary:
 
 TIERS: dict[int, dict[str, float | int]] = {
     0: {"bits": 30, "strength": 0.010, "blur_sigma": 1.4},   # UHQ
-    1: {"bits": 48, "strength": 0.012, "blur_sigma": 1.0},   # HQ
-    2: {"bits": 72, "strength": 0.016, "blur_sigma": 0.8},   # MQ
-    3: {"bits": 96, "strength": 0.018, "blur_sigma": 0.6},   # LQ
+    1: {"bits": 48, "strength": 0.011, "blur_sigma": 1.0},   # HQ
+    2: {"bits": 72, "strength": 0.012, "blur_sigma": 0.8},   # MQ
+    3: {"bits": 96, "strength": 0.013, "blur_sigma": 0.6},   # LQ
 }
 
 TIER_NAMES: dict[int, str] = {0: "UHQ", 1: "HQ", 2: "MQ", 3: "LQ"}
