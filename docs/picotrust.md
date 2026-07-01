@@ -1,13 +1,15 @@
 # PicoTrust
 
-PicoTrust is a neural image steganography model that hides binary messages in images with near-invisible modifications. Based on the StegaStamp architecture (Tancik et al., CVPR 2020), PicoTrust introduces grayscale residuals, softsign amplitude bounding with strength annealing, and a compact decoder — achieving high image quality (39+ dB PSNR) with robust message recovery.
+PicoTrust is a content-adaptive neural image steganography model that hides binary messages in photographs. Based on StegaStamp (Tancik et al., CVPR 2020), PicoTrust uses decoder-side blur and blurred perceptual losses to concentrate encoding energy in textured image regions while leaving smooth areas untouched.
+
+**Best models:** v14 (98.4% accuracy, TRC=0.591, best content-adaptivity) and v12 (40.72 dB PSNR, production model).
 
 ## Architecture
 
-### Overview
+### Overview (v14 — best content-adaptivity)
 
 ```
-Image (512x512) + Message (80 bits)
+Image (512x512) + Message (64 bits)
     ↓
   Encoder (U-Net + E_post)
     ↓
@@ -15,11 +17,33 @@ Image (512x512) + Message (80 bits)
     ↓
   Encoded image = Original + residual
     ↓
-  Bilinear downsample to 256x256
+  [Distortions]
     ↓
-  Decoder (CNN + compact STN)
+  blur(encoded, σ=1.0)       ← blurs whole image for decoder/LPIPS/GAN
     ↓
-  80-bit logits → sigmoid → recovered message
+  Decoder (CNN + compact STN, 512x512)
+    ↓
+  64-bit logits → sigmoid → recovered message
+```
+
+### Overview (v12 — production, high PSNR)
+
+```
+Image (512x512) + Message (64 bits)
+    ↓
+  Encoder (U-Net + E_post)
+    ↓
+  Grayscale residual → softsign bound → strength × r/(1+|r|)
+    ↓
+  Encoded image = Original + residual
+    ↓
+  [Distortions]
+    ↓
+  Bilinear downsample + blur(σ=0.8)   ← decoder input only
+    ↓
+  Decoder (CNN + compact STN, 416x416)
+    ↓
+  64-bit logits → sigmoid → recovered message
 ```
 
 ### Encoder (1.6M params)
