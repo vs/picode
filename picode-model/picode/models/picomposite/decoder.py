@@ -1,4 +1,4 @@
-"""PicodeTier decoder: PicoTrust CNN with tier classifier and conditioned output.
+"""PicoMposite decoder: PicoTrust CNN with tier classifier and conditioned output.
 
 Changes from PicoTrust decoder:
 - nn.Sequential split into backbone + heads
@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from picode.models.base import Decoder as BaseDecoder
-from picode.models.picodetier.tiers import EMBED_DIM, MAX_BITS, NUM_TIERS, TIERS
+from picode.models.picomposite.tiers import EMBED_DIM, MAX_BITS, NUM_TIERS, TIERS
 
 
 class Decoder(BaseDecoder):

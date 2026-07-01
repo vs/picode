@@ -1,4 +1,4 @@
-"""PicodeTier encoder: PicoTrust U-Net with tier conditioning.
+"""PicoMposite encoder: PicoTrust U-Net with tier conditioning.
 
 Changes from PicoTrust encoder:
 - Tier embedding concatenated with message before secret_dense
@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from picode.models.base import Encoder as BaseEncoder
-from picode.models.picodetier.tiers import EMBED_DIM, MAX_BITS, NUM_TIERS, TIERS
+from picode.models.picomposite.tiers import EMBED_DIM, MAX_BITS, NUM_TIERS, TIERS
 
 
 class Encoder(BaseEncoder):

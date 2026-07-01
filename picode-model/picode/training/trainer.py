@@ -275,7 +275,7 @@ class Trainer:
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type in ("picodelite", "picotrust", "picodetier"):
+        if config.model.type in ("picodelite", "picotrust", "picomposite"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":
@@ -289,7 +289,7 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe", "picotrust", "picodetier"):
+        if config.model.type in ("stegastamp", "picodeframe", "picotrust", "picomposite"):
             # StegaStamp, PicodeFrame, and PicoTrust have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
@@ -629,8 +629,8 @@ class Trainer:
         """
         if self.config.model.type == "picodeframe":
             return self._train_step_picodeframe(images)
-        elif self.config.model.type == "picodetier":
-            return self._train_step_picodetier(images)
+        elif self.config.model.type == "picomposite":
+            return self._train_step_picomposite(images)
         return self._train_step_default(images)
 
     def _train_step_default(self, images: Tensor) -> dict[str, float]:
@@ -943,8 +943,8 @@ class Trainer:
 
         return metrics
 
-    def _train_step_picodetier(self, images: Tensor) -> dict[str, float]:
-        """Execute a single training step for PicodeTier.
+    def _train_step_picomposite(self, images: Tensor) -> dict[str, float]:
+        """Execute a single training step for PicoMposite.
 
         Similar to _train_step_default but with:
         - Per-tier message generation with variable bit counts and masks
@@ -958,7 +958,7 @@ class Trainer:
         Returns:
             Dict of metrics for this step.
         """
-        from picode.models.picodetier.tiers import MAX_BITS, NUM_TIERS, TIERS
+        from picode.models.picomposite.tiers import MAX_BITS, NUM_TIERS, TIERS
 
         batch_size = images.shape[0]
         image_size = images.shape[-1]

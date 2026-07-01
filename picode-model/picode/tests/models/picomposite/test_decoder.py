@@ -1,9 +1,9 @@
-"""Tests for PicodeTier decoder with tier classification and conditioned output."""
+"""Tests for PicoMposite decoder with tier classification and conditioned output."""
 
 import torch
 
-from picode.models.picodetier.decoder import Decoder
-from picode.models.picodetier.tiers import MAX_BITS, NUM_TIERS, TIERS
+from picode.models.picomposite.decoder import Decoder
+from picode.models.picomposite.tiers import MAX_BITS, NUM_TIERS, TIERS
 
 
 class TestDecoderConstruction:

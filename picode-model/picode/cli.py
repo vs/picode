@@ -55,8 +55,8 @@ def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
 
     blur_sigma = training_cfg.get("residual_blur_sigma", 0.0)
 
-    if model_type == "picodetier":
-        from picode.models.picodetier.tiers import MAX_BITS
+    if model_type == "picomposite":
+        from picode.models.picomposite.tiers import MAX_BITS
 
         num_bits = MAX_BITS
 
@@ -145,11 +145,11 @@ def encode_command(args: argparse.Namespace) -> None:
 
     message_tensor = torch.tensor(bits, dtype=torch.float32, device=device).unsqueeze(0)
 
-    if model_type == "picodetier":
-        from picode.models.picodetier.tiers import MAX_BITS, TIERS
+    if model_type == "picomposite":
+        from picode.models.picomposite.tiers import MAX_BITS, TIERS
 
         if args.tier is None:
-            print("Error: --tier is required for picodetier models")
+            print("Error: --tier is required for picomposite models")
             return
 
         tier_idx = args.tier
@@ -301,8 +301,8 @@ def decode_command(args: argparse.Namespace) -> None:
     image_tensor = transform(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        if model_type == "picodetier":
-            from picode.models.picodetier.tiers import TIERS
+        if model_type == "picomposite":
+            from picode.models.picomposite.tiers import TIERS
 
             decoder_size = data.get("config", {}).get("model", {}).get("decoder_size")
             decoder_input = image_tensor
@@ -420,7 +420,7 @@ Examples:
     )
     encode_parser.add_argument(
         "--tier", type=int, default=None, choices=[0, 1, 2, 3],
-        help="Tier for encoding (PicodeTier only): 0=16bits, 1=32bits, 2=64bits, 3=96bits"
+        help="Tier for encoding (PicoMposite only): 0=16bits, 1=32bits, 2=64bits, 3=96bits"
     )
     encode_parser.add_argument(
         "--texture-mask", action="store_true", default=False,

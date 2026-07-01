@@ -1,7 +1,7 @@
-experiment_name: picodetier_v1
+experiment_name: picomposite_v1
 
 model:
-  type: picodetier
+  type: picomposite
   encoder_size: 512
   decoder_size: 256
 

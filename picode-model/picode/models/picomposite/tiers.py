@@ -1,4 +1,4 @@
-"""PicodeTier tier definitions.
+"""PicoMposite tier definitions.
 
 Single source of truth for tier bit counts, residual strengths, and embedding config.
 """

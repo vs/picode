@@ -74,8 +74,8 @@ def create_encoder(
             strength=strength, use_mask=use_mask,
             residual_blur_sigma=residual_blur_sigma,
         )
-    elif config.type == "picodetier":
-        from picode.models.picodetier import Encoder as TierEncoder
+    elif config.type == "picomposite":
+        from picode.models.picomposite import Encoder as TierEncoder
 
         return TierEncoder(image_size=config.encoder_size)
     else:
@@ -121,8 +121,8 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
         from picode.models.picotrust import Decoder as PicoTrustDecoder
 
         return PicoTrustDecoder(num_bits=num_bits, image_size=config.decoder_size)
-    elif config.type == "picodetier":
-        from picode.models.picodetier import Decoder as TierDecoder
+    elif config.type == "picomposite":
+        from picode.models.picomposite import Decoder as TierDecoder
 
         return TierDecoder(image_size=config.decoder_size)
     else:
