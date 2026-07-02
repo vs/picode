@@ -90,6 +90,8 @@ def run_ecc_test(
     num_bits: int,
     image_size: int,
     decoder_size: int | None,
+    texture_mask: bool = False,
+    mask_floor: float = 0.75,
 ):
     """Run full ECC comparison: no ECC vs BCH vs LDPC."""
     to_tensor = transforms.ToTensor()
@@ -190,6 +192,19 @@ def run_ecc_test(
                 encoded_bch = (enc_bch["encoded"] if isinstance(enc_bch, dict) else enc_bch).clamp(0, 1)
                 encoded_ldpc = (enc_ldpc["encoded"] if isinstance(enc_ldpc, dict) else enc_ldpc).clamp(0, 1)
 
+                # Apply texture mask if requested
+                if texture_mask:
+                    gray = image_tensor.mean(dim=1, keepdim=True)
+                    k_box = torch.ones(1, 1, 7, 7, device=device) / 49.0
+                    lm = F.conv2d(gray, k_box, padding=3)
+                    lv = (F.conv2d(gray ** 2, k_box, padding=3) - lm ** 2).clamp(min=0)
+                    lv_max = lv.amax(dim=(-2, -1), keepdim=True) + 1e-8
+                    texture = lv / lv_max
+                    mask = mask_floor + (1.0 - mask_floor) * texture
+                    for enc_t in [encoded_raw, encoded_bch, encoded_ldpc]:
+                        res = enc_t - image_tensor
+                        enc_t.copy_((image_tensor + res * mask).clamp(0, 1))
+
             for dist_name, dist_type, dist_strength in distortions:
                 with torch.no_grad():
                     # Apply distortion
@@ -261,6 +276,8 @@ def main():
     parser.add_argument("--dir", type=Path, default=Path("data/samples"))
     parser.add_argument("--max-images", type=int, default=5)
     parser.add_argument("--trials", type=int, default=10, help="Random messages per image")
+    parser.add_argument("--texture-mask", action="store_true")
+    parser.add_argument("--mask-floor", type=float, default=0.75)
     args = parser.parse_args()
 
     if torch.cuda.is_available():
@@ -277,7 +294,10 @@ def main():
     image_paths = sorted(args.dir.glob("*.jpg"))[:args.max_images]
     print(f"Images: {len(image_paths)}")
 
-    run_ecc_test(encoder, decoder, image_paths, device, num_bits, image_size, decoder_size)
+    run_ecc_test(
+        encoder, decoder, image_paths, device, num_bits, image_size, decoder_size,
+        texture_mask=args.texture_mask, mask_floor=args.mask_floor,
+    )
 
 
 if __name__ == "__main__":
