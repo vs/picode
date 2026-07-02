@@ -460,9 +460,20 @@ class Trainer:
         # Restore model states, filtering out shape-mismatched keys
         enc_filtered = _filter_compatible(data["encoder_state"], trainer.encoder)
         dec_filtered = _filter_compatible(data["decoder_state"], trainer.decoder)
+        # Detect architecture change: checkpoint has different keys OR model has new keys
+        enc_keys_in_ckpt = set(data["encoder_state"].keys())
+        enc_keys_in_model = set(dict(trainer.encoder.named_parameters()).keys()) | set(
+            dict(trainer.encoder.named_buffers()).keys()
+        )
+        dec_keys_in_ckpt = set(data["decoder_state"].keys())
+        dec_keys_in_model = set(dict(trainer.decoder.named_parameters()).keys()) | set(
+            dict(trainer.decoder.named_buffers()).keys()
+        )
         arch_changed = (
             len(enc_filtered) != len(data["encoder_state"])
             or len(dec_filtered) != len(data["decoder_state"])
+            or enc_keys_in_ckpt != enc_keys_in_model
+            or dec_keys_in_ckpt != dec_keys_in_model
         )
         trainer.encoder.load_state_dict(enc_filtered, strict=False)
         trainer.decoder.load_state_dict(dec_filtered, strict=False)
