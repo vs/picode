@@ -27,6 +27,7 @@ def create_encoder(
     use_mask: bool = False,
     max_residual_amplitude: float = 0.0,
     residual_blur_sigma: float = 0.0,
+    strength_conditioned: bool = False,
 ) -> BaseEncoder:
     """Create an encoder based on model configuration.
 
@@ -73,6 +74,7 @@ def create_encoder(
             num_bits=num_bits, image_size=config.encoder_size,
             strength=strength, use_mask=use_mask,
             residual_blur_sigma=residual_blur_sigma,
+            strength_conditioned=strength_conditioned,
         )
     elif config.type == "picomposite":
         from picode.models.picomposite import Encoder as TierEncoder

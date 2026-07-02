@@ -253,6 +253,7 @@ class Trainer:
             config.model, num_bits, strength=_strength, use_mask=_use_mask,
             max_residual_amplitude=_max_res_amp,
             residual_blur_sigma=config.training.residual_blur_sigma,
+            strength_conditioned=config.training.strength_conditioned,
         ).to(self.device)
         self.decoder: BaseDecoder = create_decoder(config.model, num_bits).to(self.device)
 
@@ -699,20 +700,29 @@ class Trainer:
         # This means we apply M_inverse to get source coords for each dest coord
         images_warped = perspective_transform(images, M_inverse, padding_mode="border")
 
-        # Update encoder strength if annealing is active
+        # Update encoder strength: random sampling or annealing
         if (
             hasattr(self.encoder, 'strength')
             and self.encoder.strength is not None
             and self.config.training.residual_strength > 0
         ):
-            self.encoder.strength = self._compute_strength(
-                initial=self.config.training.residual_strength,
-                target=self.config.training.residual_strength_anneal_target,
-                start_step=self.config.training.residual_strength_anneal_start,
-                anneal_steps=self.config.training.residual_strength_anneal_steps,
-                current_step=self.global_step,
-                schedule=self.config.training.anneal_schedule,
-            )
+            s_min = self.config.training.strength_sample_min
+            s_max = self.config.training.strength_sample_max
+            if s_min > 0 and s_max > 0:
+                # Random uniform sampling per batch
+                self.encoder.strength = float(
+                    torch.empty(1).uniform_(s_min, s_max).item()
+                )
+            else:
+                # Deterministic annealing
+                self.encoder.strength = self._compute_strength(
+                    initial=self.config.training.residual_strength,
+                    target=self.config.training.residual_strength_anneal_target,
+                    start_step=self.config.training.residual_strength_anneal_start,
+                    anneal_steps=self.config.training.residual_strength_anneal_steps,
+                    current_step=self.global_step,
+                    schedule=self.config.training.anneal_schedule,
+                )
 
         # Update blur sigma if ramping is active
         if (

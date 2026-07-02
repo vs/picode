@@ -36,6 +36,7 @@ class Encoder(BaseEncoder):
         strength: float | None = None,
         use_mask: bool = False,
         residual_blur_sigma: float = 0.0,
+        strength_conditioned: bool = False,
     ) -> None:
         super().__init__()
         self.num_bits = num_bits
@@ -43,6 +44,7 @@ class Encoder(BaseEncoder):
         self.strength = strength
         self.use_mask = use_mask
         self.residual_blur_sigma = residual_blur_sigma
+        self.strength_conditioned = strength_conditioned
 
         # Message preparation: num_bits -> 7500 -> (3, 50, 50) -> upsample to image_size
         self.secret_dense = nn.Linear(num_bits, 7500)
@@ -87,8 +89,24 @@ class Encoder(BaseEncoder):
                 nn.Sigmoid(),
             )
 
+        # Strength-conditional FiLM: modulates 32-ch features before E_post
+        self.strength_film: nn.Sequential | None = None
+        if strength_conditioned:
+            self.strength_film = nn.Sequential(
+                nn.Linear(1, 32),
+                nn.ReLU(),
+                nn.Linear(32, 64),  # 32 gamma + 32 beta
+            )
+
         # Initialize weights (Kaiming normal)
         self._init_weights()
+
+        # Identity-init FiLM so model starts with v15 behavior
+        if self.strength_film is not None:
+            nn.init.zeros_(self.strength_film[-1].weight)
+            nn.init.zeros_(self.strength_film[-1].bias)
+            # gamma=1, beta=0 at init
+            self.strength_film[-1].bias.data[:32] = 1.0
 
         # Blur kernel size fixed at max sigma (for consistent padding)
         if residual_blur_sigma > 0:
@@ -192,6 +210,15 @@ class Encoder(BaseEncoder):
         x = F.relu(self.up9(F.pad(x, (0, 1, 0, 1))))
         x = torch.cat([c1, x, inputs], dim=1)  # 32 + 32 + 6 = 70 (message skip)
         x = F.relu(self.conv9(x))
+
+        # Apply strength-conditional FiLM modulation before E_post
+        if self.strength_film is not None and self.strength is not None:
+            B = x.shape[0]
+            s_input = torch.tensor([[self.strength]], device=x.device).expand(B, 1)
+            film_params = self.strength_film(s_input)  # (B, 64)
+            gamma = film_params[:, :32].unsqueeze(-1).unsqueeze(-1)  # (B, 32, 1, 1)
+            beta = film_params[:, 32:].unsqueeze(-1).unsqueeze(-1)
+            x = gamma * x + beta
 
         # E_post: spatial refinement -> raw 1-channel residual
         raw_residual_1ch = self.e_post(x)  # (B, 1, H, W)

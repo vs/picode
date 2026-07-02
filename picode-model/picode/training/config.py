@@ -188,6 +188,9 @@ class TrainingConfig:
     residual_blur_sigma_ramp_steps: int = 0  # Steps to ramp sigma (0 = no ramp, fixed)
     decoder_blur_sigma: float = 0.0  # Gaussian blur on decoder input during training (0 = disabled)
     use_mask: bool = False  # Enable learned spatial mask (PicoTrust)
+    strength_conditioned: bool = False  # Enable FiLM strength conditioning on encoder
+    strength_sample_min: float = 0.0  # Min strength for random sampling (0 = disabled)
+    strength_sample_max: float = 0.0  # Max strength for random sampling (0 = disabled)
 
     # Two-phase training
     phase2_step: int = 0  # 0 means disabled. Step to enter phase 2
