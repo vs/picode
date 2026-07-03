@@ -89,13 +89,17 @@ class Encoder(BaseEncoder):
                 nn.Sigmoid(),
             )
 
-        # Strength-conditional FiLM: modulates 32-ch features before E_post
+        # Strength-conditional FiLM at every U-Net layer
+        # Channel sizes: conv1=32, conv2=32, conv3=64, conv4=128, conv5=256,
+        #                conv6=128, conv7=64, conv8=32, conv9=32 → total=768
+        self._film_channels = [32, 32, 64, 128, 256, 128, 64, 32, 32]
+        self._film_total = sum(self._film_channels)  # 768
         self.strength_film: nn.Sequential | None = None
         if strength_conditioned:
             self.strength_film = nn.Sequential(
-                nn.Linear(1, 32),
+                nn.Linear(1, 128),
                 nn.ReLU(),
-                nn.Linear(32, 64),  # 32 gamma + 32 beta
+                nn.Linear(128, self._film_total * 2),  # gamma + beta for all layers
             )
 
         # Initialize weights (Kaiming normal)
@@ -105,8 +109,8 @@ class Encoder(BaseEncoder):
         if self.strength_film is not None:
             nn.init.zeros_(self.strength_film[-1].weight)
             nn.init.zeros_(self.strength_film[-1].bias)
-            # gamma=1, beta=0 at init
-            self.strength_film[-1].bias.data[:32] = 1.0
+            # gamma=1 for all layers, beta=0
+            self.strength_film[-1].bias.data[:self._film_total] = 1.0
 
         # Blur kernel size fixed at max sigma (for consistent padding)
         if residual_blur_sigma > 0:
@@ -183,42 +187,55 @@ class Encoder(BaseEncoder):
         secret_enlarged = self.prepare_message(message_norm)
         inputs = torch.cat([secret_enlarged, image_norm], dim=1)  # (B, 6, H, W)
 
+        # Compute FiLM modulation params for all layers (if conditioned)
+        film_gammas: list[Tensor] = []
+        film_betas: list[Tensor] = []
+        if self.strength_film is not None and self.strength is not None:
+            B = inputs.shape[0]
+            s_input = torch.tensor([[self.strength]], device=inputs.device).expand(B, 1)
+            film_params = self.strength_film(s_input)  # (B, total*2)
+            all_gamma = film_params[:, :self._film_total]
+            all_beta = film_params[:, self._film_total:]
+            offset = 0
+            for ch in self._film_channels:
+                g = all_gamma[:, offset:offset + ch].unsqueeze(-1).unsqueeze(-1)
+                b = all_beta[:, offset:offset + ch].unsqueeze(-1).unsqueeze(-1)
+                film_gammas.append(g)
+                film_betas.append(b)
+                offset += ch
+
+        def apply_film(x: Tensor, idx: int) -> Tensor:
+            if film_gammas:
+                return film_gammas[idx] * x + film_betas[idx]
+            return x
+
         # Encoder path (save activations for skip connections)
-        c1 = F.relu(self.conv1(inputs))
-        c2 = F.relu(self.conv2(c1))
-        c3 = F.relu(self.conv3(c2))
-        c4 = F.relu(self.conv4(c3))
-        c5 = F.relu(self.conv5(c4))
+        c1 = F.relu(apply_film(self.conv1(inputs), 0))
+        c2 = F.relu(apply_film(self.conv2(c1), 1))
+        c3 = F.relu(apply_film(self.conv3(c2), 2))
+        c4 = F.relu(apply_film(self.conv4(c3), 3))
+        c5 = F.relu(apply_film(self.conv5(c4), 4))
 
         # Decoder path with skip connections
         x = F.interpolate(c5, scale_factor=2, mode="nearest")
         x = F.relu(self.up6(F.pad(x, (0, 1, 0, 1))))
         x = torch.cat([c4, x], dim=1)
-        x = F.relu(self.conv6(x))
+        x = F.relu(apply_film(self.conv6(x), 5))
 
         x = F.interpolate(x, scale_factor=2, mode="nearest")
         x = F.relu(self.up7(F.pad(x, (0, 1, 0, 1))))
         x = torch.cat([c3, x], dim=1)
-        x = F.relu(self.conv7(x))
+        x = F.relu(apply_film(self.conv7(x), 6))
 
         x = F.interpolate(x, scale_factor=2, mode="nearest")
         x = F.relu(self.up8(F.pad(x, (0, 1, 0, 1))))
         x = torch.cat([c2, x], dim=1)
-        x = F.relu(self.conv8(x))
+        x = F.relu(apply_film(self.conv8(x), 7))
 
         x = F.interpolate(x, scale_factor=2, mode="nearest")
         x = F.relu(self.up9(F.pad(x, (0, 1, 0, 1))))
         x = torch.cat([c1, x, inputs], dim=1)  # 32 + 32 + 6 = 70 (message skip)
-        x = F.relu(self.conv9(x))
-
-        # Apply strength-conditional FiLM modulation before E_post
-        if self.strength_film is not None and self.strength is not None:
-            B = x.shape[0]
-            s_input = torch.tensor([[self.strength]], device=x.device).expand(B, 1)
-            film_params = self.strength_film(s_input)  # (B, 64)
-            gamma = film_params[:, :32].unsqueeze(-1).unsqueeze(-1)  # (B, 32, 1, 1)
-            beta = film_params[:, 32:].unsqueeze(-1).unsqueeze(-1)
-            x = gamma * x + beta
+        x = F.relu(apply_film(self.conv9(x), 8))
 
         # E_post: spatial refinement -> raw 1-channel residual
         raw_residual_1ch = self.e_post(x)  # (B, 1, H, W)

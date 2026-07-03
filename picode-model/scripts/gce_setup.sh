@@ -238,7 +238,7 @@ cmd_train() {
     # CLI: picode-train CONFIG [--resume PATH] [key=value overrides...]
     # Note: \$HOME is escaped so it expands on the VM, not locally
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && picode-train \
-        configs/picotrust_v16.yaml \
+        configs/picotrust_v17.yaml \
         $resume \
         checkpoint.dir=\$HOME/checkpoints \
         data.path=\$HOME/data/train \
