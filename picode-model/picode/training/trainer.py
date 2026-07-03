@@ -721,9 +721,15 @@ class Trainer:
             s_max = self.config.training.strength_sample_max
             s_start = self.config.training.strength_sample_start
             if s_min > 0 and s_max > 0 and self.global_step >= s_start:
-                # Random uniform sampling per batch
+                # Gradually widen range: [max,max] → [min,max] over ramp steps
+                ramp = self.config.training.strength_sample_ramp_steps
+                if ramp > 0:
+                    progress = min((self.global_step - s_start) / ramp, 1.0)
+                    effective_min = s_max + progress * (s_min - s_max)
+                else:
+                    effective_min = s_min
                 self.encoder.strength = float(
-                    torch.empty(1).uniform_(s_min, s_max).item()
+                    torch.empty(1).uniform_(effective_min, s_max).item()
                 )
             else:
                 # Deterministic annealing
