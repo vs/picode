@@ -719,7 +719,8 @@ class Trainer:
         ):
             s_min = self.config.training.strength_sample_min
             s_max = self.config.training.strength_sample_max
-            if s_min > 0 and s_max > 0:
+            s_start = self.config.training.strength_sample_start
+            if s_min > 0 and s_max > 0 and self.global_step >= s_start:
                 # Random uniform sampling per batch
                 self.encoder.strength = float(
                     torch.empty(1).uniform_(s_min, s_max).item()

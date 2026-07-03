@@ -33,6 +33,7 @@ training:
   strength_conditioned: true
   strength_sample_min: 0.010
   strength_sample_max: 0.025
+  strength_sample_start: 100000
 
 loss:
   message:

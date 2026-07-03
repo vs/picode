@@ -191,6 +191,7 @@ class TrainingConfig:
     strength_conditioned: bool = False  # Enable FiLM strength conditioning on encoder
     strength_sample_min: float = 0.0  # Min strength for random sampling (0 = disabled)
     strength_sample_max: float = 0.0  # Max strength for random sampling (0 = disabled)
+    strength_sample_start: int = 0  # Step to start random sampling (before this, use annealing)
 
     # Two-phase training
     phase2_step: int = 0  # 0 means disabled. Step to enter phase 2
