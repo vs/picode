@@ -194,6 +194,7 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | **v15** | **72** | **0.020** | **35.67 dB** | **97.4%** | **95.8%** | **512→512, blur(encoded) σ=0.5, LDPC(72,38) = 38 payload bits** |
 | **v15 s012** | **72** | **0.012** | **39.19 dB** | **94.8%** | **90.5%** | **Post-annealed from v15** |
 | **v15 s010** | **72** | **0.010** | **40.68 dB** | **93.4%** | **87.1%** | **Post-annealed — 40 dB at 72 bits, production model with adaptive encoding** |
+| v16 | 72 | 0.010-0.025 | 40.8-35.0 dB | 94.8-98.9% | — | FiLM strength conditioning — unsuccessful, patterns same across strengths |
 
 *v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15 evaluated at 50 images.
 
@@ -465,6 +466,29 @@ The production encoding algorithm uses per-image adaptive strength + texture mas
 **Key insight**: content-adaptivity comes from training at higher strength (0.020) where the encoder has excess capacity. At inference, strength is reduced and texture mask applied — the adaptive residual pattern learned during training persists even at lower strength, and the mask cleans up smooth regions. LDPC handles the accuracy gap from the strength reduction.
 
 **Texture mask + blur in smooth regions**: at inference, an additional Gaussian blur (σ=0.5) can be applied to the residual in smooth regions (blended by texture map), gaining +0.5 dB PSNR for ~0.4% accuracy cost. Best config: mask floor=0.75 + blur σ=0.5 in smooth regions.
+
+### FiLM Strength Conditioning (v16 — Unsuccessful)
+
+v16 attempted to make the encoder produce different spatial strategies at different strengths by conditioning on the strength value via FiLM (Feature-wise Linear Modulation).
+
+**Architecture**: Added a 2,176-param MLP that maps strength scalar → 64-dim modulation (32 gamma + 32 beta), applied to the 32-channel U-Net features before E_post. Identity-initialized (gamma=1, beta=0) so model starts from v15 behavior. Random uniform strength [0.010, 0.025] per batch during training. Fine-tuned from v15 s010 for 70k steps.
+
+**Results (50-image evaluation at each strength):**
+
+| Strength | Accuracy | PSNR | TRC |
+|----------|----------|------|-----|
+| 0.010 | 94.8% | 40.8 dB | 0.554 |
+| 0.015 | 97.9% | 37.9 dB | 0.578 |
+| 0.020 | 98.6% | 36.1 dB | 0.592 |
+| 0.025 | 98.9% | 35.0 dB | 0.596 |
+
+**Why it failed**: the residual patterns look the same at all strengths — just scaled up or down. The FiLM modulates E_post's input features, but the spatial strategy is already determined by the U-Net's 32-channel feature maps upstream. E_post is a small refinement block that converts features → residual; it can't fundamentally change WHERE information is placed. FiLM at E_post adjusts per-channel gain but doesn't alter the spatial distribution.
+
+**The TRC increase with strength (0.554→0.596) is not from FiLM** — it's the natural effect of higher residual amplitude making LPIPS more spatially selective. The same effect occurs in v15 without any conditioning.
+
+**The slight accuracy improvement over v15** (94.8% vs 93.4% at s=0.010) is likely from 70k additional training steps with varied strengths, not from the FiLM conditioning itself.
+
+**Key lesson**: to truly condition on strength, conditioning must be injected deeper — into the U-Net at every layer, similar to how diffusion models inject timestep conditioning at every residual block. FiLM at the output refinement stage is insufficient because the spatial plan is already committed by the U-Net.
 
 ### Exponential vs Linear Annealing (v11/v12)
 
@@ -796,3 +820,5 @@ Hard-won insights from 9 model versions:
 35. **Lower blur sigma = more capacity but less adaptivity** — σ=0.5 (v15) vs σ=1.0 (v14): the decoder can use higher frequencies, giving more spatial degrees of freedom. The encoder can encode more information per unit of residual amplitude. But LPIPS sees finer patterns and can't differentiate textured/smooth regions as strongly → lower TRC. Tradeoff: more capacity for LDPC redundancy, less natural content-adaptivity
 36. **Adaptive encoding at inference is the production answer** — train at moderate strength (0.020) for content-adaptivity. At inference, try s=0.010+mask first (43 dB), escalate strength or remove mask until LDPC achieves 100% recovery. Each image gets the best PSNR it can support. 68% of images encode at 43+ dB, only 8% need the fallback at 37 dB
 37. **LDPC(72,38) with adaptive encoding achieves 100% message recovery** — 38 payload bits from 72 coded bits. Combined with per-image adaptive strength + texture mask, achieves 100% LDPC recovery on 49/50 test images. The extra 8 coded bits (vs v14's 64) provide more LDPC redundancy at minimal visual cost
+38. **FiLM at E_post doesn't change spatial strategy** — the U-Net determines WHERE to place information. E_post only refines HOW those features become a residual. FiLM modulating E_post's input can adjust per-channel gain but can't redirect the spatial distribution. True strength-conditional encoding would require conditioning injected into the U-Net at every layer (like diffusion models), which is a major architectural change
+39. **Random strength sampling improves robustness but doesn't teach conditioning** — training with uniform random strength [0.010, 0.025] per batch makes the model work across the full range, but without deep conditioning the encoder produces the same spatial pattern at every strength. The benefit is exposure to varied difficulty levels, not learned conditional behavior
