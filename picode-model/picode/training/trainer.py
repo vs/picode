@@ -719,25 +719,29 @@ class Trainer:
         ):
             s_min = self.config.training.strength_sample_min
             s_max = self.config.training.strength_sample_max
-            s_start = self.config.training.strength_sample_start
-            if s_min > 0 and s_max > 0 and self.global_step >= s_start:
-                # Gradually widen range: [max,max] → [min,max] over ramp steps
-                ramp = self.config.training.strength_sample_ramp_steps
-                if ramp > 0:
-                    progress = min((self.global_step - s_start) / ramp, 1.0)
-                    effective_min = s_max + progress * (s_min - s_max)
-                else:
-                    effective_min = s_min
+            anneal_start = self.config.training.residual_strength_anneal_start
+            anneal_steps = self.config.training.residual_strength_anneal_steps
+            initial = self.config.training.residual_strength
+
+            if s_min > 0 and s_max > 0 and self.global_step >= anneal_start:
+                # Random annealing: two exponential curves define the range
+                # upper = initial * (s_max/initial)^progress → initial → s_max
+                # lower = initial * (s_min/initial)^progress → initial → s_min
+                progress = min(
+                    (self.global_step - anneal_start) / max(anneal_steps, 1), 1.0
+                )
+                upper = initial * (s_max / initial) ** progress
+                lower = initial * (s_min / initial) ** progress
                 self.encoder.strength = float(
-                    torch.empty(1).uniform_(effective_min, s_max).item()
+                    torch.empty(1).uniform_(lower, upper).item()
                 )
             else:
-                # Deterministic annealing
+                # Before anneal_start: deterministic (bootstrap at full strength)
                 self.encoder.strength = self._compute_strength(
-                    initial=self.config.training.residual_strength,
+                    initial=initial,
                     target=self.config.training.residual_strength_anneal_target,
-                    start_step=self.config.training.residual_strength_anneal_start,
-                    anneal_steps=self.config.training.residual_strength_anneal_steps,
+                    start_step=anneal_start,
+                    anneal_steps=anneal_steps,
                     current_step=self.global_step,
                     schedule=self.config.training.anneal_schedule,
                 )
