@@ -187,6 +187,7 @@ class TrainingConfig:
     residual_blur_sigma_ramp_start: int = 0  # Step to begin ramping blur sigma
     residual_blur_sigma_ramp_steps: int = 0  # Steps to ramp sigma (0 = no ramp, fixed)
     decoder_blur_sigma: float = 0.0  # Gaussian blur on decoder input during training (0 = disabled)
+    perceptual_blur_sigma: float = 0.0  # Separate blur for LPIPS/GAN (0 = use decoder_blur_sigma)
     use_mask: bool = False  # Enable learned spatial mask (PicoTrust)
     strength_conditioned: bool = False  # Enable FiLM strength conditioning on encoder
     strength_sample_min: float = 0.0  # Min strength for random sampling (0 = disabled)

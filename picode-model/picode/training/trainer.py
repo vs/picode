@@ -272,6 +272,20 @@ class Trainer:
             self._decoder_blur_kernel = kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._decoder_blur_pad = k // 2
 
+        # Precompute perceptual blur kernel (LPIPS/GAN) — separate from decoder blur
+        self._perceptual_blur_kernel: Tensor | None = None
+        self._perceptual_blur_pad: int = 0
+        p_sigma = config.training.perceptual_blur_sigma
+        if p_sigma > 0:
+            import math as _m
+            pk = 2 * _m.ceil(3 * p_sigma) + 1
+            pax = torch.arange(pk, dtype=torch.float32) - pk // 2
+            pxx, pyy = torch.meshgrid(pax, pax, indexing="ij")
+            p_kernel = torch.exp(-(pxx ** 2 + pyy ** 2) / (2 * p_sigma ** 2))
+            p_kernel = (p_kernel / p_kernel.sum()).view(1, 1, pk, pk)
+            self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
+            self._perceptual_blur_pad = pk // 2
+
         # Precompute per-tier blur kernels for picomposite
         self._tier_blur_kernels: list[tuple[Tensor, int]] = []
         if config.model.type == "picomposite":
@@ -817,14 +831,14 @@ class Trainer:
                 )
             else:
                 decoder_input = decoder_blurred
-            # Perceptual losses: blur(encoded) — v12 style
+            # Perceptual losses: use separate blur if configured, else decoder blur
+            _p_kern = self._perceptual_blur_kernel if self._perceptual_blur_kernel is not None else self._decoder_blur_kernel
+            _p_pad = self._perceptual_blur_pad if self._perceptual_blur_kernel is not None else self._decoder_blur_pad
             encoded_for_perceptual = F.conv2d(
-                encoded, self._decoder_blur_kernel,
-                padding=self._decoder_blur_pad, groups=3,
+                encoded, _p_kern, padding=_p_pad, groups=3,
             )
             original_for_perceptual = F.conv2d(
-                images, self._decoder_blur_kernel,
-                padding=self._decoder_blur_pad, groups=3,
+                images, _p_kern, padding=_p_pad, groups=3,
             )
         else:
             encoded_for_perceptual = encoded
