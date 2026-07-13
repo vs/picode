@@ -199,6 +199,22 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 
 *v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images.
 
+### Blur Sigma by Version
+
+| Version | Decoder | Decoder σ | LPIPS/GAN σ | Blur method | Notes |
+|---------|---------|-----------|-------------|-------------|-------|
+| v1-v8 | 256-512 | — | — | No blur | Implicit LF from 256 downsampling |
+| v9 | 416 | — | — | No blur | HF artifacts in textured regions |
+| v10 | 256 | — | — | No blur | Laplacian loss + 256 decoder for smoothness |
+| v11 | 416 | — | — | Encoder-side σ=1.0 | Blur on residual — soft output, superseded |
+| v12 | 416 | 0.8 | 0.8 | blur(encoded) | First decoder-side blur, same σ for both |
+| v13 | 416 | 0.8 | — | blur(encoded), no blurred LPIPS | Learned mask, no LPIPS blur — unsuccessful |
+| v14 | 512 | 1.0 | 1.0 | blur(encoded) | Best adaptivity (TRC=0.591) |
+| v15 | 512 | 0.5 | 0.5 | blur(encoded) | Lower σ for more capacity |
+| v16 | 512 | 0.5 | 0.5 | blur(encoded) + E_post FiLM | FiLM too shallow — unsuccessful |
+| v17 | 512 | 0.5 | 0.5 | blur(encoded) + full U-Net FiLM | Auto-adaptive, production model |
+| v18 | 512 | 1.0 | 1.5 | Split blur + full U-Net FiLM | Aggressive — high adaptivity experiment |
+
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
 ### Decoder Resolution Experiment (v7)
