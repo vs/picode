@@ -12,9 +12,9 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # VM configuration
 VM_NAME="picode-training"
-ZONE="europe-central2-b"
-MACHINE_TYPE="n1-standard-4"
-GPU_TYPE="nvidia-tesla-t4"
+ZONE="us-central1-a"
+MACHINE_TYPE="g2-standard-8"
+GPU_TYPE="nvidia-l4"
 GPU_COUNT=1
 BOOT_DISK_SIZE="200GB"
 IMAGE_FAMILY="pytorch-2-7-cu128-ubuntu-2204-nvidia-570"
@@ -238,7 +238,7 @@ cmd_train() {
     # CLI: picode-train CONFIG [--resume PATH] [key=value overrides...]
     # Note: \$HOME is escaped so it expands on the VM, not locally
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && picode-train \
-        configs/picotrust_v18.yaml \
+        configs/picotrust_v19.yaml \
         $resume \
         checkpoint.dir=\$HOME/checkpoints \
         data.path=\$HOME/data/train \
