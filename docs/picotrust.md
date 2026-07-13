@@ -196,8 +196,9 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | **v15 s010** | **72** | **0.010** | **40.68 dB** | **93.4%** | **87.1%** | **Post-annealed — 40 dB at 72 bits, production model with adaptive encoding** |
 | v16 | 72 | 0.010-0.025 | 40.8-35.0 dB | 94.8-98.9% | — | FiLM at E_post only — unsuccessful, patterns same across strengths |
 | **v17** | **72** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | — | **Full U-Net FiLM — auto-adaptive spatial distribution, production model** |
+| v18 | 72 | 0.010-0.025 | 40.9-34.2 dB | 97.5-99.5% | — | Split blur (dec σ=1.0, LPIPS σ=1.5) — stopped early, diagonal artifacts |
 
-*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images.
+*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images. v18 evaluated at 170k, stopped early.
 
 ### Blur Sigma by Version
 
@@ -213,7 +214,7 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v15 | 512 | 0.5 | 0.5 | blur(encoded) | Lower σ for more capacity |
 | v16 | 512 | 0.5 | 0.5 | blur(encoded) + E_post FiLM | FiLM too shallow — unsuccessful |
 | v17 | 512 | 0.5 | 0.5 | blur(encoded) + full U-Net FiLM | Auto-adaptive, production model |
-| v18 | 512 | 1.0 | 1.5 | Split blur + full U-Net FiLM | Aggressive — high adaptivity experiment |
+| v18 | 512 | 1.0 | 1.5 | Split blur + full U-Net FiLM | Aggressive — diagonal artifacts, unsuccessful |
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -883,3 +884,4 @@ Hard-won insights from 9 model versions:
 40. **Full U-Net FiLM works where E_post FiLM failed** — FiLM at all 9 conv layers (198k params) produces genuinely different spatial amplitude distributions per strength. At high strength the encoder automatically suppresses smooth regions (like an auto texture mask). At low strength it relaxes and uses all regions. The spatial PATTERN is consistent but the AMPLITUDE DISTRIBUTION changes — which is exactly what content-adaptive encoding needs
 41. **Random exponential annealing is better than anneal-then-sample** — two exponential curves define a widening sampling range from step 0. The FiLM learns to differentiate gradually as the range widens, rather than being shocked with the full range at a switch point. At bootstrap: [~1.0, ~1.0]. At progress=0.5: [~0.10, ~0.16]. At convergence: [0.010, 0.025]
 42. **One strength-conditioned model replaces multiple post-annealed models** — v17 at any strength beats v15 trained at that specific strength. v17@s=0.010 gives 95.2% acc / 41.0 dB vs v15 s010's 93.4% / 40.68 dB. No need to train and store separate checkpoints for each strength level
+43. **Split blur σ>1.0 for LPIPS creates diagonal artifacts** — v18 used decoder σ=1.0 + LPIPS σ=1.5. The aggressive LPIPS blur constrains the encoder to very low-frequency patterns that manifest as visible diagonal curves. Same artifact family as v13/v14's failed experiments. The σ=0.5 used in v17 appears to be near the sweet spot — enough for content-adaptive guidance without forcing structured artifacts

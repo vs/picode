@@ -50,10 +50,11 @@
 - One checkpoint replaces multiple post-annealed models.
 - σ=0.5 for both decoder and LPIPS/GAN.
 
-## v18: Split blur experiment (in progress)
+## v18: Split blur experiment (failed)
 - Decoder σ=1.0 + LPIPS/GAN σ=1.5. Full U-Net FiLM.
 - Hypothesis: higher LPIPS blur → stronger adaptivity, separate decoder blur → independent capacity control.
-- Training from scratch, 200k steps.
+- **Result**: diagonal curve artifacts visible in encoded images, same artifact family as v13/v14 failures. The σ=1.5 LPIPS blur is too aggressive — constrains encoder to very low-frequency patterns that become structured and visible. Accuracy was good (97.5% at s=0.010) but visual quality worse than v17.
+- **Lesson**: σ=0.5 (v17) is near the sweet spot for blur. Going higher creates structured artifacts. The split blur concept has merit but needs milder values (e.g., decoder=0.5, LPIPS=0.7).
 
 ---
 
@@ -71,7 +72,7 @@
 10. **Per-image adaptive strength** (v15) — encode at low strength, escalate if LDPC fails
 11. **Full U-Net FiLM conditioning** (v17) — encoder adapts spatial strategy based on strength
 12. **Random exponential annealing** (v17) — two curves define widening strength range
-13. **Split blur** (v18) — separate σ for decoder vs LPIPS/GAN
+13. **Split blur** (v18) — separate σ for decoder vs LPIPS/GAN (σ>1.0 creates artifacts, needs mild values)
 
 ## Parameter Evolution
 
