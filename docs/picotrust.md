@@ -194,9 +194,10 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | **v15** | **72** | **0.020** | **35.67 dB** | **97.4%** | **95.8%** | **512→512, blur(encoded) σ=0.5, LDPC(72,38) = 38 payload bits** |
 | **v15 s012** | **72** | **0.012** | **39.19 dB** | **94.8%** | **90.5%** | **Post-annealed from v15** |
 | **v15 s010** | **72** | **0.010** | **40.68 dB** | **93.4%** | **87.1%** | **Post-annealed — 40 dB at 72 bits, production model with adaptive encoding** |
-| v16 | 72 | 0.010-0.025 | 40.8-35.0 dB | 94.8-98.9% | — | FiLM strength conditioning — unsuccessful, patterns same across strengths |
+| v16 | 72 | 0.010-0.025 | 40.8-35.0 dB | 94.8-98.9% | — | FiLM at E_post only — unsuccessful, patterns same across strengths |
+| **v17** | **72** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | — | **Full U-Net FiLM — auto-adaptive spatial distribution, production model** |
 
-*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15 evaluated at 50 images.
+*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images.
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -490,6 +491,45 @@ v16 attempted to make the encoder produce different spatial strategies at differ
 
 **Key lesson**: to truly condition on strength, conditioning must be injected deeper — into the U-Net at every layer, similar to how diffusion models inject timestep conditioning at every residual block. FiLM at the output refinement stage is insufficient because the spatial plan is already committed by the U-Net.
 
+### Full U-Net FiLM Conditioning (v17 — Production Model)
+
+v17 solved the strength-conditioning problem by injecting FiLM at ALL 9 U-Net conv layers, not just E_post (v16). The encoder produces genuinely different spatial amplitude distributions at different strengths — like an automatic texture mask built into the network.
+
+**Architecture**: 72 bits, 512→512 decoder, blur(encoded) σ=0.5, FiLM at all 9 U-Net layers (198k new params). MLP maps strength scalar → 1536 modulation params (768 gamma + 768 beta). Identity-initialized. Trained from scratch with random exponential annealing.
+
+**Random exponential annealing**: instead of deterministic strength schedule followed by random sampling, two exponential curves define the sampling range from step 0:
+```
+upper = 1.0 × (0.025/1.0)^progress → 1.0 → 0.025
+lower = 1.0 × (0.010/1.0)^progress → 1.0 → 0.010
+sample uniform from [lower, upper]
+```
+The range widens naturally during the squeeze. Bootstrap (steps 0-10k) uses fixed strength=1.0.
+
+**Results (50-image evaluation, final model):**
+
+| Strength | Accuracy | PSNR | TRC |
+|----------|----------|------|-----|
+| 0.010 | 95.2% | 41.0 dB | 0.564 |
+| 0.015 | 98.3% | 38.0 dB | 0.582 |
+| 0.020 | 99.2% | 36.1 dB | 0.595 |
+| 0.025 | 99.5% | 34.8 dB | 0.600 |
+
+**vs v15 (non-conditioned, trained at single strength):**
+
+| Metric | v15 s010 | v15 s020 | v17 @ s=0.010 | v17 @ s=0.020 |
+|--------|----------|----------|---------------|---------------|
+| Accuracy | 93.4% | 97.4% | **95.2%** | **99.2%** |
+| PSNR | 40.68 dB | 35.67 dB | **41.0 dB** | **36.1 dB** |
+| TRC | ~0.45 | ~0.50 | **0.564** | **0.595** |
+
+v17 beats v15 at every strength — higher accuracy, higher PSNR, AND higher TRC. One model handles the full [0.010, 0.025] range.
+
+**What the FiLM learned**: the residual spatial patterns are consistent across strengths (the U-Net's spatial plan is the same), but the amplitude modulation differs. At higher strength, the FiLM automatically suppresses smooth regions more aggressively (like an auto texture mask). At lower strength, it relaxes and uses all available regions. This is exactly what the learned mask (v13) was supposed to do, but the FiLM achieves it without a separate mask head.
+
+**Why full U-Net FiLM works but E_post FiLM (v16) didn't**: the spatial strategy is determined throughout the U-Net at every resolution level. FiLM at each layer can modulate how features at that scale contribute to the final residual. At E_post only, the spatial plan is already committed — FiLM can only adjust gain, not distribution.
+
+**Production usage**: set strength based on desired quality/robustness tradeoff. Optionally apply texture mask for additional PSNR gain. LDPC(72,38) for error correction.
+
 ### Exponential vs Linear Annealing (v11/v12)
 
 Linear annealing spends most of its time in the high-strength regime and rushes through the critical low-strength transition. Exponential annealing treats each order of magnitude equally:
@@ -671,6 +711,7 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v15** | 2026 | 72 | 512→512 | 35.67 | 97.4% | 95.8% (Q10) | 19.2M |
 | **PicoTrust v15 s010** | 2026 | 72 | 512→512 | 40.68 | 93.4% | 87.1% (Q10) | 19.2M |
 | PicoTrust v15 s010+mask | 2026 | 72 | 512→512 | 43.1* | 89%* | — | 19.2M |
+| **PicoTrust v17** | 2026 | 72 | 512→512 | 41.0-34.8 | 95.2-99.5% | — | **19.4M** |
 
 *v15 s010+mask: average over 34/50 images that achieve 100% LDPC at this config. Adaptive scheme achieves 100% LDPC on 49/50 images across all configs.
 
@@ -715,6 +756,7 @@ Available at [huggingface.co/vadishev/picotrust](https://huggingface.co/vadishev
 | **v15/picotrust_v15_best.pt** | **0.020** | **35.67 dB** | **97.4%** | **72** | **Production base model** |
 | **v15/picotrust_v15_s012_best.pt** | **0.012** | **39.19 dB** | **94.8%** | **72** | **High PSNR** |
 | **v15/picotrust_v15_s010_best.pt** | **0.010** | **40.68 dB** | **93.4%** | **72** | **Production with adaptive encoding** |
+| **v17/picotrust_v17_best.pt** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | **72** | **Production — FiLM strength-conditioned, auto-adaptive** |
 
 ## Usage
 
@@ -822,3 +864,6 @@ Hard-won insights from 9 model versions:
 37. **LDPC(72,38) with adaptive encoding achieves 100% message recovery** — 38 payload bits from 72 coded bits. Combined with per-image adaptive strength + texture mask, achieves 100% LDPC recovery on 49/50 test images. The extra 8 coded bits (vs v14's 64) provide more LDPC redundancy at minimal visual cost
 38. **FiLM at E_post doesn't change spatial strategy** — the U-Net determines WHERE to place information. E_post only refines HOW those features become a residual. FiLM modulating E_post's input can adjust per-channel gain but can't redirect the spatial distribution. True strength-conditional encoding would require conditioning injected into the U-Net at every layer (like diffusion models), which is a major architectural change
 39. **Random strength sampling improves robustness but doesn't teach conditioning** — training with uniform random strength [0.010, 0.025] per batch makes the model work across the full range, but without deep conditioning the encoder produces the same spatial pattern at every strength. The benefit is exposure to varied difficulty levels, not learned conditional behavior
+40. **Full U-Net FiLM works where E_post FiLM failed** — FiLM at all 9 conv layers (198k params) produces genuinely different spatial amplitude distributions per strength. At high strength the encoder automatically suppresses smooth regions (like an auto texture mask). At low strength it relaxes and uses all regions. The spatial PATTERN is consistent but the AMPLITUDE DISTRIBUTION changes — which is exactly what content-adaptive encoding needs
+41. **Random exponential annealing is better than anneal-then-sample** — two exponential curves define a widening sampling range from step 0. The FiLM learns to differentiate gradually as the range widens, rather than being shocked with the full range at a switch point. At bootstrap: [~1.0, ~1.0]. At progress=0.5: [~0.10, ~0.16]. At convergence: [0.010, 0.025]
+42. **One strength-conditioned model replaces multiple post-annealed models** — v17 at any strength beats v15 trained at that specific strength. v17@s=0.010 gives 95.2% acc / 41.0 dB vs v15 s010's 93.4% / 40.68 dB. No need to train and store separate checkpoints for each strength level
