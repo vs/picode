@@ -32,6 +32,8 @@ MODEL_CONFIGS = {
     "picotrust_v10": "picotrust_v10.yaml",
     "picotrust_v10_s012": "picotrust_v10_s012.yaml",
     "picotrust_v10_s010": "picotrust_v10_s010.yaml",
+    "picotrust_v22": "picotrust_v22.yaml",
+    "picotrust_b7238s20p03d00": "picotrust_b7238s20p03d00.yaml",
 }
 # Kaggle normalizes dataset slugs: underscores become hyphens
 CKPT_DATASET_NAME = f"{MODEL_NAME}-checkpoints"
@@ -40,7 +42,20 @@ CKPT_DATASET_SLUG = CKPT_DATASET_NAME.replace("_", "-")
 if MODEL_NAME not in MODEL_CONFIGS:
     raise ValueError(f"Unknown model: {MODEL_NAME}. Supported: {list(MODEL_CONFIGS.keys())}")
 
-# --- Step 1: Install missing dependencies ---
+# --- Step 1: Check GPU compatibility ---
+# P100 (sm_60) is incompatible with PyTorch 2.2+ (requires sm_70+).
+# No fix available on Python 3.12 (PyTorch 2.1.x only supports Python <= 3.11).
+# Exit early so the kernel finishes quickly and user can re-push for a T4.
+import torch
+if torch.cuda.is_available():
+    cap = torch.cuda.get_device_capability()
+    gpu_name = torch.cuda.get_device_name(0)
+    print(f"GPU: {gpu_name} (sm_{cap[0]}{cap[1]})")
+    if cap[0] < 7:
+        print(f"\nERROR: {gpu_name} (sm_{cap[0]}{cap[1]}) is not supported by PyTorch {torch.__version__}.")
+        print("PyTorch 2.2+ requires sm_70 or higher. Re-push the kernel to get a T4 GPU.")
+        sys.exit(1)
+
 print("Installing dependencies...")
 subprocess.check_call([
     sys.executable, "-m", "pip", "install", "-q",

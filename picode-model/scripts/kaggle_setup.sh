@@ -191,8 +191,8 @@ cmd_push() {
   "language": "python",
   "kernel_type": "script",
   "is_private": true,
-  "enable_gpu": true,
   "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
   "dataset_sources": [
     "$USERNAME/picode-source",
     "awsaf49/coco-2017-dataset"
