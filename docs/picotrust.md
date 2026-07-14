@@ -2,7 +2,7 @@
 
 PicoTrust is a content-adaptive neural image steganography model that hides binary messages in photographs. Based on StegaStamp (Tancik et al., CVPR 2020), PicoTrust uses decoder-side blur and blurred perceptual losses to concentrate encoding energy in textured image regions while leaving smooth areas untouched.
 
-**Best models:** v20 (95.2% accuracy, 40.64 dB, best robustness with adaptive LDPC), v14 (98.4% accuracy, TRC=0.591, best content-adaptivity), and v12 (40.72 dB PSNR, production model).
+**Best models:** v15 adaptive (best visual quality — content-adaptive residuals + LDPC), v20 (best robustness — 94.5% JPEG Q10), v14 (best content-adaptivity TRC=0.591), and v12 (40.72 dB, production model).
 
 ## Architecture
 
@@ -595,9 +595,21 @@ v20 tested whether training directly at target strength s=0.010 (instead of v15'
 | Blur σ=3 | 90.3% |
 | Noise σ=0.1 | 87.5% |
 
-**v20 vs v15 comparison**: v20 achieves comparable accuracy (95.2% vs 93.4%) and PSNR (40.64 vs 40.68 dB) to v15 s010, but with much better robustness under distortions (94.5% vs 87.1% at JPEG Q10) thanks to the higher decoder blur σ=1.0. The adaptive encoding results are also stronger — 88% at lightest config vs v15's 68%, with higher average PSNR (41.7 vs 41.0 dB).
+**v20 vs v15 comparison**:
 
-**Why it works**: direct training at the target strength with high blur σ=1.0 forces the encoder to learn robust low-frequency patterns from the start. v15's post-annealing approach trained at s=0.020 first, then reduced — the encoder's spatial strategy was optimized for a higher-strength regime. v20 optimizes directly for s=0.010, producing patterns better suited to that amplitude.
+| Metric | v15 adaptive | v20 adaptive |
+|--------|-------------|-------------|
+| PSNR (avg) | ~41.0 dB | 41.7 dB |
+| % at lightest config | 68% | 88% |
+| JPEG Q10 robustness | 87.1% | 94.5% |
+| Content-adaptivity | **Better** — residuals concentrated in texture | Weaker — energy spreads more uniformly |
+| Visual quality | **Better** — smooth regions cleaner | More visible in smooth regions |
+
+v20 wins on metrics (robustness, PSNR), but **v15 adaptive produces visually superior results**. The residual energy is more concentrated in textured regions, leaving smooth areas (sky, walls) cleaner. This matters more than robustness numbers for the product.
+
+**Why v15 has better content-adaptivity**: v15 was trained at s=0.020 where the encoder had excess capacity to develop strong content-adaptive spatial patterns. Those patterns persist when post-annealed to s=0.010. v20 trained directly at s=0.010, so the encoder never had headroom to learn spatial selectivity — it spreads energy more uniformly to maximize accuracy at the tight strength budget.
+
+**Key lesson**: post-annealing from higher strength produces better content-adaptivity than direct low-strength training. The encoder needs excess capacity during training to learn WHERE to place residuals, then post-annealing reduces HOW MUCH while preserving the spatial strategy. v15 adaptive remains the production model for visual quality.
 
 ### Exponential vs Linear Annealing (v11/v12)
 
