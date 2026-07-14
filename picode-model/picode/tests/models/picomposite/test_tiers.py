@@ -37,21 +37,21 @@ class TestTierDefinitions:
         sigmas = [TIERS[i]["perceptual_blur_sigma"] for i in range(NUM_TIERS)]
         assert sigmas == sorted(sigmas, reverse=True)
 
-    def test_tier_decoder_blur_shared(self):
-        """All tiers share the same decoder blur sigma (one decoder for mobile)."""
-        sigmas = {TIERS[i]["decoder_blur_sigma"] for i in range(NUM_TIERS)}
-        assert len(sigmas) == 1, f"Expected shared decoder blur, got {sigmas}"
+    def test_tier_decoder_blur_decreasing(self):
+        """Higher tiers (more bits) should have lower or equal decoder blur sigma."""
+        sigmas = [TIERS[i]["decoder_blur_sigma"] for i in range(NUM_TIERS)]
+        assert sigmas == sorted(sigmas, reverse=True)
 
     def test_tier_values(self):
         expected = {
             0: {"bits": 30, "strength": 0.008,
-                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 1.0},
+                "decoder_blur_sigma": 1.0, "perceptual_blur_sigma": 1.0},
             1: {"bits": 48, "strength": 0.010,
-                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.7},
+                "decoder_blur_sigma": 0.7, "perceptual_blur_sigma": 0.7},
             2: {"bits": 72, "strength": 0.012,
                 "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.5},
             3: {"bits": 96, "strength": 0.014,
-                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.5},
+                "decoder_blur_sigma": 0.3, "perceptual_blur_sigma": 0.5},
         }
         for t_idx, values in expected.items():
             assert TIERS[t_idx] == values, f"Tier {t_idx} mismatch"

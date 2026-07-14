@@ -6,10 +6,10 @@ PicoComposite is a multi-tier steganography model that supports 4 quality/capaci
 
 | Tier | Name | Channel bits | LDPC config | Data bits | IDs | Short link | Strength | Dec σ | Perc σ |
 |------|------|-------------|-------------|-----------|-----|------------|----------|-------|--------|
-| 0 | **UHQ** | 30 | LDPC(30,17) | 17 | 131K | 6 chars | 0.008 | 0.5 | 1.0 |
-| 1 | **HQ** | 48 | LDPC(48,26) | 26 | 67M | 9 chars | 0.010 | 0.5 | 0.7 |
+| 0 | **UHQ** | 30 | LDPC(30,17) | 17 | 131K | 6 chars | 0.008 | 1.0 | 1.0 |
+| 1 | **HQ** | 48 | LDPC(48,26) | 26 | 67M | 9 chars | 0.010 | 0.7 | 0.7 |
 | 2 | **MQ** | 72 | LDPC(72,38) | 38 | 274B | 13 chars | 0.012 | 0.5 | 0.5 |
-| 3 | **LQ** | 96 | LDPC(96,50) | 50 | 1.1Q | 17 chars | 0.014 | 0.5 | 0.5 |
+| 3 | **LQ** | 96 | LDPC(96,50) | 50 | 1.1Q | 17 chars | 0.014 | 0.3 | 0.5 |
 
 All LDPC codes use d_v=3, d_c=6, rate ~0.5. LDPC decoding uses soft probabilities from decoder logits (sigmoid), which dramatically outperforms BCH hard decoding.
 
@@ -28,7 +28,7 @@ Image (512×512) + Message (up to 96 bits, zero-padded) + Tier index
     ↓
   Distortions (training only)
     ↓
-  Decoder: original + blur(residual, σ=decoder_blur_sigma)   [shared 0.5]
+  Decoder: original + blur(residual, σ=decoder_blur_sigma)   [per-tier]
     ↓
   Perceptual: blur(encoded, σ=perceptual_blur_sigma)         [per-tier]
     ↓
@@ -52,11 +52,11 @@ At inference, the decoder classifies the tier from the image alone (no tier inpu
 
 Each tier has two blur sigmas — learned from v14-v20 experiments:
 
-- **`decoder_blur_sigma`** (shared 0.5 for all tiers): Applied to decoder input as `original + blur(residual, σ=0.5)`. Shared across tiers so one decoder works on mobile without per-tier blur logic at inference.
+- **`decoder_blur_sigma`** (per-tier): Applied to decoder input as `original + blur(residual, σ)`. Higher σ pushes encoder toward lower-frequency residuals (more invisible). Lower σ allows finer spatial patterns (more capacity). At inference, the mobile app applies the detected tier's blur before decoding.
 - **`perceptual_blur_sigma`** (per-tier): Applied to LPIPS/GAN losses as `blur(encoded, σ)`. Controls content-adaptivity during training — higher σ = stronger LPIPS guidance = cleaner smooth regions.
 - **L2/FFL losses**: computed on real encoded image — pixel-level quality on unblurred output.
 
-Higher tiers (UHQ, fewer bits) get higher perceptual σ (1.0), maximizing content-adaptivity with the most headroom. Lower tiers (MQ/LQ, more bits) use lower perceptual σ (0.5), matching decoder blur.
+UHQ (fewest bits) uses highest blur (σ=1.0 both) for maximum invisibility. LQ (most bits) uses lowest decoder σ (0.3) to access finer spatial detail, but keeps perceptual σ at 0.5 for content-adaptivity.
 
 **Key constraint from v18/v19**: σ > 1.0 for LPIPS creates diagonal artifacts — all perceptual sigmas capped at 1.0.
 
