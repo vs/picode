@@ -2,7 +2,7 @@
 
 PicoTrust is a content-adaptive neural image steganography model that hides binary messages in photographs. Based on StegaStamp (Tancik et al., CVPR 2020), PicoTrust uses decoder-side blur and blurred perceptual losses to concentrate encoding energy in textured image regions while leaving smooth areas untouched.
 
-**Best models:** v14 (98.4% accuracy, TRC=0.591, best content-adaptivity) and v12 (40.72 dB PSNR, production model).
+**Best models:** v20 (95.2% accuracy, 40.64 dB, best robustness with adaptive LDPC), v14 (98.4% accuracy, TRC=0.591, best content-adaptivity), and v12 (40.72 dB PSNR, production model).
 
 ## Architecture
 
@@ -197,8 +197,10 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v16 | 72 | 0.010-0.025 | 40.8-35.0 dB | 94.8-98.9% | — | FiLM at E_post only — unsuccessful, patterns same across strengths |
 | **v17** | **72** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | — | **Full U-Net FiLM — auto-adaptive spatial distribution, production model** |
 | v18 | 72 | 0.010-0.025 | 40.9-34.2 dB | 97.5-99.5% | — | Split blur (dec σ=1.0, LPIPS σ=1.5) — stopped early, diagonal artifacts |
+| v19 | 72 | 0.010-0.025 | — | — | — | Split blur (dec σ=1.5, LPIPS σ=1.5) — diagonal artifacts, unsuccessful |
+| **v20** | **72** | **0.010** | **40.64 dB** | **95.2%** | **94.5%** | **512→512, blur(encoded) σ=1.0, direct low-strength training — 38 LDPC payload bits** |
 
-*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images. v18 evaluated at 170k, stopped early.
+*v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images. v18 evaluated at 170k, stopped early. v19 evaluated at 200k, stopped (artifacts). v20 evaluated at 200k.
 
 ### Blur Sigma by Version
 
@@ -215,6 +217,8 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v16 | 512 | 0.5 | 0.5 | blur(encoded) + E_post FiLM | FiLM too shallow — unsuccessful |
 | v17 | 512 | 0.5 | 0.5 | blur(encoded) + full U-Net FiLM | Auto-adaptive, production model |
 | v18 | 512 | 1.0 | 1.5 | Split blur + full U-Net FiLM | Aggressive — diagonal artifacts, unsuccessful |
+| v19 | 512 | 1.5 | 1.5 | Split blur + full U-Net FiLM | Even more aggressive — diagonal artifacts, unsuccessful |
+| v20 | 512 | 1.0 | 1.0 | blur(encoded), no FiLM | Direct s=0.010 training, σ=1.0 both — strong results |
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -547,6 +551,54 @@ v17 beats v15 at every strength — higher accuracy, higher PSNR, AND higher TRC
 
 **Production usage**: set strength based on desired quality/robustness tradeoff. Optionally apply texture mask for additional PSNR gain. LDPC(72,38) for error correction.
 
+### Split Blur Experiments (v18, v19 — Unsuccessful)
+
+v18 and v19 tested whether higher blur sigma could push content-adaptivity further by separating decoder blur from perceptual blur.
+
+- **v18**: decoder σ=1.0, LPIPS σ=1.5. Diagonal artifacts appeared in smooth regions — σ > 1.0 for LPIPS creates periodic patterns. Stopped early.
+- **v19**: decoder σ=1.5, LPIPS σ=1.5. Even more aggressive — same diagonal artifact problem. Confirmed σ > 1.0 cap for perceptual losses.
+
+**Key lesson**: σ > 1.0 for LPIPS/GAN creates diagonal artifacts. All perceptual sigmas must be capped at 1.0.
+
+### Direct Low-Strength Training (v20)
+
+v20 tested whether training directly at target strength s=0.010 (instead of v15's post-annealing approach) could achieve similar results with σ=1.0 blur. No FiLM — single fixed strength, exponential annealing from 1.0 → 0.010 over 120k steps.
+
+**Architecture**: 72 bits, 512→512 decoder, blur(encoded) σ=1.0 for both decoder and LPIPS/GAN, exponential annealing, 200k steps. Same loss recipe as v14/v15.
+
+**Results (50-image evaluation):**
+
+| Strength | Accuracy | PSNR | TRC | JPEG Q10 | JPEG Q50 | Blur σ=3 | Noise σ=0.1 |
+|----------|----------|------|-----|----------|----------|----------|-------------|
+| 0.010 | 95.2% | 40.64 dB | 0.547 | 94.5% | 95.0% | 94.1% | 93.7% |
+
+**Adaptive encoding + LDPC(72,38) results (50 images, 5 trials each = 250 trials):**
+
+| Config | Count | % | Avg PSNR |
+|--------|-------|---|----------|
+| s=0.010 + mask 0.85 | 221 | 88.4% | 42.1 dB |
+| s=0.012 + mask 0.85 | 11 | 4.4% | 40.0 dB |
+| s=0.015 + mask 0.85 | 9 | 3.6% | 38.3 dB |
+| s=0.015 no mask | 4 | 1.6% | 36.8 dB |
+| s=0.020 no mask | 3 | 1.2% | 34.2 dB |
+| **Failed** | **2** | **0.8%** | — |
+
+**Success rate: 99.2%** (248/250) with average PSNR 41.66 dB. 88% of trials resolve at the lightest config.
+
+**LDPC robustness at chosen config:**
+
+| Distortion | 100% LDPC decode |
+|------------|-----------------|
+| Clean | 100.0% |
+| JPEG Q50 | 97.2% |
+| JPEG Q10 | 91.9% |
+| Blur σ=3 | 90.3% |
+| Noise σ=0.1 | 87.5% |
+
+**v20 vs v15 comparison**: v20 achieves comparable accuracy (95.2% vs 93.4%) and PSNR (40.64 vs 40.68 dB) to v15 s010, but with much better robustness under distortions (94.5% vs 87.1% at JPEG Q10) thanks to the higher decoder blur σ=1.0. The adaptive encoding results are also stronger — 88% at lightest config vs v15's 68%, with higher average PSNR (41.7 vs 41.0 dB).
+
+**Why it works**: direct training at the target strength with high blur σ=1.0 forces the encoder to learn robust low-frequency patterns from the start. v15's post-annealing approach trained at s=0.020 first, then reduced — the encoder's spatial strategy was optimized for a higher-strength regime. v20 optimizes directly for s=0.010, producing patterns better suited to that amplitude.
+
 ### Exponential vs Linear Annealing (v11/v12)
 
 Linear annealing spends most of its time in the high-strength regime and rushes through the critical low-strength transition. Exponential annealing treats each order of magnitude equally:
@@ -774,6 +826,7 @@ Available at [huggingface.co/vadishev/picotrust](https://huggingface.co/vadishev
 | **v15/picotrust_v15_s012_best.pt** | **0.012** | **39.19 dB** | **94.8%** | **72** | **High PSNR** |
 | **v15/picotrust_v15_s010_best.pt** | **0.010** | **40.68 dB** | **93.4%** | **72** | **Production with adaptive encoding** |
 | **v17/picotrust_v17_best.pt** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | **72** | **Production — FiLM strength-conditioned, auto-adaptive** |
+| **v20/picotrust_v20_best.pt** | **0.010** | **40.64 dB** | **95.2%** | **72** | **Production — direct low-strength, σ=1.0, best robustness** |
 
 ## Usage
 
