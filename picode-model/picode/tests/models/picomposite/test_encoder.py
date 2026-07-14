@@ -3,7 +3,7 @@
 import torch
 
 from picode.models.picomposite.encoder import Encoder
-from picode.models.picomposite.tiers import MAX_BITS, TIERS
+from picode.models.picomposite.tiers import TIERS
 
 
 class TestEncoderConstruction:
@@ -55,6 +55,9 @@ class TestTierConditioning:
         self, sample_image_256, sample_message_96
     ):
         enc = Encoder(image_size=256)
+        # E_post final layer is zero-init, so set non-zero weights to test tier divergence
+        with torch.no_grad():
+            enc.e_post[-1].weight.fill_(0.01)
         tier_0 = torch.tensor([0, 0])
         tier_3 = torch.tensor([3, 3])
         out_0 = enc(sample_image_256, sample_message_96, tier_0)["encoded"]

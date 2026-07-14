@@ -1,9 +1,12 @@
-"""PicoMposite encoder: PicoTrust U-Net with tier conditioning.
+"""PicoComposite encoder: PicoTrust U-Net with tier conditioning.
 
 Changes from PicoTrust encoder:
 - Tier embedding concatenated with message before secret_dense
 - Tier embedding projected and added to U-Net bottleneck
 - Per-sample softsign strength looked up from tier table
+- Bilinear message upsampling (from v10)
+- Dilated E_post for larger receptive field (from v10)
+- Zero-init E_post final layer so residual starts at zero (from v15)
 """
 
 import torch
@@ -54,9 +57,11 @@ class Encoder(BaseEncoder):
         self.up9 = nn.Conv2d(32, 32, 2, padding=0)
         self.conv9 = nn.Conv2d(70, 32, 3, padding=1)  # 32 + 32 + 6 = 70
 
-        # E_post: grayscale residual
+        # E_post: grayscale residual with dilated conv for larger receptive field
         self.e_post = nn.Sequential(
             nn.Conv2d(32, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 32, 3, padding=2, dilation=2),  # dilated, effective RF=7
             nn.ReLU(),
             nn.Conv2d(32, 16, 1),
             nn.SiLU(),
@@ -82,6 +87,11 @@ class Encoder(BaseEncoder):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
+        # Zero-init E_post's final layer so residual starts at zero
+        last_conv = self.e_post[-1]
+        nn.init.zeros_(last_conv.weight)
+        nn.init.zeros_(last_conv.bias)
+
     def forward(self, image: Tensor, message: Tensor, tier: Tensor) -> dict[str, Tensor]:  # type: ignore[override]
         """Encode message into image with tier-specific strength.
 
@@ -105,7 +115,7 @@ class Encoder(BaseEncoder):
         x = F.relu(self.secret_dense(msg_input))  # (B, 7500)
         x = x.view(-1, 3, 50, 50)
         secret_enlarged = F.interpolate(
-            x, size=(self.image_size, self.image_size), mode="nearest"
+            x, size=(self.image_size, self.image_size), mode="bilinear", align_corners=False
         )
 
         inputs = torch.cat([secret_enlarged, image_norm], dim=1)  # (B, 6, H, W)

@@ -1,15 +1,15 @@
 # PicoComposite
 
-PicoComposite is a multi-tier steganography model that supports 4 quality/capacity levels in a single trained model. Based on PicoTrust v14 techniques (512→512, exponential annealing, content-adaptive encoding via blurred LPIPS/GAN), with per-tier decoder blur that tailors the spatial frequency band to each tier's bit budget.
+PicoComposite is a multi-tier steganography model that supports 4 quality/capacity levels in a single trained model. Based on PicoTrust v14/v15 techniques (512→512, exponential annealing, content-adaptive encoding via blurred LPIPS/GAN), with split decoder/perceptual blur per tier.
 
 ## Tiers
 
-| Tier | Name | Channel bits | LDPC config | Data bits | IDs | Short link | Strength | Blur σ |
-|------|------|-------------|-------------|-----------|-----|------------|----------|--------|
-| 0 | **UHQ** | 30 | LDPC(30,17) | 17 | 131K | 6 chars | 0.010 | 1.4 |
-| 1 | **HQ** | 48 | LDPC(48,26) | 26 | 67M | 9 chars | 0.011 | 1.0 |
-| 2 | **MQ** | 72 | LDPC(72,38) | 38 | 274B | 13 chars | 0.012 | 0.8 |
-| 3 | **LQ** | 96 | LDPC(96,50) | 50 | 1.1Q | 17 chars | 0.013 | 0.6 |
+| Tier | Name | Channel bits | LDPC config | Data bits | IDs | Short link | Strength | Dec σ | Perc σ |
+|------|------|-------------|-------------|-----------|-----|------------|----------|-------|--------|
+| 0 | **UHQ** | 30 | LDPC(30,17) | 17 | 131K | 6 chars | 0.008 | 0.5 | 1.0 |
+| 1 | **HQ** | 48 | LDPC(48,26) | 26 | 67M | 9 chars | 0.010 | 0.5 | 0.7 |
+| 2 | **MQ** | 72 | LDPC(72,38) | 38 | 274B | 13 chars | 0.012 | 0.5 | 0.5 |
+| 3 | **LQ** | 96 | LDPC(96,50) | 50 | 1.1Q | 17 chars | 0.014 | 0.5 | 0.5 |
 
 All LDPC codes use d_v=3, d_c=6, rate ~0.5. LDPC decoding uses soft probabilities from decoder logits (sigmoid), which dramatically outperforms BCH hard decoding.
 
@@ -28,7 +28,9 @@ Image (512×512) + Message (up to 96 bits, zero-padded) + Tier index
     ↓
   Distortions (training only)
     ↓
-  Per-tier blur: original + blur(residual, σ=tier.blur_sigma)
+  Decoder: original + blur(residual, σ=decoder_blur_sigma)   [shared 0.5]
+    ↓
+  Perceptual: blur(encoded, σ=perceptual_blur_sigma)         [per-tier]
     ↓
   Decoder (CNN + compact STN + tier classifier + tier-conditioned bit head)
     ↓
@@ -46,14 +48,17 @@ The encoder receives the tier index through three pathways:
 
 At inference, the decoder classifies the tier from the image alone (no tier input needed), then uses the detected tier's embedding to condition bit extraction. The bit output is truncated to the detected tier's bit count.
 
-### Per-tier decoder blur
+### Split blur design
 
-Each tier has its own decoder blur sigma. During training, samples are grouped by tier and blurred with different kernels:
-- **Decoder input**: `original + blur(residual, σ)` — sharp image content, blurred signal
-- **LPIPS/GAN losses**: `blur(encoded, σ)` — content-adaptive gradients at the tier's spatial scale
-- **L2/FFL losses**: real encoded image — pixel-level quality on unblurred output
+Each tier has two blur sigmas — learned from v14-v20 experiments:
 
-Higher tiers (fewer bits) get stronger blur, pushing the encoder toward lower-frequency residuals that are more invisible. Lower tiers (more bits) get less blur, allowing finer spatial patterns for more capacity.
+- **`decoder_blur_sigma`** (shared 0.5 for all tiers): Applied to decoder input as `original + blur(residual, σ=0.5)`. Shared across tiers so one decoder works on mobile without per-tier blur logic at inference.
+- **`perceptual_blur_sigma`** (per-tier): Applied to LPIPS/GAN losses as `blur(encoded, σ)`. Controls content-adaptivity during training — higher σ = stronger LPIPS guidance = cleaner smooth regions.
+- **L2/FFL losses**: computed on real encoded image — pixel-level quality on unblurred output.
+
+Higher tiers (UHQ, fewer bits) get higher perceptual σ (1.0), maximizing content-adaptivity with the most headroom. Lower tiers (MQ/LQ, more bits) use lower perceptual σ (0.5), matching decoder blur.
+
+**Key constraint from v18/v19**: σ > 1.0 for LPIPS creates diagonal artifacts — all perceptual sigmas capped at 1.0.
 
 ## Training
 
@@ -89,7 +94,7 @@ loss:
 
 ### Strength annealing
 
-All tiers start at `residual_strength: 1.0` and anneal exponentially to their per-tier targets over 120k steps (starting at step 10k). The tight target range (0.010–0.013) means all tiers end with similar amplitude — the per-tier blur is the primary quality differentiator, not strength.
+All tiers start at `residual_strength: 1.0` and anneal exponentially to their per-tier targets over 120k steps (starting at step 10k). UHQ anneals to 0.008, LQ to 0.014 — strength and perceptual blur both differentiate tiers.
 
 ### Training schedule
 

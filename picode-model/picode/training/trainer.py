@@ -286,21 +286,27 @@ class Trainer:
             self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._perceptual_blur_pad = pk // 2
 
-        # Precompute per-tier blur kernels for picomposite
-        self._tier_blur_kernels: list[tuple[Tensor, int]] = []
+        # Precompute per-tier blur kernels for picomposite (decoder + perceptual)
+        self._tier_decoder_blur_kernels: list[tuple[Tensor, int]] = []
+        self._tier_perceptual_blur_kernels: list[tuple[Tensor, int]] = []
         if config.model.type == "picomposite":
             import math  # noqa: F811
 
             from picode.models.picomposite.tiers import TIERS
-            for t_idx in sorted(TIERS.keys()):
-                sigma = float(TIERS[t_idx]["blur_sigma"])
+
+            def _make_blur_kernel(sigma: float) -> tuple[Tensor, int]:
                 k = 2 * math.ceil(3 * sigma) + 1
                 ax = torch.arange(k, dtype=torch.float32) - k // 2
                 xx, yy = torch.meshgrid(ax, ax, indexing="ij")
                 kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
                 kernel = (kernel / kernel.sum()).view(1, 1, k, k)
-                kernel_3ch = kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
-                self._tier_blur_kernels.append((kernel_3ch, k // 2))
+                return kernel.expand(3, -1, -1, -1).contiguous().to(self.device), k // 2
+
+            for t_idx in sorted(TIERS.keys()):
+                dec_sigma = float(TIERS[t_idx]["decoder_blur_sigma"])
+                perc_sigma = float(TIERS[t_idx]["perceptual_blur_sigma"])
+                self._tier_decoder_blur_kernels.append(_make_blur_kernel(dec_sigma))
+                self._tier_perceptual_blur_kernels.append(_make_blur_kernel(perc_sigma))
 
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
@@ -1058,7 +1064,7 @@ class Trainer:
 
         images_warped = perspective_transform(images, M_inverse, padding_mode="border")
 
-        # --- Tier-aware strength annealing ---
+        # --- Tier-aware strength annealing (exponential, matching PicoTrust) ---
         if self.config.training.residual_strength > 0:
             initial = self.config.training.residual_strength
             start = self.config.training.residual_strength_anneal_start
@@ -1066,9 +1072,13 @@ class Trainer:
             progress = 0.0
             if self.global_step >= start and steps > 0:
                 progress = min((self.global_step - start) / steps, 1.0)
+            use_exp = self.config.training.anneal_schedule == "exponential"
             for t_idx in range(NUM_TIERS):
                 target = float(TIERS[t_idx]["strength"])
-                self.encoder.tier_strengths[t_idx] = initial + progress * (target - initial)
+                if use_exp and target > 0 and initial > 0:
+                    self.encoder.tier_strengths[t_idx] = initial * (target / initial) ** progress
+                else:
+                    self.encoder.tier_strengths[t_idx] = initial + progress * (target - initial)
 
         # --- Encode ---
         encoder_output = self.encoder(images_warped, messages, tiers)
@@ -1086,34 +1096,34 @@ class Trainer:
         # --- Distortions ---
         distorted = self.distortion(encoded, self.global_step)
 
-        # --- Per-tier decoder blur ---
-        # Each sample gets blurred with its tier's sigma. Group by tier for
-        # efficient batched convolution instead of per-sample loops.
-        if self._tier_blur_kernels:
-            # Decoder input: original + blur(residual) — sharp image, blurred signal
+        # --- Per-tier split blur (decoder σ vs perceptual σ) ---
+        # Decoder gets blur(residual) with decoder_blur_sigma (shared 0.5 for mobile).
+        # LPIPS/GAN get blur(encoded) with perceptual_blur_sigma (per-tier adaptivity).
+        if self._tier_decoder_blur_kernels:
             distorted_residual = distorted - images
             decoder_blurred = torch.zeros_like(distorted)
-            # Also build blurred versions for perceptual losses
             encoded_for_perceptual = torch.zeros_like(encoded)
             original_for_perceptual = torch.zeros_like(images)
 
-            for t_idx, (kernel, pad) in enumerate(self._tier_blur_kernels):
+            for t_idx in range(NUM_TIERS):
                 tier_mask = (tiers == t_idx)
                 if not tier_mask.any():
                     continue
                 idx = tier_mask.nonzero(as_tuple=True)[0]
 
-                # Blur distorted residual for decoder
+                # Decoder input: original + blur(residual) with decoder σ
+                d_kernel, d_pad = self._tier_decoder_blur_kernels[t_idx]
                 res_t = distorted_residual[idx]
-                blurred_res = F.conv2d(res_t, kernel, padding=pad, groups=3)
+                blurred_res = F.conv2d(res_t, d_kernel, padding=d_pad, groups=3)
                 decoder_blurred[idx] = images[idx] + blurred_res
 
-                # Blur encoded for perceptual losses (v12 pattern)
+                # Perceptual: blur(encoded) and blur(original) with perceptual σ
+                p_kernel, p_pad = self._tier_perceptual_blur_kernels[t_idx]
                 encoded_for_perceptual[idx] = F.conv2d(
-                    encoded[idx], kernel, padding=pad, groups=3,
+                    encoded[idx], p_kernel, padding=p_pad, groups=3,
                 )
                 original_for_perceptual[idx] = F.conv2d(
-                    images[idx], kernel, padding=pad, groups=3,
+                    images[idx], p_kernel, padding=p_pad, groups=3,
                 )
 
             # Resize to decoder size if needed

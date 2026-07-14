@@ -1,7 +1,11 @@
 """Tests for PicoMposite tier definitions."""
 
 from picode.models.picomposite.tiers import (
-    EMBED_DIM, MAX_BITS, NUM_TIERS, TIER_NAMES, TIERS,
+    EMBED_DIM,
+    MAX_BITS,
+    NUM_TIERS,
+    TIER_NAMES,
+    TIERS,
 )
 
 
@@ -17,7 +21,8 @@ class TestTierDefinitions:
         for idx, tier in TIERS.items():
             assert "bits" in tier, f"Tier {idx} missing 'bits'"
             assert "strength" in tier, f"Tier {idx} missing 'strength'"
-            assert "blur_sigma" in tier, f"Tier {idx} missing 'blur_sigma'"
+            assert "decoder_blur_sigma" in tier, f"Tier {idx} missing 'decoder_blur_sigma'"
+            assert "perceptual_blur_sigma" in tier, f"Tier {idx} missing 'perceptual_blur_sigma'"
 
     def test_tier_bits_are_ordered(self):
         bits = [TIERS[i]["bits"] for i in range(NUM_TIERS)]
@@ -27,16 +32,29 @@ class TestTierDefinitions:
         strengths = [TIERS[i]["strength"] for i in range(NUM_TIERS)]
         assert strengths == sorted(strengths)
 
-    def test_tier_blur_sigma_decreasing(self):
-        """Higher tiers (more bits) should have lower blur sigma."""
-        sigmas = [TIERS[i]["blur_sigma"] for i in range(NUM_TIERS)]
+    def test_tier_perceptual_blur_decreasing(self):
+        """Higher tiers (more bits) should have lower or equal perceptual blur sigma."""
+        sigmas = [TIERS[i]["perceptual_blur_sigma"] for i in range(NUM_TIERS)]
         assert sigmas == sorted(sigmas, reverse=True)
 
+    def test_tier_decoder_blur_shared(self):
+        """All tiers share the same decoder blur sigma (one decoder for mobile)."""
+        sigmas = {TIERS[i]["decoder_blur_sigma"] for i in range(NUM_TIERS)}
+        assert len(sigmas) == 1, f"Expected shared decoder blur, got {sigmas}"
+
     def test_tier_values(self):
-        assert TIERS[0] == {"bits": 30, "strength": 0.010, "blur_sigma": 1.4}
-        assert TIERS[1] == {"bits": 48, "strength": 0.011, "blur_sigma": 1.0}
-        assert TIERS[2] == {"bits": 72, "strength": 0.012, "blur_sigma": 0.8}
-        assert TIERS[3] == {"bits": 96, "strength": 0.013, "blur_sigma": 0.6}
+        expected = {
+            0: {"bits": 30, "strength": 0.008,
+                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 1.0},
+            1: {"bits": 48, "strength": 0.010,
+                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.7},
+            2: {"bits": 72, "strength": 0.012,
+                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.5},
+            3: {"bits": 96, "strength": 0.014,
+                "decoder_blur_sigma": 0.5, "perceptual_blur_sigma": 0.5},
+        }
+        for t_idx, values in expected.items():
+            assert TIERS[t_idx] == values, f"Tier {t_idx} mismatch"
 
     def test_tier_names(self):
         assert TIER_NAMES == {0: "UHQ", 1: "HQ", 2: "MQ", 3: "LQ"}

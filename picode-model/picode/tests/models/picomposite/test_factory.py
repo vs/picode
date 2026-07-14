@@ -3,8 +3,8 @@
 import torch
 
 from picode.models.factory import create_decoder, create_encoder
-from picode.models.picomposite.encoder import Encoder
 from picode.models.picomposite.decoder import Decoder
+from picode.models.picomposite.encoder import Encoder
 from picode.models.picomposite.tiers import MAX_BITS
 from picode.training.config import ModelConfig
 
