@@ -1,30 +1,30 @@
-"""Tests for PicoMposite factory integration."""
+"""Tests for PicoTier factory integration."""
 
 import torch
 
 from picode.models.factory import create_decoder, create_encoder
-from picode.models.picomposite.decoder import Decoder
-from picode.models.picomposite.encoder import Encoder
-from picode.models.picomposite.tiers import MAX_BITS
+from picode.models.picotier.decoder import Decoder
+from picode.models.picotier.encoder import Encoder
+from picode.models.picotier.tiers import MAX_BITS
 from picode.training.config import ModelConfig
 
 
-class TestFactoryCreatesPicomposite:
+class TestFactoryCreatesPicotier:
 
     def test_creates_encoder(self):
-        mc = ModelConfig(type="picomposite", encoder_size=512)
+        mc = ModelConfig(type="picotier", encoder_size=512)
         enc = create_encoder(mc, num_bits=MAX_BITS)
         assert isinstance(enc, Encoder)
         assert enc.image_size == 512
 
     def test_creates_decoder(self):
-        mc = ModelConfig(type="picomposite", decoder_size=256)
+        mc = ModelConfig(type="picotier", decoder_size=256)
         dec = create_decoder(mc, num_bits=MAX_BITS)
         assert isinstance(dec, Decoder)
         assert dec.image_size == 256
 
     def test_encoder_forward_via_factory(self):
-        mc = ModelConfig(type="picomposite", encoder_size=256)
+        mc = ModelConfig(type="picotier", encoder_size=256)
         enc = create_encoder(mc, num_bits=MAX_BITS)
         img = torch.rand(1, 3, 256, 256)
         msg = torch.randint(0, 2, (1, MAX_BITS)).float()
@@ -33,7 +33,7 @@ class TestFactoryCreatesPicomposite:
         assert result["encoded"].shape == (1, 3, 256, 256)
 
     def test_decoder_forward_via_factory(self):
-        mc = ModelConfig(type="picomposite", decoder_size=256)
+        mc = ModelConfig(type="picotier", decoder_size=256)
         dec = create_decoder(mc, num_bits=MAX_BITS)
         img = torch.rand(1, 3, 256, 256)
         logits, tier_logits = dec(img)

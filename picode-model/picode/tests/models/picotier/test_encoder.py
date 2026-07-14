@@ -1,9 +1,9 @@
-"""Tests for PicoMposite encoder with tier conditioning."""
+"""Tests for PicoTier encoder with tier conditioning."""
 
 import torch
 
-from picode.models.picomposite.encoder import Encoder
-from picode.models.picomposite.tiers import TIERS
+from picode.models.picotier.encoder import Encoder
+from picode.models.picotier.tiers import TIERS
 
 
 class TestEncoderConstruction:

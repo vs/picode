@@ -1,6 +1,6 @@
-"""Tests for PicoMposite tier definitions."""
+"""Tests for PicoTier tier definitions."""
 
-from picode.models.picomposite.tiers import (
+from picode.models.picotier.tiers import (
     EMBED_DIM,
     MAX_BITS,
     NUM_TIERS,

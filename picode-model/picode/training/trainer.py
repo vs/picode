@@ -286,13 +286,13 @@ class Trainer:
             self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._perceptual_blur_pad = pk // 2
 
-        # Precompute per-tier blur kernels for picomposite (decoder + perceptual)
+        # Precompute per-tier blur kernels for picotier (decoder + perceptual)
         self._tier_decoder_blur_kernels: list[tuple[Tensor, int]] = []
         self._tier_perceptual_blur_kernels: list[tuple[Tensor, int]] = []
-        if config.model.type == "picomposite":
+        if config.model.type == "picotier":
             import math  # noqa: F811
 
-            from picode.models.picomposite.tiers import TIERS
+            from picode.models.picotier.tiers import TIERS
 
             def _make_blur_kernel(sigma: float) -> tuple[Tensor, int]:
                 k = 2 * math.ceil(3 * sigma) + 1
@@ -312,7 +312,7 @@ class Trainer:
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
         # StegaStamp/PicodeFrame: same size for both (training.image_size, typically 400)
-        if config.model.type in ("picodelite", "picotrust", "picomposite"):
+        if config.model.type in ("picodelite", "picotrust", "picotier"):
             train_image_size = config.model.encoder_size
             self._decoder_size = config.model.decoder_size
         elif config.model.type == "picodeframe":
@@ -326,7 +326,7 @@ class Trainer:
         encoder_lr = config.training.lr * config.training.encoder_lr_scale
         decoder_lr = config.training.lr
 
-        if config.model.type in ("stegastamp", "picodeframe", "picotrust", "picomposite"):
+        if config.model.type in ("stegastamp", "picodeframe", "picotrust", "picotier"):
             # StegaStamp, PicodeFrame, and PicoTrust have STN with separate LR
             stn_lr = config.training.lr * config.training.stn_lr_scale
             stn_param_names = {"stn_fc_weight", "stn_fc_bias"}
@@ -677,8 +677,8 @@ class Trainer:
         """
         if self.config.model.type == "picodeframe":
             return self._train_step_picodeframe(images)
-        elif self.config.model.type == "picomposite":
-            return self._train_step_picomposite(images)
+        elif self.config.model.type == "picotier":
+            return self._train_step_picotier(images)
         return self._train_step_default(images)
 
     def _train_step_default(self, images: Tensor) -> dict[str, float]:
@@ -1011,8 +1011,8 @@ class Trainer:
 
         return metrics
 
-    def _train_step_picomposite(self, images: Tensor) -> dict[str, float]:
-        """Execute a single training step for PicoMposite.
+    def _train_step_picotier(self, images: Tensor) -> dict[str, float]:
+        """Execute a single training step for PicoTier.
 
         Similar to _train_step_default but with:
         - Per-tier message generation with variable bit counts and masks
@@ -1026,7 +1026,7 @@ class Trainer:
         Returns:
             Dict of metrics for this step.
         """
-        from picode.models.picomposite.tiers import MAX_BITS, NUM_TIERS, TIERS
+        from picode.models.picotier.tiers import MAX_BITS, NUM_TIERS, TIERS
 
         batch_size = images.shape[0]
         image_size = images.shape[-1]

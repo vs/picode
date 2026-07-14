@@ -1,4 +1,4 @@
-"""PicoMposite test fixtures."""
+"""PicoTier test fixtures."""
 
 import pytest
 import torch

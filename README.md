@@ -30,7 +30,7 @@ With LDPC soft decoding (33 payload bits from 64 coded): 99.8% clean, 99.8% JPEG
 | v12 (strength 0.014) | 38.11 dB | 95.5% | 93.2% |
 | v12 s010 (de-annealed) | 40.72 dB | 94.0% | 89.8% |
 
-### PicoComposite v1 (multi-tier)
+### PicoTier v1 (multi-tier)
 
 4-tier model based on v14 techniques. One model, multiple capacity/quality tradeoffs:
 
@@ -122,8 +122,8 @@ picode-train --config configs/picotrust_v14.yaml
 # Train PicoTrust v12 (production, high PSNR)
 picode-train --config configs/picotrust_v12.yaml
 
-# Train PicoComposite v1 (multi-tier)
-picode-train --config configs/picomposite_v1.yaml
+# Train PicoTier v1 (multi-tier)
+picode-train --config configs/picotier_v1.yaml
 ```
 
 ### Error Correction

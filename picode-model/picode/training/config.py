@@ -103,7 +103,7 @@ class LossConfig:
     # Mask regularization — encourages learned mask to correlate with texture
     mask_reg: LossRamp | None = None
 
-    # Tier classifier loss (PicoMposite)
+    # Tier classifier loss (PicoTier)
     tier_classifier: LossRamp = field(default_factory=lambda: LossRamp(1.0, 1))
 
     # GAN training settings
@@ -267,7 +267,7 @@ class ModelConfig:
         if self.type == "picotrust" and self.encoder_size == 400 and self.decoder_size == 400:
             self.encoder_size = 256
             self.decoder_size = 256
-        elif self.type == "picomposite" and self.encoder_size == 400 and self.decoder_size == 400:
+        elif self.type == "picotier" and self.encoder_size == 400 and self.decoder_size == 400:
             self.encoder_size = 512
             self.decoder_size = 256
 

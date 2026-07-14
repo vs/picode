@@ -1,4 +1,4 @@
-"""PicoComposite tier definitions.
+"""PicoTier tier definitions.
 
 Single source of truth for tier bit counts, residual strengths, blur sigmas,
 and embedding config. Each tier targets a different quality/capacity tradeoff

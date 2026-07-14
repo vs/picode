@@ -1,4 +1,4 @@
-# PicoMposite v1 — 4-tier model with split decoder/perceptual blur
+# PicoTier v1 — 4-tier model with split decoder/perceptual blur
 #
 # Based on PicoTrust v14/v15 techniques: 512→512 decoder, exponential annealing,
 # decoder-side blur (original + blur(residual)), blurred LPIPS/GAN for
@@ -11,16 +11,16 @@
 #   - Lower decoder σ = finer spatial patterns = more capacity (LQ)
 #   - σ > 1.0 for LPIPS creates diagonal artifacts — capped at 1.0
 #
-# Tiers (defined in picode/models/picomposite/tiers.py):
+# Tiers (defined in picode/models/picotier/tiers.py):
 #   UHQ: 30 bits, strength 0.008, dec σ=1.0, perc σ=1.0 → LDPC(30,17) = 17 data bits
 #   HQ:  48 bits, strength 0.010, dec σ=0.7, perc σ=0.7 → LDPC(48,26) = 26 data bits
 #   MQ:  72 bits, strength 0.012, dec σ=0.5, perc σ=0.5 → LDPC(72,38) = 38 data bits
 #   LQ:  96 bits, strength 0.014, dec σ=0.3, perc σ=0.5 → LDPC(96,50) = 50 data bits
 
-experiment_name: picomposite_v1
+experiment_name: picotier_v1
 
 model:
-  type: picomposite
+  type: picotier
   encoder_size: 512
   decoder_size: 512
 

@@ -1,6 +1,6 @@
-# PicoComposite
+# PicoTier
 
-PicoComposite is a multi-tier steganography model that supports 4 quality/capacity levels in a single trained model. Based on PicoTrust v14/v15 techniques (512→512, exponential annealing, content-adaptive encoding via blurred LPIPS/GAN), with split decoder/perceptual blur per tier.
+PicoTier is a multi-tier steganography model that supports 4 quality/capacity levels in a single trained model. Based on PicoTrust v14/v15 techniques (512→512, exponential annealing, content-adaptive encoding via blurred LPIPS/GAN), with split decoder/perceptual blur per tier.
 
 ## Tiers
 
@@ -66,7 +66,7 @@ UHQ (fewest bits) uses highest blur (σ=1.0 both) for maximum invisibility. LQ (
 
 ```yaml
 model:
-  type: picomposite
+  type: picotier
   encoder_size: 512
   decoder_size: 512
 
@@ -136,9 +136,9 @@ With random ID assignment, enumeration resistance comes from the namespace size 
 
 ## Config and Code
 
-- **Tier definitions**: `picode-model/picode/models/picomposite/tiers.py`
-- **Encoder**: `picode-model/picode/models/picomposite/encoder.py`
-- **Decoder**: `picode-model/picode/models/picomposite/decoder.py`
-- **Training**: `picode-model/picode/training/trainer.py` (`_train_step_picomposite`)
-- **Config**: `picode-model/configs/picomposite_v1.yaml`
-- **Tests**: `picode-model/picode/tests/models/picomposite/`
+- **Tier definitions**: `picode-model/picode/models/picotier/tiers.py`
+- **Encoder**: `picode-model/picode/models/picotier/encoder.py`
+- **Decoder**: `picode-model/picode/models/picotier/decoder.py`
+- **Training**: `picode-model/picode/training/trainer.py` (`_train_step_picotier`)
+- **Config**: `picode-model/configs/picotier_v1.yaml`
+- **Tests**: `picode-model/picode/tests/models/picotier/`

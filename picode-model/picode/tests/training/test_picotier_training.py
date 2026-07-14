@@ -1,14 +1,14 @@
-"""Tests for PicoMposite training step integration."""
+"""Tests for PicoTier training step integration."""
 
 import torch
 import torch.nn.functional as F
 
-from picode.models.picomposite.decoder import Decoder
-from picode.models.picomposite.encoder import Encoder
-from picode.models.picomposite.tiers import MAX_BITS, NUM_TIERS, TIERS
+from picode.models.picotier.decoder import Decoder
+from picode.models.picotier.encoder import Encoder
+from picode.models.picotier.tiers import MAX_BITS, NUM_TIERS, TIERS
 
 
-class TestPicompositeMessageGeneration:
+class TestPicotierMessageGeneration:
     """Test per-tier message generation with masks."""
 
     def test_generate_tiered_messages(self) -> None:
@@ -64,7 +64,7 @@ class TestPicompositeMessageGeneration:
             assert mask[n_bits:].sum().item() == 0.0
 
 
-class TestPicompositeEncoderDecoderRoundtrip:
+class TestPicotierEncoderDecoderRoundtrip:
     """Test encoder-decoder forward pass and loss computation."""
 
     def test_roundtrip_shapes(self) -> None:
@@ -154,14 +154,14 @@ class TestPicompositeEncoderDecoderRoundtrip:
             assert abs(enc.tier_strengths[t_idx].item() - target) < 1e-6
 
 
-class TestPicompositeConfig:
-    """Test config changes for PicoMposite."""
+class TestPicotierConfig:
+    """Test config changes for PicoTier."""
 
     def test_model_config_defaults(self) -> None:
-        """PicoMposite gets 512 encoder / 256 decoder when sizes are default."""
+        """PicoTier gets 512 encoder / 256 decoder when sizes are default."""
         from picode.training.config import ModelConfig
 
-        cfg = ModelConfig(type="picomposite")
+        cfg = ModelConfig(type="picotier")
         assert cfg.encoder_size == 512
         assert cfg.decoder_size == 256
 
@@ -169,7 +169,7 @@ class TestPicompositeConfig:
         """Explicit sizes are preserved (no override)."""
         from picode.training.config import ModelConfig
 
-        cfg = ModelConfig(type="picomposite", encoder_size=384, decoder_size=192)
+        cfg = ModelConfig(type="picotier", encoder_size=384, decoder_size=192)
         assert cfg.encoder_size == 384
         assert cfg.decoder_size == 192
 

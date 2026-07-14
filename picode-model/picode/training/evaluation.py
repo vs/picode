@@ -154,9 +154,9 @@ class Evaluator:
         Returns:
             EvalMetrics with averaged results.
         """
-        # Dispatch to PicoMposite-specific evaluation if applicable
+        # Dispatch to PicoTier-specific evaluation if applicable
         if hasattr(self.encoder, "tier_embedding"):
-            return self._evaluate_picomposite(dataloader, max_batches)
+            return self._evaluate_picotier(dataloader, max_batches)
 
         self.encoder.eval()
         self.decoder.eval()
@@ -210,12 +210,12 @@ class Evaluator:
         )
 
     @torch.no_grad()
-    def _evaluate_picomposite(
+    def _evaluate_picotier(
         self,
         dataloader: Any,
         max_batches: int | None = None,
     ) -> EvalMetrics:
-        """Run per-tier evaluation for PicoMposite encoder/decoder.
+        """Run per-tier evaluation for PicoTier encoder/decoder.
 
         Evaluates all tiers for each batch, using tier-specific message lengths
         (zero-padded to MAX_BITS) and masked bit accuracy over the active bits only.
@@ -228,7 +228,7 @@ class Evaluator:
             EvalMetrics averaged across all tiers (message_accuracy and ssim set to 0.0
             as they are not meaningful for variable-length messages).
         """
-        from picode.models.picomposite.tiers import MAX_BITS, NUM_TIERS, TIERS
+        from picode.models.picotier.tiers import MAX_BITS, NUM_TIERS, TIERS
 
         self.encoder.eval()
         self.decoder.eval()
