@@ -37,8 +37,10 @@ done
 set -- "${ARGS[@]}"
 
 # Derived names based on model
+# Kaggle normalizes underscores to hyphens in slugs
 KERNEL_SLUG="${MODEL_NAME}-training"
 CKPT_DATASET="${MODEL_NAME}-checkpoints"
+CKPT_DATASET_SLUG="$(echo "$CKPT_DATASET" | tr '_' '-')"
 
 # --- Helpers ---
 
@@ -203,13 +205,30 @@ cmd_push() {
 METAEOF
 
     # If checkpoint dataset exists for this model, add it to sources
-    if kaggle datasets status "$USERNAME/$CKPT_DATASET" >/dev/null 2>&1; then
-        echo "Found checkpoint dataset ($CKPT_DATASET), adding to kernel sources..."
+    # Try both underscore and hyphenated slugs (Kaggle normalizes underscores to hyphens)
+    CKPT_SRC=""
+    for SLUG in "$CKPT_DATASET" "$CKPT_DATASET_SLUG"; do
+        if kaggle datasets status "$USERNAME/$SLUG" 2>/dev/null | grep -qi "ready"; then
+            CKPT_SRC="$USERNAME/$SLUG"
+            break
+        fi
+    done
+    # Fallback: search owned datasets
+    if [ -z "$CKPT_SRC" ]; then
+        for SLUG in "$CKPT_DATASET" "$CKPT_DATASET_SLUG"; do
+            if kaggle datasets list --mine --search "$SLUG" 2>/dev/null | grep -q "$SLUG"; then
+                CKPT_SRC="$USERNAME/$SLUG"
+                break
+            fi
+        done
+    fi
+    if [ -n "$CKPT_SRC" ]; then
+        echo "Found checkpoint dataset ($CKPT_SRC), adding to kernel sources..."
         python3 -c "
 import json
 with open('$PUSH_DIR/kernel-metadata.json') as f:
     meta = json.load(f)
-src = '$USERNAME/$CKPT_DATASET'
+src = '$CKPT_SRC'
 if src not in meta['dataset_sources']:
     meta['dataset_sources'].append(src)
 with open('$PUSH_DIR/kernel-metadata.json', 'w') as f:
