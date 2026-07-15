@@ -1,10 +1,9 @@
-# PicoTrust b7238s20p03d00 — LPIPS blur only, no decoder blur
+# PicoTrust b7238s10p03d00 — post-annealed from b7238s20p03d00
 #
-# Same as b7238s20p03d03 but decoder_blur_sigma=0.0.
-# Tests whether content-adaptivity comes from LPIPS blur alone,
-# while giving the decoder full spatial resolution (more capacity).
+# Resume from s=0.020 (LPIPS blur only, no decoder blur) and anneal to s=0.010.
+# 100k additional steps, exponential annealing from 0.020 → 0.010.
 
-experiment_name: picotrust_b7238s20p03d00
+experiment_name: picotrust_b7238s10p03d00
 
 model:
   type: picotrust
@@ -17,23 +16,23 @@ data:
   batch_size: 4
 
 training:
-  num_steps: 140000
+  num_steps: 240000
   lr: 0.0001
   num_bits: 72
   image_size: 512
-  warmup_steps: 500
-  no_im_loss_steps: 10000
+  warmup_steps: 0
+  no_im_loss_steps: 0
   generator_grad_clip: 0.25
   stn_lr_scale: 0.01
   borders: black
   rnd_trans: 0.10
-  rnd_trans_ramp: 10000
-  phase2_step: 60000
+  rnd_trans_ramp: 0
+  phase2_step: 0
   phase2_decoder_lr_scale: 0.1
-  residual_strength: 1.0
-  residual_strength_anneal_target: 0.020
-  residual_strength_anneal_start: 10000
-  residual_strength_anneal_steps: 90000
+  residual_strength: 0.020
+  residual_strength_anneal_target: 0.010
+  residual_strength_anneal_start: 140000
+  residual_strength_anneal_steps: 80000
   anneal_schedule: exponential
   decoder_blur_sigma: 0.0
   perceptual_blur_sigma: 0.3
@@ -44,13 +43,13 @@ loss:
     ramp_steps: 1
   l2:
     scale: 1.5
-    ramp_steps: 50000
+    ramp_steps: 1
   lpips:
     scale: 1.5
-    ramp_steps: 50000
+    ramp_steps: 1
   ffl:
     scale: 1.0
-    ramp_steps: 50000
+    ramp_steps: 1
     delay_steps: 0
   message_loss_type: mse
   l2_edge_gain: 0.0
@@ -59,28 +58,28 @@ loss:
     enabled: true
     discriminator_lr: 0.000015
     g_loss_scale: 1.5
-    g_loss_ramp_steps: 20000
+    g_loss_ramp_steps: 1
 
 distortion:
   strategy: curriculum
   perspective:
     strength: 0.1
-    ramp_steps: 10000
+    ramp_steps: 1
   brightness:
     strength: 0.3
-    ramp_steps: 1000
+    ramp_steps: 1
   saturation:
     strength: 1.0
-    ramp_steps: 1000
+    ramp_steps: 1
   hue:
     strength: 0.1
-    ramp_steps: 1000
+    ramp_steps: 1
   noise:
     strength: 0.02
-    ramp_steps: 1000
+    ramp_steps: 1
   jpeg_quality:
     strength: 25
-    ramp_steps: 1000
+    ramp_steps: 1
   enable_jpeg: true
   enable_blur: true
 

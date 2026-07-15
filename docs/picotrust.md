@@ -2,7 +2,7 @@
 
 PicoTrust is a content-adaptive neural image steganography model that hides binary messages in photographs. Based on StegaStamp (Tancik et al., CVPR 2020), PicoTrust uses decoder-side blur and blurred perceptual losses to concentrate encoding energy in textured image regions while leaving smooth areas untouched.
 
-**Best models:** v15 adaptive (best visual quality — content-adaptive residuals + LDPC), v20 (best robustness — 94.5% JPEG Q10), v14 (best content-adaptivity TRC=0.591), and v12 (40.72 dB, production model).
+**Best models:** b7238s10p03d03 (production — 100% LDPC success, 40.73 dB, 96.4% acc), v20 (best robustness — 94.5% JPEG Q10), v14 (best content-adaptivity TRC=0.591), and v12 (40.72 dB, legacy production model).
 
 ## Architecture
 
@@ -199,6 +199,10 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v18 | 72 | 0.010-0.025 | 40.9-34.2 dB | 97.5-99.5% | — | Split blur (dec σ=1.0, LPIPS σ=1.5) — stopped early, diagonal artifacts |
 | v19 | 72 | 0.010-0.025 | — | — | — | Split blur (dec σ=1.5, LPIPS σ=1.5) — diagonal artifacts, unsuccessful |
 | **v20** | **72** | **0.010** | **40.64 dB** | **95.2%** | **94.5%** | **512→512, blur(encoded) σ=1.0, direct low-strength training — 38 LDPC payload bits** |
+| **b7238s20p03d03** | **72** | **0.020** | **35.94 dB** | **98.2%** | **97.5%** | **512→512, decoder σ=0.3, LPIPS σ=0.3 — low blur base model** |
+| **b7238s10p03d03** | **72** | **0.010** | **40.73 dB** | **96.4%** | **96.0%** | **Post-annealed from above — 100% adaptive LDPC, production model** |
+| b7238s20p03d00 | 72 | 0.020 | 35.70 dB | 98.4% | 98.2% | 512→512, no decoder blur, LPIPS σ=0.3 |
+| b7238s10p03d00 | 72 | 0.010 | 40.79 dB | 94.2% | 93.3% | Post-annealed from above — 99.2% adaptive LDPC |
 
 *v11 evaluated at 130k (5 images only). v12/v14 evaluated at 50 images. v13 evaluated at 150k (50 images), stopped early. v15/v17 evaluated at 50 images. v18 evaluated at 170k, stopped early. v19 evaluated at 200k, stopped (artifacts). v20 evaluated at 200k.
 
@@ -219,6 +223,8 @@ Each phase runs 30k steps at fixed strength. This maps the PSNR-accuracy curve p
 | v18 | 512 | 1.0 | 1.5 | Split blur + full U-Net FiLM | Aggressive — diagonal artifacts, unsuccessful |
 | v19 | 512 | 1.5 | 1.5 | Split blur + full U-Net FiLM | Even more aggressive — diagonal artifacts, unsuccessful |
 | v20 | 512 | 1.0 | 1.0 | blur(encoded), no FiLM | Direct s=0.010 training, σ=1.0 both — strong results |
+| b7238s20p03d03 | 512 | 0.3 | 0.3 | blur(encoded) | Low blur both — best production model |
+| b7238s20p03d00 | 512 | 0.0 | 0.3 | LPIPS blur only | No decoder blur, LPIPS σ=0.3 only |
 
 *v8 evaluated at 100k steps (only 10k past annealing). Accuracy was still recovering.
 
@@ -609,7 +615,47 @@ v20 wins on metrics (robustness, PSNR), but **v15 adaptive produces visually sup
 
 **Why v15 has better content-adaptivity**: v15 was trained at s=0.020 where the encoder had excess capacity to develop strong content-adaptive spatial patterns. Those patterns persist when post-annealed to s=0.010. v20 trained directly at s=0.010, so the encoder never had headroom to learn spatial selectivity — it spreads energy more uniformly to maximize accuracy at the tight strength budget.
 
-**Key lesson**: post-annealing from higher strength produces better content-adaptivity than direct low-strength training. The encoder needs excess capacity during training to learn WHERE to place residuals, then post-annealing reduces HOW MUCH while preserving the spatial strategy. v15 adaptive remains the production model for visual quality.
+**Key lesson**: post-annealing from higher strength produces better content-adaptivity than direct low-strength training. The encoder needs excess capacity during training to learn WHERE to place residuals, then post-annealing reduces HOW MUCH while preserving the spatial strategy.
+
+### Low Blur σ=0.3 Experiments (b7238 series)
+
+The b7238 series tested whether lower blur sigma (σ=0.3 vs v15's σ=0.5 and v14's σ=1.0) could improve accuracy and LDPC success rates. These models use a new parameter-based naming convention: `PicoTrust b{channel}{payload}s{str}p{perc}d{dec}` where b7238 = 72 channel bits / 38 LDPC payload bits, s20 = strength 0.020, p03 = perceptual blur σ=0.3, d03 = decoder blur σ=0.3.
+
+**Architecture**: 72 bits (LDPC(72,38) = 38 payload bits), 512→512 decoder, blur(encoded) σ=0.3 for decoder and/or LPIPS/GAN, strength 0.020, exponential annealing, 140k steps. Two variants tested: d03 (decoder σ=0.3) and d00 (no decoder blur, LPIPS σ=0.3 only).
+
+**Results (50-image evaluation):**
+
+| Model | Strength | Steps | Accuracy | PSNR | TRC | JPEG Q10 | Noise σ=0.1 |
+|-------|----------|-------|----------|------|-----|----------|-------------|
+| b7238s20p03d03 | 0.020 | 140k | 98.2% | 35.94 dB | 0.575 | 97.5% | 95.1% |
+| b7238s10p03d03 | 0.010 | 240k | 96.4% | 40.73 dB | 0.556 | 96.0% | 91.7% |
+| b7238s20p03d00 | 0.020 | 140k | 98.4% | 35.70 dB | 0.575 | 98.2% | 96.3% |
+| b7238s10p03d00 | 0.010 | 240k | 94.2% | 40.79 dB | 0.547 | 93.3% | 89.3% |
+
+**Adaptive LDPC results (250 trials):**
+
+| Model | LDPC Success | Avg PSNR | % at Lightest Config |
+|-------|-------------|----------|---------------------|
+| **b7238s10p03d03** | **100% (250/250)** | **41.90 dB** | **94.4%** |
+| b7238s10p03d00 | 99.2% (248/250) | 41.52 dB | 76.8% |
+
+**Key finding: d03 beats d00.** The decoder blur σ=0.3 variant clearly outperforms the no-decoder-blur variant at post-annealed strength:
+- 96.4% vs 94.2% accuracy
+- 96.0% vs 93.3% JPEG Q10
+- 100% vs 99.2% adaptive LDPC success
+- 94.4% vs 76.8% at lightest config
+
+The small decoder blur helps the decoder be more robust without hurting PSNR. Even σ=0.3 provides enough regularization to improve generalization.
+
+**Key finding: σ=0.3 beats σ=0.5 (v15).** b7238s10p03d03 surpasses v15 s010 across the board:
+- 96.4% vs 93.4% accuracy
+- 40.73 vs 40.68 dB PSNR
+- 100% vs ~98% adaptive LDPC success
+- 94.4% vs 68% at lightest config
+
+The lower blur sigma gives the encoder more spatial degrees of freedom while still providing enough guidance for content-adaptive placement. σ=0.3 appears to be the new sweet spot.
+
+**b7238s10p03d03 is the new production model** — 100% LDPC success rate with the highest percentage of images encoding at the lightest (highest quality) config.
 
 ### Exponential vs Linear Annealing (v11/v12)
 
@@ -793,6 +839,10 @@ LDPC with soft decoding is strictly superior: more payload bits (49 vs 36) and b
 | **PicoTrust v15 s010** | 2026 | 72 | 512→512 | 40.68 | 93.4% | 87.1% (Q10) | 19.2M |
 | PicoTrust v15 s010+mask | 2026 | 72 | 512→512 | 43.1* | 89%* | — | 19.2M |
 | **PicoTrust v17** | 2026 | 72 | 512→512 | 41.0-34.8 | 95.2-99.5% | — | **19.4M** |
+| **PicoTrust b7238s20p03d03** | 2026 | 72 | 512→512 | 35.94 | 98.2% | 97.5% (Q10) | 19.2M |
+| **PicoTrust b7238s10p03d03** | 2026 | 72 | 512→512 | 40.73 | 96.4% | 96.0% (Q10) | **19.2M** |
+| PicoTrust b7238s20p03d00 | 2026 | 72 | 512→512 | 35.70 | 98.4% | 98.2% (Q10) | 19.2M |
+| PicoTrust b7238s10p03d00 | 2026 | 72 | 512→512 | 40.79 | 94.2% | 93.3% (Q10) | 19.2M |
 
 *v15 s010+mask: average over 34/50 images that achieve 100% LDPC at this config. Adaptive scheme achieves 100% LDPC on 49/50 images across all configs.
 
@@ -838,7 +888,13 @@ Available at [huggingface.co/vadishev/picotrust](https://huggingface.co/vadishev
 | **v15/picotrust_v15_s012_best.pt** | **0.012** | **39.19 dB** | **94.8%** | **72** | **High PSNR** |
 | **v15/picotrust_v15_s010_best.pt** | **0.010** | **40.68 dB** | **93.4%** | **72** | **Production with adaptive encoding** |
 | **v17/picotrust_v17_best.pt** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | **72** | **Production — FiLM strength-conditioned, auto-adaptive** |
-| **v20/picotrust_v20_best.pt** | **0.010** | **40.64 dB** | **95.2%** | **72** | **Production — direct low-strength, σ=1.0, best robustness** |
+| **v20/picotrust_v20_best.pt** | **0.010** | **40.64 dB** | **95.2%** | **72** | **Direct low-strength, σ=1.0, best robustness** |
+| **b7238s20p03d03/best.pt** | **0.020** | **35.94 dB** | **98.2%** | **72** | **Low blur base model (σ=0.3)** |
+| **b7238s10p03d03/best.pt** | **0.010** | **40.73 dB** | **96.4%** | **72** | **Production — 100% LDPC success, best overall** |
+| b7238s20p03d00/best.pt | 0.020 | 35.70 dB | 98.4% | 72 | LPIPS blur only (no decoder blur) |
+| b7238s10p03d00/best.pt | 0.010 | 40.79 dB | 94.2% | 72 | Post-annealed, 99.2% LDPC success |
+
+**Naming convention (b7238+ series):** `PicoTrust b{channel}{payload}s{str}p{perc}d{dec}` — e.g., b7238s10p03d03 = 72 channel bits, 38 LDPC payload bits, strength 0.010, perceptual blur σ=0.3, decoder blur σ=0.3. Replaces the sequential version numbering for new models.
 
 ## Usage
 
@@ -901,7 +957,7 @@ distortion:
   strategy: curriculum
 ```
 
-See `picode-model/configs/` for all training configurations (v1-v15).
+See `picode-model/configs/` for all training configurations (v1-v20, b7238 series).
 
 ## Training Lessons
 
@@ -950,3 +1006,6 @@ Hard-won insights from 9 model versions:
 41. **Random exponential annealing is better than anneal-then-sample** — two exponential curves define a widening sampling range from step 0. The FiLM learns to differentiate gradually as the range widens, rather than being shocked with the full range at a switch point. At bootstrap: [~1.0, ~1.0]. At progress=0.5: [~0.10, ~0.16]. At convergence: [0.010, 0.025]
 42. **One strength-conditioned model replaces multiple post-annealed models** — v17 at any strength beats v15 trained at that specific strength. v17@s=0.010 gives 95.2% acc / 41.0 dB vs v15 s010's 93.4% / 40.68 dB. No need to train and store separate checkpoints for each strength level
 43. **Split blur σ>1.0 for LPIPS creates diagonal artifacts** — v18 used decoder σ=1.0 + LPIPS σ=1.5. The aggressive LPIPS blur constrains the encoder to very low-frequency patterns that manifest as visible diagonal curves. Same artifact family as v13/v14's failed experiments. The σ=0.5 used in v17 appears to be near the sweet spot — enough for content-adaptive guidance without forcing structured artifacts
+44. **σ=0.3 beats σ=0.5 for both decoder and LPIPS blur** — b7238s10p03d03 (σ=0.3) surpasses v15 s010 (σ=0.5) on accuracy (96.4% vs 93.4%), PSNR (40.73 vs 40.68 dB), and adaptive LDPC success (100% vs ~98%). Lower sigma gives the encoder more spatial degrees of freedom while still providing enough blur for content-adaptive guidance. σ=0.3 is the new sweet spot
+45. **Small decoder blur (σ=0.3) helps even at low sigma** — comparing d03 vs d00 at s=0.010: 96.4% vs 94.2% accuracy, 96.0% vs 93.3% JPEG Q10, 100% vs 99.2% adaptive LDPC. Even minimal decoder blur provides regularization that improves robustness without hurting PSNR (40.73 vs 40.79 dB — negligible difference)
+46. **Parameter-based naming > sequential versioning** — naming models by their key parameters (b7238s10p03d03) makes comparisons immediate and prevents ambiguity. The "version number" approach (v15, v16...) requires looking up what each version changed
