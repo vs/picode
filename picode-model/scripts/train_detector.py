@@ -59,6 +59,44 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use domain randomization for sim-to-real transfer",
     )
+    parser.add_argument(
+        "--sobel-sigma",
+        type=float,
+        default=None,
+        help="Sobel texture mask sigma (None = no mask)",
+    )
+    parser.add_argument(
+        "--sobel-floor",
+        type=float,
+        default=0.85,
+        help="Sobel mask floor value (default 0.85)",
+    )
+    parser.add_argument(
+        "--strengths",
+        type=str,
+        default=None,
+        help="Comma-separated residual strengths to sample from (e.g. '0.010,0.012,0.015,0.020')",
+    )
+    parser.add_argument(
+        "--perspective-strength",
+        type=float,
+        nargs=2,
+        default=[0.05, 0.20],
+        metavar=("MIN", "MAX"),
+        help="Perspective distortion range (default: 0.05 0.20)",
+    )
+    parser.add_argument(
+        "--grad-clip",
+        type=float,
+        default=None,
+        help="Gradient clipping norm (None = no clipping)",
+    )
+    parser.add_argument(
+        "--hard-negative-p",
+        type=float,
+        default=0.8,
+        help="Probability of hard negative transform on negatives (default 0.8)",
+    )
     return parser.parse_args()
 
 
@@ -122,9 +160,18 @@ def create_datasets(
     val_split: float,
     seed: int = 42,
     use_domain_randomization: bool = False,
+    sobel_mask_sigma: float | None = None,
+    sobel_mask_floor: float = 0.85,
+    strength_values: list[float] | None = None,
+    perspective_strength: tuple[float, float] = (0.05, 0.20),
+    hard_negative_p: float = 0.8,
 ) -> tuple[Dataset, Dataset]:
     """Create train and validation datasets."""
     print(f"Creating datasets from {data_dir}...")
+    if sobel_mask_sigma is not None:
+        print(f"Sobel mask: sigma={sobel_mask_sigma}, floor={sobel_mask_floor}")
+    if strength_values is not None:
+        print(f"Strength sampling: {strength_values}")
 
     if use_domain_randomization:
         print("Using DomainRandomizedAugmentation for sim-to-real transfer")
@@ -132,8 +179,8 @@ def create_datasets(
             photometric_p=0.7,
             geometric_p=0.5,
             domain_random_p=0.6,
-            perspective_strength=(0.0, 0.15),
-            rotation_degrees=(-30, 30),
+            perspective_strength=(0.0, 0.25),
+            rotation_degrees=(-15, 15),
         )
     else:
         augmentation = DetectionAugmentation(
@@ -149,8 +196,12 @@ def create_datasets(
         positive_ratio=0.5,
         input_size=320,
         encoder_input_size=encoder_input_size,
-        perspective_strength=(0.05, 0.20),
+        perspective_strength=perspective_strength,
         transform=augmentation,
+        sobel_mask_sigma=sobel_mask_sigma,
+        sobel_mask_floor=sobel_mask_floor,
+        strength_values=strength_values,
+        hard_negative_p=hard_negative_p,
     )
 
     # Split into train/val
@@ -185,6 +236,11 @@ def main() -> None:
     # Load encoder
     encoder, num_bits, encoder_input_size = load_encoder(args.encoder, device)
 
+    # Parse strengths
+    strength_values = None
+    if args.strengths:
+        strength_values = [float(s) for s in args.strengths.split(",")]
+
     # Create datasets
     train_dataset, val_dataset = create_datasets(
         encoder=encoder,
@@ -194,6 +250,11 @@ def main() -> None:
         val_split=args.val_split,
         seed=args.seed,
         use_domain_randomization=args.domain_randomization,
+        sobel_mask_sigma=args.sobel_sigma,
+        sobel_mask_floor=args.sobel_floor,
+        strength_values=strength_values,
+        perspective_strength=tuple(args.perspective_strength),
+        hard_negative_p=args.hard_negative_p,
     )
 
     # Create data loaders
@@ -234,6 +295,7 @@ def main() -> None:
         val_loader=val_loader,
         lr=args.lr,
         device=str(device),
+        grad_clip=args.grad_clip,
     )
 
     # Train
