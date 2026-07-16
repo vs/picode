@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable
 from pathlib import Path
@@ -123,28 +124,26 @@ class DetectionDataset(Dataset):
             # Encoder returns unclamped image (allows gradients during training)
             # We clamp to [0, 1] for detector training dataset
             output = self.encoder(image_on_device, message)
-            # PicoTrust with strength returns dict {"encoded": tensor}
             if isinstance(output, dict):
-                watermarked = output["encoded"]
+                raw_encoded = output["encoded"]
             else:
-                watermarked = output
-            watermarked = torch.clamp(watermarked, 0, 1)
+                raw_encoded = output
 
             # Apply Sobel mask + strength scaling (matches production inference)
             if self.sobel_mask_sigma is not None or self.strength_values is not None:
-                residual = watermarked - image_on_device
+                residual = raw_encoded - image_on_device
 
-                # Apply Sobel texture mask
                 if self.sobel_mask_sigma is not None:
                     mask = self._sobel_texture_mask(image_on_device)
                     residual = residual * mask
 
-                # Scale to sampled strength
                 if self.strength_values is not None:
                     strength = random.choice(self.strength_values)
                     residual = residual * strength
 
                 watermarked = (image_on_device + residual).clamp(0, 1)
+            else:
+                watermarked = torch.clamp(raw_encoded, 0, 1)
 
         watermarked = watermarked.squeeze(0)
 
@@ -215,9 +214,8 @@ class DetectionDataset(Dataset):
         Returns:
             Mask (1, 1, H, W) in [floor, 1.0] — high in textured regions.
         """
-        import math
-
         sigma = self.sobel_mask_sigma
+        assert sigma is not None
         floor = self.sobel_mask_floor
 
         gray = image.mean(dim=1, keepdim=True)  # (1, 1, H, W)
