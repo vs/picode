@@ -285,23 +285,30 @@ cmd_upload_ckpt() {
 
 cmd_train_detector() {
     check_gcloud
-    encoder_ckpt="${1:-picotrust_v10_s010/best.pt}"
+    encoder_ckpt="${1:-picotrust_b7238s20p00d00_sobel/best.pt}"
     epochs="${2:-50}"
-    batch_size="${3:-16}"
+    batch_size="${3:-32}"
 
-    echo "Training FastDetector..."
+    echo "Training FastDetector for b72s20m85..."
     echo "  Encoder:    ~/checkpoints/$encoder_ckpt"
     echo "  Epochs:     $epochs"
     echo "  Batch size: $batch_size"
+    echo "  Sobel:      sigma=5.0 floor=0.85"
+    echo "  Strengths:  0.010,0.012,0.015,0.020"
     echo ""
 
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python scripts/train_detector.py \
         --encoder \$HOME/checkpoints/$encoder_ckpt \
         --data-dir \$HOME/data/train \
-        --output-dir \$HOME/checkpoints/detection \
+        --output-dir \$HOME/checkpoints/detection_b72s20m85 \
         --epochs $epochs \
         --batch-size $batch_size \
-        --num-workers 4 \
+        --num-workers 0 \
+        --sobel-sigma 5.0 \
+        --sobel-floor 0.85 \
+        --strengths '0.010,0.012,0.015,0.020' \
+        --perspective-strength 0.0 0.25 \
+        --grad-clip 1.0 \
         --domain-randomization"
 
     echo "Launching detector training in tmux session '$TMUX_SESSION'..."
