@@ -808,6 +808,10 @@ class Trainer:
             images, residual_unwarped, M_forward, self.config.training.borders
         )
 
+        # 5b. Apply Sobel texture mask to residual (if enabled)
+        if self.config.training.use_sobel_mask:
+            encoded = self._apply_sobel_mask(images, encoded)
+
         # 6. Apply distortions to encoded image
         distorted = self.distortion(encoded, self.global_step)
 
@@ -1579,6 +1583,52 @@ class Trainer:
             metrics["bit_acc_min"] = per_image_acc.min().item()
 
         return metrics
+
+    def _apply_sobel_mask(self, images: Tensor, encoded: Tensor) -> Tensor:
+        """Apply Sobel gradient texture mask to the residual.
+
+        Attenuates the residual in smooth regions while preserving full signal
+        in textured regions. The mask is computed from the original image's
+        Sobel gradient magnitude, smoothed with a large Gaussian.
+
+        Args:
+            images: Original images (B, 3, H, W).
+            encoded: Encoded images (B, 3, H, W).
+
+        Returns:
+            Masked encoded images (B, 3, H, W).
+        """
+        floor = self.config.training.sobel_mask_floor
+        blur_sigma = self.config.training.sobel_blur_sigma
+
+        gray = images.mean(dim=1, keepdim=True)  # (B, 1, H, W)
+        sx = torch.tensor(
+            [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]],
+            dtype=torch.float32, device=images.device,
+        ).view(1, 1, 3, 3)
+        sy = torch.tensor(
+            [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+            dtype=torch.float32, device=images.device,
+        ).view(1, 1, 3, 3)
+        gx = F.conv2d(gray, sx, padding=1)
+        gy = F.conv2d(gray, sy, padding=1)
+        grad_mag = (gx ** 2 + gy ** 2).sqrt()
+
+        # Smooth with Gaussian
+        import math
+        k = 2 * math.ceil(3 * blur_sigma) + 1
+        ax = torch.arange(k, dtype=torch.float32, device=images.device) - k // 2
+        xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+        gk = torch.exp(-(xx ** 2 + yy ** 2) / (2 * blur_sigma ** 2))
+        gk = (gk / gk.sum()).view(1, 1, k, k)
+        grad_smooth = F.conv2d(grad_mag, gk, padding=k // 2)
+
+        # Normalize per image and apply floor
+        grad_max = grad_smooth.amax(dim=(-2, -1), keepdim=True) + 1e-8
+        mask = floor + (1.0 - floor) * (grad_smooth / grad_max)  # (B, 1, H, W)
+
+        residual = encoded - images
+        return (images + residual * mask).clamp(0, 1)
 
     def _apply_border_mode(
         self,

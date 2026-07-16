@@ -189,6 +189,9 @@ class TrainingConfig:
     decoder_blur_sigma: float = 0.0  # Gaussian blur on decoder input during training (0 = disabled)
     perceptual_blur_sigma: float = 0.0  # Separate blur for LPIPS/GAN (0 = use decoder_blur_sigma)
     use_mask: bool = False  # Enable learned spatial mask (PicoTrust)
+    use_sobel_mask: bool = False  # Apply Sobel texture mask to residual during training
+    sobel_blur_sigma: float = 5.0  # Gaussian blur sigma for Sobel mask smoothing
+    sobel_mask_floor: float = 0.85  # Minimum mask value (smooth regions keep this fraction)
     strength_conditioned: bool = False  # Enable FiLM strength conditioning on encoder
     strength_sample_min: float = 0.0  # Min strength for random sampling (0 = disabled)
     strength_sample_max: float = 0.0  # Max strength for random sampling (0 = disabled)
