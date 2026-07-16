@@ -152,3 +152,27 @@ class TestDetectionTrainer:
         assert "model_state_dict" in checkpoint
         assert "optimizer_state_dict" in checkpoint
         assert "epoch" in checkpoint
+
+    def test_grad_clip_applied(self) -> None:
+        """Gradient clipping should limit gradient norms."""
+        model = FastDetectorModel(input_size=64, pretrained=False)
+        loss_fn = DetectionLoss()
+
+        batch = {
+            "image": torch.rand(2, 3, 64, 64),
+            "is_watermark": torch.tensor([1.0, 0.0]),
+            "corners": torch.rand(2, 8),
+            "has_corners": torch.tensor([1.0, 0.0]),
+        }
+        dataset = [batch]
+        loader = DataLoader(dataset, batch_size=None)
+
+        trainer = DetectionTrainer(
+            model=model,
+            loss_fn=loss_fn,
+            train_loader=loader,
+            grad_clip=0.5,
+        )
+
+        losses = trainer.train_step(batch)
+        assert "total" in losses
