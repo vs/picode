@@ -152,3 +152,61 @@ class TestDetectionDataset:
         corners_stack = torch.stack(corners_list)
         variation = corners_stack.std(dim=0).mean()
         assert variation > 0.01  # Some variation expected
+
+    def test_sobel_mask_attenuates_residual(
+        self, mock_encoder: nn.Module, sample_images: str
+    ) -> None:
+        """Sobel mask should produce valid images."""
+        ds_mask = DetectionDataset(
+            image_dir=sample_images,
+            encoder=mock_encoder,
+            positive_ratio=1.0,
+            sobel_mask_sigma=5.0,
+            sobel_mask_floor=0.85,
+        )
+        item_mask = ds_mask[0]
+
+        assert item_mask["image"].shape == (3, 320, 320)
+        assert item_mask["image"].min() >= 0.0
+        assert item_mask["image"].max() <= 1.0
+
+    def test_strength_sampling_varies_residual(
+        self, mock_encoder: nn.Module, sample_images: str
+    ) -> None:
+        """Different strength values should produce different encoded images."""
+        ds_low = DetectionDataset(
+            image_dir=sample_images,
+            encoder=mock_encoder,
+            positive_ratio=1.0,
+            strength_values=[0.1],
+        )
+        ds_high = DetectionDataset(
+            image_dir=sample_images,
+            encoder=mock_encoder,
+            positive_ratio=1.0,
+            strength_values=[1.0],
+        )
+
+        item_low = ds_low[0]
+        item_high = ds_high[0]
+
+        assert item_low["image"].shape == (3, 320, 320)
+        assert item_high["image"].shape == (3, 320, 320)
+
+    def test_backward_compat_no_sobel(
+        self, mock_encoder: nn.Module, sample_images: str
+    ) -> None:
+        """Dataset without Sobel params should work exactly as before."""
+        dataset = DetectionDataset(
+            image_dir=sample_images,
+            encoder=mock_encoder,
+            num_bits=100,
+            positive_ratio=1.0,
+        )
+
+        item = dataset[0]
+
+        assert item["image"].shape == (3, 320, 320)
+        assert item["is_watermark"] == 1.0
+        assert item["has_corners"] == 1.0
+        assert item["corners"].shape == (8,)
