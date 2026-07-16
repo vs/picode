@@ -116,7 +116,7 @@ Metrics are nearly identical — the difference is purely visual. Large σ creat
 
 ## Results
 
-### b7238s20p00d00_sobel — 72 bits, Sobel mask in training (BEST MODEL)
+### b72s20m85 — 72 bits, Sobel mask in training (BEST MODEL)
 
 **The breakthrough model.** No blur at all — Sobel mask applied during training directly teaches the encoder where to put signal. The encoder-decoder pair optimizes end-to-end with the mask constraint.
 
@@ -135,7 +135,7 @@ Metrics are nearly identical — the difference is purely visual. Large σ creat
 
 | Model | Success | Avg PSNR | % at s≤0.015 |
 |-------|---------|----------|-------------|
-| **b7238s20p00d00_sobel** | **93.6%** | **41.0 dB** | **39.6%** |
+| **b72s20m85** | **93.6%** | **41.0 dB** | **39.6%** |
 | b7238s20p03d03 | 83.6% | 40.5 dB | 18.4% |
 | v22 (48b, σ=0.7) | 81.2% | 39.6 dB | 13.6% |
 | b7238s20p03d00 | 75.6% | 39.6 dB | 12.0% |
@@ -191,7 +191,7 @@ Client scans encoded photo
 
 ## Recommended Model
 
-**b7238s20p00d00_sobel** — the production model:
+**b72s20m85** — the production model:
 - 72 channel bits, LDPC(72,38) = 38 payload bits, 274B IDs
 - No blur at all — Sobel mask in training provides content-adaptivity
 - 93.6% single-message LDPC success through composite distortions
