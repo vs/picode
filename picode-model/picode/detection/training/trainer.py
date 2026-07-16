@@ -26,6 +26,7 @@ class DetectionTrainer:
         lr: Learning rate (default 1e-4)
         weight_decay: Weight decay for optimizer (default 1e-4)
         device: Device to train on
+        grad_clip: Max gradient norm for clipping (None = no clipping)
 
     Example:
         >>> trainer = DetectionTrainer(model, loss_fn, train_loader, val_loader)
@@ -42,6 +43,7 @@ class DetectionTrainer:
         lr: float = 1e-4,
         weight_decay: float = 1e-4,
         device: str = "cpu",
+        grad_clip: float | None = None,
     ) -> None:
         self.model = model.to(device)
         self.loss_fn = loss_fn
@@ -49,6 +51,7 @@ class DetectionTrainer:
         self.val_loader = val_loader
         self.device = device
         self.epoch = 0
+        self.grad_clip = grad_clip
 
         # Optimizer
         self.optimizer = AdamW(
@@ -92,6 +95,11 @@ class DetectionTrainer:
 
         # Backward
         losses["total"].backward()
+
+        # Gradient clipping
+        if self.grad_clip is not None:
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+
         self.optimizer.step()
 
         return {k: v.item() for k, v in losses.items()}
