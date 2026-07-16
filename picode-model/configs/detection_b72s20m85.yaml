@@ -1,0 +1,96 @@
+# Detection Training Configuration — b72s20m85
+# Train FastDetector to detect Sobel-adaptive encoded images
+#
+# Launch on GCE:
+#   ./scripts/gce_setup.sh train-detector picotrust_b7238s20p00d00_sobel/best.pt 50 32
+#
+# Launch locally:
+#   python scripts/train_detector.py \
+#       --encoder checkpoints_gce/checkpoints/picotrust_b7238s20p00d00_sobel/best.pt \
+#       --data-dir data/train \
+#       --output-dir checkpoints/detection_b72s20m85 \
+#       --epochs 50 --batch-size 32 --lr 0.0001 \
+#       --sobel-sigma 5.0 --sobel-floor 0.85 \
+#       --strengths "0.010,0.012,0.015,0.020" \
+#       --perspective-strength 0.0 0.25 \
+#       --grad-clip 1.0 \
+#       --domain-randomization
+
+experiment_name: detection_b72s20m85
+
+# FastDetector model
+model:
+  input_size: 320
+  pretrained_backbone: true
+
+# Encoder for synthetic positive generation
+encoder:
+  checkpoint: checkpoints_gce/checkpoints/picotrust_b7238s20p00d00_sobel/best.pt
+  num_bits: 72
+  encoder_size: 512
+  decoder_size: 512
+
+# Sobel adaptive encoding (matches production inference pipeline)
+sobel:
+  sigma: 5.0
+  floor: 0.85
+  strength_values: [0.010, 0.012, 0.015, 0.020]
+
+# Data
+data:
+  image_dir: data/train  # COCO train2017
+  positive_ratio: 0.5
+  batch_size: 32
+  num_workers: 0  # Must be 0 when encoder is on GPU
+
+# Augmentation (DomainRandomizedAugmentation)
+augmentation:
+  domain_randomization: true
+  photometric_p: 0.7
+  geometric_p: 0.5
+  domain_random_p: 0.6
+  perspective_strength: [0.0, 0.25]
+  rotation_degrees: [-15, 15]
+
+# Training
+training:
+  num_epochs: 50
+  lr: 0.0001
+  weight_decay: 0.0001
+  scheduler: cosine
+  warmup_epochs: 5
+  grad_clip: 1.0
+
+# Loss weights
+loss:
+  cls_weight: 1.0
+  corner_weight: 5.0
+  conf_weight: 0.5
+
+# Checkpointing
+checkpoint:
+  dir: checkpoints/detection_b72s20m85
+  save_every_epochs: 5
+
+# Detection thresholds (inference)
+detection:
+  threshold: 0.5
+  corner_confidence_threshold: 0.3
+
+# Evaluation
+evaluation:
+  eval_every_epochs: 5
+  distortion_sweep: true
+  distortions:
+    jpeg_quality: [30, 50, 70, 90]
+    resize_scale: [0.5, 0.75, 1.0]
+    blur_sigma: [0.5, 1.0, 2.0]
+
+# Export targets
+export:
+  coreml:
+    quantization: fp16
+    min_ios: "16"
+  tflite:
+    quantization: fp16
+    method: ai-edge-torch
