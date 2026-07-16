@@ -73,11 +73,31 @@ def sobel_texture_mask(image, blur_sigma=5.0, floor=0.85):
     return floor + (1 - floor) * grad_norm
 ```
 
-**Why Sobel + large blur (σ=5)?**
-- Sobel detects edges/texture at pixel level
-- Gaussian blur σ=5 (RF ≈ 30 pixels) creates smooth, coherent mask regions
-- No sharp transitions between textured and smooth areas — avoids mask artifacts
-- Floor=0.85 means smooth regions still get 85% of signal (not zeroed out)
+**Default: σ=5.** Matches training. Good balance of spatial coherence and boundary precision.
+
+**Sigma is a pure inference-time parameter** — no retraining needed to change it per image.
+
+| Sigma | RF (pixels) | Character | Best for |
+|-------|-------------|-----------|----------|
+| 1.0 | ~6 | Sharp, pixel-level | Images with fine texture/smooth transitions (e.g. sky gradients next to trees) |
+| 3.0 | ~18 | Moderate | General purpose |
+| **5.0** | **~30** | **Smooth, default** | **Most images — trained with this value** |
+| 8.0 | ~48 | Very smooth | Large uniform regions |
+| 15.0 | ~90 | Regional | Big flat backgrounds, but can bleed into adjacent smooth areas |
+
+**Sigma sweep results (50 images, composite distortion gate):**
+
+| Sigma | Success | Avg PSNR | % at s≤0.015 |
+|-------|---------|----------|-------------|
+| 1.0 | 94.8% | 41.0 dB | 41.6% |
+| 3.0 | 93.2% | 41.1 dB | 40.8% |
+| 5.0 | 95.2% | 41.0 dB | 41.2% |
+| 8.0 | 95.6% | 41.0 dB | 38.4% |
+| 15.0 | 95.2% | 41.1 dB | 40.8% |
+
+Metrics are nearly identical — the difference is purely visual. Large σ creates smoother masks but can bleed texture detection across boundaries (e.g. sky gradient near trees gets marked as textured with σ=15, showing artifacts in the sky). Small σ follows boundaries tightly but can create sharper mask transitions.
+
+**Recommendation:** Use σ=5 as default. Try σ=15 for images with large uniform backgrounds. Try σ=1 for images with fine texture/smooth boundaries (gradient skies).
 
 **Why not local variance (previous approach)?**
 - 7×7 box filter has tiny receptive field — noisy, pixel-level decisions
@@ -96,64 +116,61 @@ def sobel_texture_mask(image, blur_sigma=5.0, floor=0.85):
 
 ## Results
 
-### v22 (b4826s20p07d07) — 48 bits, σ=0.7
+### b7238s20p00d00_sobel — 72 bits, Sobel mask in training (BEST MODEL)
 
-The best visual quality model. 48 bits with LDPC(48,26) = 26 payload bits (67M IDs).
+**The breakthrough model.** No blur at all — Sobel mask applied during training directly teaches the encoder where to put signal. The encoder-decoder pair optimizes end-to-end with the mask constraint.
 
-| Metric | Single message | With batch ID (projected) |
-|--------|---------------|--------------------------|
-| LDPC success | 80% | ~99%+ |
-| Avg PSNR | 40.0 dB | ~42 dB |
-| % at s≤0.015 | 18% | ~60%+ |
-| Visual quality | Outstanding | Outstanding |
+| Metric | Raw s=0.020 | Sobel adaptive (composite gate) |
+|--------|------------|-------------------------------|
+| Accuracy | 98.5% | — |
+| PSNR | 35.90 dB | 41.0 dB avg |
+| TRC | 0.579 | — |
+| JPEG Q10 | 98.6% | — |
+| LDPC success (5 trials) | — | **93.6%** |
+| % at s≤0.015 | — | **39.6%** |
 
-**Why v22 looks best:** Fewer bits (48 vs 72) = less encoding pressure. Higher blur σ=0.7 = smoother residual patterns. The combination produces residuals that are nearly invisible even without the texture mask.
+**Why it's the best:** The model was trained WITH the Sobel mask, so the encoder already knows smooth regions get attenuated. It doesn't waste capacity there — it concentrates signal in textures from the start. Previous models were trained without the mask, so applying it at inference was fighting the encoder's learned pattern.
 
-### b7238s20p03d00 — 72 bits, LPIPS blur only (no decoder blur)
+### Comparison (all models, composite distortion gate, 5 trials/image)
 
-Best visual quality among 72-bit models. No decoder blur means the encoder uses the full frequency spectrum — fine-grained residuals that blend into image texture naturally. LPIPS blur σ=0.3 still provides content-adaptivity during training.
+| Model | Success | Avg PSNR | % at s≤0.015 |
+|-------|---------|----------|-------------|
+| **b7238s20p00d00_sobel** | **93.6%** | **41.0 dB** | **39.6%** |
+| b7238s20p03d03 | 83.6% | 40.5 dB | 18.4% |
+| v22 (48b, σ=0.7) | 81.2% | 39.6 dB | 13.6% |
+| b7238s20p03d00 | 75.6% | 39.6 dB | 12.0% |
 
-| Metric | Single message | With batch ID (projected) |
-|--------|---------------|--------------------------|
-| LDPC success | 82% | ~99%+ |
-| Avg PSNR | 39.9 dB | ~41 dB |
-| % at s≤0.015 | 16% | ~55%+ |
-| Visual quality | Excellent — smooth, blends into texture | Excellent |
+The Sobel-trained model crushes all blur-based models — +10% success rate, +0.5 dB PSNR, 2× more trials at low strength.
 
-### b7238s20p03d03 — 72 bits, both blur σ=0.3
+### Previous blur-based models (for reference)
 
-Higher LDPC success rate but more visible residuals. Decoder blur σ=0.3 forces coarser low-frequency patterns that appear as visible "halos" when attenuated by the Sobel mask.
+#### v22 (b4826s20p07d07) — 48 bits, σ=0.7
 
-| Metric | Single message | With batch ID (projected) |
-|--------|---------------|--------------------------|
-| LDPC success | 90% | ~99%+ |
-| Avg PSNR | 40.5 dB | ~42 dB |
-| % at s≤0.015 | 22% | ~65%+ |
-| Visual quality | Good — but coarser patterns more noticeable | Good |
+Best visual quality among blur-based models. 48 bits with LDPC(48,26) = 26 payload bits (67M IDs). Fewer bits = less encoding pressure = smoother residuals. But superseded by the Sobel-trained model on both metrics and visual quality.
 
-### Visual Quality Ranking
+#### b7238s20p03d00 — 72 bits, LPIPS blur only (no decoder blur)
 
-With batch ID selection pushing all models to ~99%+ success, visual quality becomes the differentiator:
+Best visual quality among 72-bit blur-based models. Fine-grained residuals blend into texture. But without the Sobel mask in training, it can't match the Sobel-trained model's content-adaptivity.
 
-1. **v22 (48b, σ=0.7)** — best overall, fewest bits + smoothest patterns
-2. **b7238s20p03d00 (72b, LPIPS only)** — best 72-bit, fine residuals blend into texture
-3. **b7238s20p03d03 (72b, both blur)** — coarser patterns, more visible at low strength
+#### b7238s20p03d03 — 72 bits, both blur σ=0.3
 
-**Why d00 beats d03 visually:** Without decoder blur, the encoder learns to use fine spatial frequencies that match natural image texture. When scaled down, these fine patterns become imperceptible. With decoder blur σ=0.3, the encoder is forced to use coarser patterns (the decoder can't read fine detail after blur) — these low-frequency residuals are more visible to the human eye as smooth "waves" or "halos" in flat regions, even after Sobel masking.
+Highest LDPC success among blur-based models (83.6%) but coarser residual patterns visible as "halos" when attenuated.
 
 ## Key Lessons
 
-1. **Don't post-anneal if you have LDPC.** Post-annealing trades content-adaptivity for low-strength accuracy. With LDPC + batch ID selection, you don't need high accuracy at low strength — you need a high-quality spatial pattern that hides well. The s=0.020 checkpoint has that pattern; post-annealing destroys it.
+1. **Train with the Sobel mask, not blur.** Blur was a proxy for "penalize smooth regions." The Sobel mask does it directly — the encoder learns end-to-end where signal is allowed. This produces 93.6% LDPC success vs 83.6% for the best blur model.
 
-2. **Message selection is free.** The ID is a random database key. Choosing the "easy" ID for a given image costs nothing semantically but dramatically improves encode quality.
+2. **Don't post-anneal if you have LDPC.** Post-annealing trades content-adaptivity for low-strength accuracy. With LDPC + batch ID selection, you don't need high accuracy at low strength — you need a high-quality spatial pattern that hides well. The s=0.020 checkpoint has that pattern; post-annealing destroys it.
 
-3. **Fewer bits = better visual quality.** 48 bits (26 payload) is enough for 67M IDs. Don't use 72 bits unless you need the larger namespace.
+3. **Message selection is free.** The ID is a random database key. Choosing the "easy" ID for a given image costs nothing semantically but dramatically improves encode quality.
 
-4. **No decoder blur = better visual quality with Sobel adaptive.** Decoder blur forces low-frequency residuals that look like visible halos when attenuated. Without decoder blur (d00), the encoder uses fine frequencies that blend into texture. LPIPS blur alone is sufficient for content-adaptivity.
+4. **No blur needed at all.** The Sobel-trained model uses no decoder blur and no perceptual blur. The mask alone provides content-adaptivity. Blur-based models produce coarser patterns that are more visible when attenuated.
 
 5. **Sobel > local variance for texture masks.** Large-kernel Sobel gradient produces smooth, perceptually coherent masks. Local variance with small kernels creates noisy, artifact-prone masks.
 
 6. **Scale, don't retrain.** The content-adaptive pattern learned at s=0.020 is valuable. Preserve it by linear scaling at inference rather than retraining at lower strength.
+
+7. **Sigma is tunable at inference.** σ=5 is the default (matches training). σ=15 for large uniform backgrounds, σ=1 for fine texture/smooth boundaries (gradient skies). No retraining needed.
 
 ## Production Architecture
 
@@ -172,22 +189,16 @@ Client scans encoded photo
   → API lookup: ID → content (short link, metadata, etc.)
 ```
 
-## Recommended Models
+## Recommended Model
 
-**For best visual quality:** v22 (b4826s20p07d07)
-- 48 channel bits, LDPC(48,26) = 26 payload bits, 67M IDs
-- σ=0.7 decoder + perceptual blur
-- Best overall visual quality — fewest bits, smoothest patterns
-
-**For 72-bit namespace with best visuals:** b7238s20p03d00
+**b7238s20p00d00_sobel** — the production model:
 - 72 channel bits, LDPC(72,38) = 38 payload bits, 274B IDs
-- No decoder blur, LPIPS σ=0.3 only
-- Fine-grained residuals blend into texture — best 72-bit visual quality
+- No blur at all — Sobel mask in training provides content-adaptivity
+- 93.6% single-message LDPC success through composite distortions
+- With batch ID selection (64 candidates): ~99.9%+ projected success
+- Sobel mask σ=5 default, tunable per image (σ=1–15) at inference
+- Trained at s=0.020, adaptive inference at s=0.012–0.020
 
-**For 72-bit with highest reliability:** b7238s20p03d03
-- 72 channel bits, LDPC(72,38) = 38 payload bits, 274B IDs
-- Both blur σ=0.3
-- 90% single-message success (vs 82% for d00) — less batch search needed
-- Slightly more visible residuals
-
-All three use trained strength s=0.020, Sobel mask, and batch ID selection at inference.
+**For smaller namespace (67M IDs):** v22 (b4826s20p07d07)
+- 48 channel bits, LDPC(48,26) = 26 payload bits
+- Fewer bits = less encoding pressure, but superseded by Sobel model on metrics
