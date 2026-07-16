@@ -109,25 +109,37 @@ The best visual quality model. 48 bits with LDPC(48,26) = 26 payload bits (67M I
 
 **Why v22 looks best:** Fewer bits (48 vs 72) = less encoding pressure. Higher blur σ=0.7 = smoother residual patterns. The combination produces residuals that are nearly invisible even without the texture mask.
 
-### b7238s20p03d03 — 72 bits, σ=0.3
+### b7238s20p03d00 — 72 bits, LPIPS blur only (no decoder blur)
 
-More capacity (38 payload bits, 274B IDs) but slightly more visible residuals.
-
-| Metric | Single message | With batch ID (projected) |
-|--------|---------------|--------------------------|
-| LDPC success | 90% | ~99%+ |
-| Avg PSNR | 40.5 dB | ~42 dB |
-| % at s≤0.015 | 22% | ~65%+ |
-
-### b7238s20p03d00 — 72 bits, no decoder blur
-
-Highest capacity model tested with this approach.
+Best visual quality among 72-bit models. No decoder blur means the encoder uses the full frequency spectrum — fine-grained residuals that blend into image texture naturally. LPIPS blur σ=0.3 still provides content-adaptivity during training.
 
 | Metric | Single message | With batch ID (projected) |
 |--------|---------------|--------------------------|
 | LDPC success | 82% | ~99%+ |
 | Avg PSNR | 39.9 dB | ~41 dB |
 | % at s≤0.015 | 16% | ~55%+ |
+| Visual quality | Excellent — smooth, blends into texture | Excellent |
+
+### b7238s20p03d03 — 72 bits, both blur σ=0.3
+
+Higher LDPC success rate but more visible residuals. Decoder blur σ=0.3 forces coarser low-frequency patterns that appear as visible "halos" when attenuated by the Sobel mask.
+
+| Metric | Single message | With batch ID (projected) |
+|--------|---------------|--------------------------|
+| LDPC success | 90% | ~99%+ |
+| Avg PSNR | 40.5 dB | ~42 dB |
+| % at s≤0.015 | 22% | ~65%+ |
+| Visual quality | Good — but coarser patterns more noticeable | Good |
+
+### Visual Quality Ranking
+
+With batch ID selection pushing all models to ~99%+ success, visual quality becomes the differentiator:
+
+1. **v22 (48b, σ=0.7)** — best overall, fewest bits + smoothest patterns
+2. **b7238s20p03d00 (72b, LPIPS only)** — best 72-bit, fine residuals blend into texture
+3. **b7238s20p03d03 (72b, both blur)** — coarser patterns, more visible at low strength
+
+**Why d00 beats d03 visually:** Without decoder blur, the encoder learns to use fine spatial frequencies that match natural image texture. When scaled down, these fine patterns become imperceptible. With decoder blur σ=0.3, the encoder is forced to use coarser patterns (the decoder can't read fine detail after blur) — these low-frequency residuals are more visible to the human eye as smooth "waves" or "halos" in flat regions, even after Sobel masking.
 
 ## Key Lessons
 
@@ -137,9 +149,11 @@ Highest capacity model tested with this approach.
 
 3. **Fewer bits = better visual quality.** 48 bits (26 payload) is enough for 67M IDs. Don't use 72 bits unless you need the larger namespace.
 
-4. **Sobel > local variance for texture masks.** Large-kernel Sobel gradient produces smooth, perceptually coherent masks. Local variance with small kernels creates noisy, artifact-prone masks.
+4. **No decoder blur = better visual quality with Sobel adaptive.** Decoder blur forces low-frequency residuals that look like visible halos when attenuated. Without decoder blur (d00), the encoder uses fine frequencies that blend into texture. LPIPS blur alone is sufficient for content-adaptivity.
 
-5. **Scale, don't retrain.** The content-adaptive pattern learned at s=0.020 is valuable. Preserve it by linear scaling at inference rather than retraining at lower strength.
+5. **Sobel > local variance for texture masks.** Large-kernel Sobel gradient produces smooth, perceptually coherent masks. Local variance with small kernels creates noisy, artifact-prone masks.
+
+6. **Scale, don't retrain.** The content-adaptive pattern learned at s=0.020 is valuable. Preserve it by linear scaling at inference rather than retraining at lower strength.
 
 ## Production Architecture
 
@@ -158,11 +172,22 @@ Client scans encoded photo
   → API lookup: ID → content (short link, metadata, etc.)
 ```
 
-## Recommended Model
+## Recommended Models
 
-**v22 (b4826s20p07d07)** for production:
-- 48 channel bits, LDPC(48,26) = 26 payload bits
-- 67M unique IDs (9-character links)
+**For best visual quality:** v22 (b4826s20p07d07)
+- 48 channel bits, LDPC(48,26) = 26 payload bits, 67M IDs
 - σ=0.7 decoder + perceptual blur
-- Trained at s=0.020, inference at s=0.012–0.015 with Sobel mask
-- Best visual quality of any model tested
+- Best overall visual quality — fewest bits, smoothest patterns
+
+**For 72-bit namespace with best visuals:** b7238s20p03d00
+- 72 channel bits, LDPC(72,38) = 38 payload bits, 274B IDs
+- No decoder blur, LPIPS σ=0.3 only
+- Fine-grained residuals blend into texture — best 72-bit visual quality
+
+**For 72-bit with highest reliability:** b7238s20p03d03
+- 72 channel bits, LDPC(72,38) = 38 payload bits, 274B IDs
+- Both blur σ=0.3
+- 90% single-message success (vs 82% for d00) — less batch search needed
+- Slightly more visible residuals
+
+All three use trained strength s=0.020, Sobel mask, and batch ID selection at inference.
