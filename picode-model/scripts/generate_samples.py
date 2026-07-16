@@ -36,14 +36,18 @@ def main():
     dec.load_state_dict(data["decoder_state"])
     dec.eval()
 
-    # Decoder blur kernel
+    # Decoder blur kernel (skip if sigma=0)
     sigma = dec_blur
-    k = 2 * math.ceil(3 * sigma) + 1
-    ax = torch.arange(k, dtype=torch.float32) - k // 2
-    xx, yy = torch.meshgrid(ax, ax, indexing="ij")
-    kern = torch.exp(-(xx ** 2 + yy ** 2) / (2 * sigma ** 2))
-    kern = (kern / kern.sum()).view(1, 1, k, k).expand(3, -1, -1, -1).contiguous()
-    bp = k // 2
+    if sigma > 0:
+        k = 2 * math.ceil(3 * sigma) + 1
+        ax = torch.arange(k, dtype=torch.float32) - k // 2
+        xx, yy = torch.meshgrid(ax, ax, indexing="ij")
+        kern = torch.exp(-(xx ** 2 + yy ** 2) / (2 * sigma ** 2))
+        kern = (kern / kern.sum()).view(1, 1, k, k).expand(3, -1, -1, -1).contiguous()
+        bp = k // 2
+    else:
+        kern = None
+        bp = 0
 
     tf = transforms.Compose([transforms.Resize((512, 512)), transforms.ToTensor()])
     msg = torch.zeros(1, num_bits)
@@ -54,9 +58,10 @@ def main():
                 msg[0, idx] = float((c >> (7 - b)) & 1)
 
     def decode_acc(img):
+        if kern is not None:
+            img = F.conv2d(img, kern, padding=bp, groups=3)
         return (
-            (torch.sigmoid(dec(F.conv2d(img, kern, padding=bp, groups=3))) > 0.5)
-            .float() == msg
+            (torch.sigmoid(dec(img)) > 0.5).float() == msg
         ).float().mean().item()
 
     def compute_trc(img, res):
