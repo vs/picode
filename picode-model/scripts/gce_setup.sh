@@ -297,7 +297,7 @@ cmd_train_detector() {
     echo "  Strengths:  0.010,0.012,0.015,0.020"
     echo ""
 
-    train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python scripts/train_detector.py \
+    train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python3 scripts/train_detector.py \
         --encoder \$HOME/checkpoints/$encoder_ckpt \
         --data-dir \$HOME/data/train \
         --output-dir \$HOME/checkpoints/detection_b72s20m85 \
