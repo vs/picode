@@ -325,7 +325,7 @@ cmd_train_detector() {
         --output-dir \$HOME/checkpoints/detection_b72s20m85 \
         --epochs $epochs \
         --batch-size $batch_size \
-        --num-workers 4 \
+        --num-workers 0 \
         --grad-clip 1.0 \
         --domain-randomization"
 

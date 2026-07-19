@@ -273,8 +273,9 @@ def main() -> None:
         )
         print(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
 
-        # Pre-generated data lives on CPU — can use workers
-        num_workers = args.num_workers
+        # Pre-generated shards use lazy loading with in-process cache — workers
+        # would each maintain separate caches, wasting memory and thrashing disk
+        num_workers = 0
         pin_memory = device.type == "cuda"
     else:
         # On-the-fly path: encode images using encoder

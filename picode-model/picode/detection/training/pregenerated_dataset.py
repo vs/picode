@@ -58,7 +58,7 @@ class PregeneratedDetectionDataset(Dataset):
         """Build index mapping global idx -> (shard_idx, local_idx)."""
         self.index: list[tuple[int, int]] = []
         self.shards: dict[int, list] = {}  # LRU cache for loaded shards
-        self._max_cached_shards = 8  # Keep at most 8 shards in memory
+        self._max_cached_shards = 50  # Keep at most 50 shards in memory (~3GB)
 
         num_shards = self.metadata["num_shards"]
         shard_size = self.metadata.get("shard_size")
