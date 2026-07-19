@@ -283,31 +283,49 @@ cmd_upload_ckpt() {
     vm_ssh "ls -lh ~/checkpoints/$basename/"
 }
 
-cmd_train_detector() {
+cmd_generate_detection_data() {
     check_gcloud
     encoder_ckpt="${1:-picotrust_b7238s20p00d00_sobel/best.pt}"
-    epochs="${2:-50}"
-    batch_size="${3:-32}"
 
-    echo "Training FastDetector for b72s20m85..."
-    echo "  Encoder:    ~/checkpoints/$encoder_ckpt"
+    echo "Generating detection training data..."
+    echo "  Encoder: ~/checkpoints/$encoder_ckpt"
+    echo "  Output:  ~/data/detection_b72s20m85"
+    echo ""
+
+    gen_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python3 scripts/generate_detection_data.py \
+        --encoder \$HOME/checkpoints/$encoder_ckpt \
+        --data-dir \$HOME/data/train \
+        --output-dir \$HOME/data/detection_b72s20m85 \
+        --sobel-sigma 5.0 --sobel-floor 0.85 \
+        --strengths '0.010,0.012,0.015,0.020' \
+        --shard-size 500"
+
+    echo "Launching data generation in tmux session '$TMUX_SESSION'..."
+    vm_ssh "tmux kill-session -t $TMUX_SESSION 2>/dev/null || true; \
+        tmux new-session -d -s $TMUX_SESSION \"$gen_cmd; echo '=== Generation finished (exit code: '\$'?) ==='; read\""
+
+    echo ""
+    echo "Data generation launched. Monitor with:"
+    echo "  ./scripts/gce_setup.sh logs"
+}
+
+cmd_train_detector() {
+    check_gcloud
+    epochs="${1:-50}"
+    batch_size="${2:-32}"
+
+    echo "Training FastDetector for b72s20m85 (pre-generated data)..."
+    echo "  Data:       ~/data/detection_b72s20m85"
     echo "  Epochs:     $epochs"
     echo "  Batch size: $batch_size"
-    echo "  Sobel:      sigma=5.0 floor=0.85"
-    echo "  Strengths:  0.010,0.012,0.015,0.020"
     echo ""
 
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python3 scripts/train_detector.py \
-        --encoder \$HOME/checkpoints/$encoder_ckpt \
-        --data-dir \$HOME/data/train \
+        --pregenerated-dir \$HOME/data/detection_b72s20m85 \
         --output-dir \$HOME/checkpoints/detection_b72s20m85 \
         --epochs $epochs \
         --batch-size $batch_size \
-        --num-workers 0 \
-        --sobel-sigma 5.0 \
-        --sobel-floor 0.85 \
-        --strengths '0.010,0.012,0.015,0.020' \
-        --perspective-strength 0.0 0.25 \
+        --num-workers 4 \
         --grad-clip 1.0 \
         --domain-randomization"
 
@@ -412,6 +430,7 @@ case "${1:-}" in
     upload-code) cmd_upload_code ;;
     setup-data)  cmd_setup_data ;;
     train)       shift; cmd_train "$@" ;;
+    generate-detection-data) shift; cmd_generate_detection_data "$@" ;;
     train-detector) shift; cmd_train_detector "$@" ;;
     upload-ckpt) shift; cmd_upload_ckpt "$@" ;;
     logs)        cmd_logs ;;

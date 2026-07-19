@@ -97,6 +97,12 @@ def parse_args() -> argparse.Namespace:
         default=0.8,
         help="Probability of hard negative transform on negatives (default 0.8)",
     )
+    parser.add_argument(
+        "--pregenerated-dir",
+        type=str,
+        default=None,
+        help="Pre-generated dataset dir (skips encoder, uses PregeneratedDetectionDataset)",
+    )
     return parser.parse_args()
 
 
@@ -233,34 +239,69 @@ def main() -> None:
         device = torch.device("cpu")
     print(f"Using device: {device}")
 
-    # Load encoder
-    encoder, num_bits, encoder_input_size = load_encoder(args.encoder, device)
+    if args.pregenerated_dir:
+        # Fast path: load pre-generated dataset from disk
+        from picode.detection.training.pregenerated_dataset import (
+            PregeneratedDetectionDataset,
+        )
 
-    # Parse strengths
-    strength_values = None
-    if args.strengths:
-        strength_values = [float(s) for s in args.strengths.split(",")]
+        print(f"Loading pre-generated dataset from {args.pregenerated_dir}...")
+        if args.domain_randomization:
+            augmentation = DomainRandomizedAugmentation(
+                photometric_p=0.7,
+                geometric_p=0.5,
+                domain_random_p=0.6,
+                perspective_strength=(0.0, 0.25),
+                rotation_degrees=(-15, 15),
+            )
+        else:
+            augmentation = DetectionAugmentation(
+                photometric_p=0.5,
+                geometric_p=0.5,
+            )
 
-    # Create datasets
-    train_dataset, val_dataset = create_datasets(
-        encoder=encoder,
-        data_dir=args.data_dir,
-        num_bits=num_bits,
-        encoder_input_size=encoder_input_size,
-        val_split=args.val_split,
-        seed=args.seed,
-        use_domain_randomization=args.domain_randomization,
-        sobel_mask_sigma=args.sobel_sigma,
-        sobel_mask_floor=args.sobel_floor,
-        strength_values=strength_values,
-        perspective_strength=tuple(args.perspective_strength),
-        hard_negative_p=args.hard_negative_p,
-    )
+        full_dataset = PregeneratedDetectionDataset(
+            data_dir=args.pregenerated_dir,
+            transform=augmentation,
+        )
+        val_size = int(len(full_dataset) * args.val_split)
+        train_size = len(full_dataset) - val_size
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=torch.Generator().manual_seed(args.seed),
+        )
+        print(f"Train: {len(train_dataset)}, Val: {len(val_dataset)}")
 
-    # Create data loaders
-    # Encoder lives on GPU/MPS in main process — workers can't access it
-    num_workers = 0 if device.type in ("cuda", "mps") else args.num_workers
-    pin_memory = device.type == "cuda"
+        # Pre-generated data lives on CPU — can use workers
+        num_workers = args.num_workers
+        pin_memory = device.type == "cuda"
+    else:
+        # On-the-fly path: encode images using encoder
+        encoder, num_bits, encoder_input_size = load_encoder(args.encoder, device)
+
+        strength_values = None
+        if args.strengths:
+            strength_values = [float(s) for s in args.strengths.split(",")]
+
+        train_dataset, val_dataset = create_datasets(
+            encoder=encoder,
+            data_dir=args.data_dir,
+            num_bits=num_bits,
+            encoder_input_size=encoder_input_size,
+            val_split=args.val_split,
+            seed=args.seed,
+            use_domain_randomization=args.domain_randomization,
+            sobel_mask_sigma=args.sobel_sigma,
+            sobel_mask_floor=args.sobel_floor,
+            strength_values=strength_values,
+            perspective_strength=tuple(args.perspective_strength),
+            hard_negative_p=args.hard_negative_p,
+        )
+
+        # Encoder lives on GPU/MPS — workers can't access it
+        num_workers = 0 if device.type in ("cuda", "mps") else args.num_workers
+        pin_memory = device.type == "cuda"
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
