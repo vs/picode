@@ -286,10 +286,6 @@ class Trainer:
             self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._perceptual_blur_pad = pk // 2
 
-        # Per-tier blur removed — PicoTier now uses Sobel mask (per tiers.py)
-        self._tier_decoder_blur_kernels: list[tuple[Tensor, int]] = []
-        self._tier_perceptual_blur_kernels: list[tuple[Tensor, int]] = []
-
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
         # PicoTrust: uses model.encoder_size/decoder_size (default 256x256)
@@ -1079,58 +1075,29 @@ class Trainer:
             images, residual_unwarped, M_forward, self.config.training.borders
         )
 
+        # Apply per-tier Sobel texture mask (if enabled)
+        if self.config.training.use_sobel_mask:
+            floors = torch.tensor(
+                [float(TIERS[t.item()]["sobel_mask_floor"]) for t in tiers],
+                device=self.device,
+            ).view(-1, 1, 1, 1)
+            encoded = self._apply_sobel_mask(images, encoded, mask_floors=floors)
+
         # --- Distortions ---
         distorted = self.distortion(encoded, self.global_step)
 
-        # --- Per-tier split blur (decoder σ vs perceptual σ) ---
-        # Decoder gets blur(residual) with decoder_blur_sigma (shared 0.5 for mobile).
-        # LPIPS/GAN get blur(encoded) with perceptual_blur_sigma (per-tier adaptivity).
-        if self._tier_decoder_blur_kernels:
-            distorted_residual = distorted - images
-            decoder_blurred = torch.zeros_like(distorted)
-            encoded_for_perceptual = torch.zeros_like(encoded)
-            original_for_perceptual = torch.zeros_like(images)
-
-            for t_idx in range(NUM_TIERS):
-                tier_mask = (tiers == t_idx)
-                if not tier_mask.any():
-                    continue
-                idx = tier_mask.nonzero(as_tuple=True)[0]
-
-                # Decoder input: original + blur(residual) with decoder σ
-                d_kernel, d_pad = self._tier_decoder_blur_kernels[t_idx]
-                res_t = distorted_residual[idx]
-                blurred_res = F.conv2d(res_t, d_kernel, padding=d_pad, groups=3)
-                decoder_blurred[idx] = images[idx] + blurred_res
-
-                # Perceptual: blur(encoded) and blur(original) with perceptual σ
-                p_kernel, p_pad = self._tier_perceptual_blur_kernels[t_idx]
-                encoded_for_perceptual[idx] = F.conv2d(
-                    encoded[idx], p_kernel, padding=p_pad, groups=3,
-                )
-                original_for_perceptual[idx] = F.conv2d(
-                    images[idx], p_kernel, padding=p_pad, groups=3,
-                )
-
-            # Resize to decoder size if needed
-            if decoder_blurred.shape[-1] != self._decoder_size:
-                decoder_input = F.interpolate(
-                    decoder_blurred, size=(self._decoder_size, self._decoder_size),
-                    mode="bilinear", align_corners=False,
-                )
-            else:
-                decoder_input = decoder_blurred
+        # --- Decoder input (no blur — Sobel mask handles content-adaptivity) ---
+        if distorted.shape[-1] != self._decoder_size:
+            decoder_input = F.interpolate(
+                distorted, size=(self._decoder_size, self._decoder_size),
+                mode="bilinear", align_corners=False,
+            )
         else:
-            encoded_for_perceptual = encoded
-            original_for_perceptual = images
-            # Resize to decoder size if needed
-            if distorted.shape[-1] != self._decoder_size:
-                decoder_input = F.interpolate(
-                    distorted, size=(self._decoder_size, self._decoder_size),
-                    mode="bilinear", align_corners=False,
-                )
-            else:
-                decoder_input = distorted
+            decoder_input = distorted
+
+        # Perceptual losses operate on plain encoded/original (no blur)
+        encoded_for_perceptual = encoded
+        original_for_perceptual = images
 
         # --- Decode ---
         decoded_logits, tier_logits = self.decoder(decoder_input, tier=tiers)
@@ -1566,7 +1533,9 @@ class Trainer:
 
         return metrics
 
-    def _apply_sobel_mask(self, images: Tensor, encoded: Tensor) -> Tensor:
+    def _apply_sobel_mask(
+        self, images: Tensor, encoded: Tensor, mask_floors: Tensor | None = None,
+    ) -> Tensor:
         """Apply Sobel gradient texture mask to the residual.
 
         Attenuates the residual in smooth regions while preserving full signal
@@ -1576,11 +1545,12 @@ class Trainer:
         Args:
             images: Original images (B, 3, H, W).
             encoded: Encoded images (B, 3, H, W).
+            mask_floors: Per-sample mask floors (B, 1, 1, 1), or None for global config floor.
 
         Returns:
             Masked encoded images (B, 3, H, W).
         """
-        floor = self.config.training.sobel_mask_floor
+        floor = mask_floors if mask_floors is not None else self.config.training.sobel_mask_floor
         blur_sigma = self.config.training.sobel_blur_sigma
 
         gray = images.mean(dim=1, keepdim=True)  # (B, 1, H, W)

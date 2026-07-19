@@ -195,3 +195,39 @@ class TestPicotierConfig:
         config = _dict_to_config(data)
         assert config.loss.tier_classifier.scale == 2.0
         assert config.loss.tier_classifier.ramp_steps == 5000
+
+
+class TestPicotierSobelMaskFloor:
+    """Test per-tier Sobel mask floor lookup for training."""
+
+    def test_per_tier_floor_lookup(self) -> None:
+        """Per-sample Sobel mask floors are correctly looked up from tier table."""
+        tiers = torch.tensor([0, 1, 2, 3])
+        floors = torch.tensor(
+            [TIERS[t.item()]["sobel_mask_floor"] for t in tiers],
+        ).view(-1, 1, 1, 1)
+
+        assert floors.shape == (4, 1, 1, 1)
+        assert abs(floors[0].item() - 0.75) < 1e-6   # UHQ
+        assert abs(floors[1].item() - 0.80) < 1e-6   # HQ
+        assert abs(floors[2].item() - 0.85) < 1e-6   # MQ
+        assert abs(floors[3].item() - 0.90) < 1e-6   # LQ
+
+    def test_per_tier_floor_broadcast(self) -> None:
+        """Per-sample floors broadcast correctly over spatial dimensions."""
+        tiers = torch.tensor([0, 2])
+        floors = torch.tensor(
+            [TIERS[t.item()]["sobel_mask_floor"] for t in tiers],
+        ).view(-1, 1, 1, 1)
+
+        # Simulate: mask = floor + (1 - floor) * grad_norm
+        grad_norm = torch.rand(2, 1, 64, 64)
+        mask = floors + (1.0 - floors) * grad_norm
+
+        assert mask.shape == (2, 1, 64, 64)
+        # UHQ (floor=0.75): mask range [0.75, 1.0]
+        assert mask[0].min().item() >= 0.75 - 1e-6
+        assert mask[0].max().item() <= 1.0 + 1e-6
+        # MQ (floor=0.85): mask range [0.85, 1.0]
+        assert mask[1].min().item() >= 0.85 - 1e-6
+        assert mask[1].max().item() <= 1.0 + 1e-6
