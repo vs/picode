@@ -443,7 +443,7 @@ class DomainRandomization:
         angle = random.uniform(0, math.pi)
         offset = random.uniform(-0.5, 0.5)
 
-        reflection = torch.cos(angle) * xx + torch.sin(angle) * yy + offset
+        reflection = math.cos(angle) * xx + math.sin(angle) * yy + offset
         reflection = torch.sigmoid(reflection * random.uniform(2, 5))
 
         # Make it subtle and additive (like light reflection)
