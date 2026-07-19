@@ -400,12 +400,13 @@ class DomainRandomization:
         b_channel = image[2:3]
 
         # Shift red outward, blue inward (or vice versa)
+        # Tensors are (1, H, W) — pad last dim, slice with 3D indexing
         if random.random() < 0.5:
-            r_shifted = F.pad(r_channel, (shift, 0, 0, 0))[:, :, :, :w]
-            b_shifted = F.pad(b_channel, (0, shift, 0, 0))[:, :, :, shift:]
+            r_shifted = F.pad(r_channel, (shift, 0, 0, 0))[:, :, :w]
+            b_shifted = F.pad(b_channel, (0, shift, 0, 0))[:, :, shift:]
         else:
-            r_shifted = F.pad(r_channel, (0, shift, 0, 0))[:, :, :, shift:]
-            b_shifted = F.pad(b_channel, (shift, 0, 0, 0))[:, :, :, :w]
+            r_shifted = F.pad(r_channel, (0, shift, 0, 0))[:, :, shift:]
+            b_shifted = F.pad(b_channel, (shift, 0, 0, 0))[:, :, :w]
 
         return torch.cat([r_shifted, g_channel, b_shifted], dim=0)
 
