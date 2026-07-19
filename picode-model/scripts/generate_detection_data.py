@@ -45,6 +45,7 @@ def parse_args() -> argparse.Namespace:
         "--strengths", type=str, default="0.010,0.012,0.015,0.020",
         help="Comma-separated strengths",
     )
+    parser.add_argument("--max-images", type=int, default=None, help="Max images to process")
     parser.add_argument("--shard-size", type=int, default=500, help="Samples per shard")
     parser.add_argument("--input-size", type=int, default=320, help="Detector input size")
     parser.add_argument("--positive-ratio", type=float, default=0.5, help="Positive ratio")
@@ -242,7 +243,10 @@ def main() -> None:
     # Collect images
     data_dir = Path(args.data_dir)
     image_paths = sorted(data_dir.glob("*.jpg")) + sorted(data_dir.glob("*.png"))
-    print(f"Found {len(image_paths)} images in {data_dir}")
+    if args.max_images:
+        random.shuffle(image_paths)
+        image_paths = image_paths[:args.max_images]
+    print(f"Using {len(image_paths)} images from {data_dir}")
 
     load_transform = transforms.Compose([
         transforms.Resize((encoder_size, encoder_size)),
