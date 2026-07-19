@@ -304,6 +304,7 @@ def main() -> None:
     metadata = {
         "num_shards": shard_idx,
         "num_samples": total_samples,
+        "shard_size": args.shard_size,
         "input_size": args.input_size,
         "encoder_checkpoint": args.encoder,
         "sobel_sigma": args.sobel_sigma,
