@@ -1,6 +1,6 @@
-"""PicoTier: variable-bit steganography with tier-coupled strength and blur.
+"""PicoTier: variable-bit steganography with tier-coupled strength and Sobel masking.
 
-Supports 4 tiers (UHQ/HQ/MQ/LQ) with per-tier residual strength and decoder blur.
+Supports 4 tiers (UHQ/HQ/MQ/LQ) with per-tier residual strength and Sobel mask floor.
 Encoder is conditioned on the tier; decoder auto-detects the tier.
 """
 

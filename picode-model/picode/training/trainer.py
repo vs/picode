@@ -286,27 +286,9 @@ class Trainer:
             self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
             self._perceptual_blur_pad = pk // 2
 
-        # Precompute per-tier blur kernels for picotier (decoder + perceptual)
+        # Per-tier blur removed — PicoTier now uses Sobel mask (per tiers.py)
         self._tier_decoder_blur_kernels: list[tuple[Tensor, int]] = []
         self._tier_perceptual_blur_kernels: list[tuple[Tensor, int]] = []
-        if config.model.type == "picotier":
-            import math  # noqa: F811
-
-            from picode.models.picotier.tiers import TIERS
-
-            def _make_blur_kernel(sigma: float) -> tuple[Tensor, int]:
-                k = 2 * math.ceil(3 * sigma) + 1
-                ax = torch.arange(k, dtype=torch.float32) - k // 2
-                xx, yy = torch.meshgrid(ax, ax, indexing="ij")
-                kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2))
-                kernel = (kernel / kernel.sum()).view(1, 1, k, k)
-                return kernel.expand(3, -1, -1, -1).contiguous().to(self.device), k // 2
-
-            for t_idx in sorted(TIERS.keys()):
-                dec_sigma = float(TIERS[t_idx]["decoder_blur_sigma"])
-                perc_sigma = float(TIERS[t_idx]["perceptual_blur_sigma"])
-                self._tier_decoder_blur_kernels.append(_make_blur_kernel(dec_sigma))
-                self._tier_perceptual_blur_kernels.append(_make_blur_kernel(perc_sigma))
 
         # Determine image sizes based on model type
         # PicodeLite: encoder_size (800) for training images, decoder_size (320) for decoder input
