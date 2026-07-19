@@ -191,7 +191,7 @@ def generate_positive(
     corners = random_perspective_corners()
 
     return {
-        "image": output_img,
+        "image": (output_img * 255).to(torch.uint8),
         "is_watermark": 1.0,
         "corners": corners.flatten(),
         "has_corners": 1.0,
@@ -214,7 +214,7 @@ def generate_negative(
         output_img = hard_negative(output_img)
 
     return {
-        "image": output_img.clamp(0, 1).cpu(),
+        "image": (output_img.clamp(0, 1).cpu() * 255).to(torch.uint8),
         "is_watermark": 0.0,
         "corners": torch.zeros(8),
         "has_corners": 0.0,

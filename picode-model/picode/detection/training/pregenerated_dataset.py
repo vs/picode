@@ -75,9 +75,13 @@ class PregeneratedDetectionDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, Tensor]:
         sample = self.samples[idx]
 
-        # Convert to tensors if needed
+        # Convert to tensors; uint8 images → float32 [0, 1]
+        image = sample["image"]
+        if image.dtype == torch.uint8:
+            image = image.float() / 255.0
+
         result = {
-            "image": sample["image"],
+            "image": image,
             "is_watermark": torch.tensor(sample["is_watermark"]),
             "corners": sample["corners"],
             "has_corners": torch.tensor(sample["has_corners"]),
