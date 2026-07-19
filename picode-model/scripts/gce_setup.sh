@@ -326,8 +326,7 @@ cmd_train_detector() {
         --epochs $epochs \
         --batch-size $batch_size \
         --num-workers 0 \
-        --grad-clip 1.0 \
-        --domain-randomization"
+        --grad-clip 1.0"
 
     echo "Launching detector training in tmux session '$TMUX_SESSION'..."
     vm_ssh "tmux kill-session -t $TMUX_SESSION 2>/dev/null || true; \
