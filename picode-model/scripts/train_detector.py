@@ -13,7 +13,7 @@ import random
 from pathlib import Path
 
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
 
 from picode.detection.fast_detector import FastDetectorModel
 from picode.detection.training import (
@@ -100,8 +100,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pregenerated-dir",
         type=str,
+        nargs="+",
         default=None,
-        help="Pre-generated dataset dir (skips encoder, uses PregeneratedDetectionDataset)",
+        help="Pre-generated dataset dir(s). Multiple dirs are concatenated.",
     )
     return parser.parse_args()
 
@@ -245,7 +246,6 @@ def main() -> None:
             PregeneratedDetectionDataset,
         )
 
-        print(f"Loading pre-generated dataset from {args.pregenerated_dir}...")
         if args.domain_randomization:
             augmentation = DomainRandomizedAugmentation(
                 photometric_p=0.7,
@@ -260,10 +260,22 @@ def main() -> None:
                 geometric_p=0.5,
             )
 
-        full_dataset = PregeneratedDetectionDataset(
-            data_dir=args.pregenerated_dir,
-            transform=augmentation,
-        )
+        sub_datasets = []
+        for data_dir in args.pregenerated_dir:
+            print(f"Loading pre-generated dataset from {data_dir}...")
+            ds = PregeneratedDetectionDataset(
+                data_dir=data_dir,
+                transform=augmentation,
+            )
+            print(f"  {data_dir}: {len(ds)} samples")
+            sub_datasets.append(ds)
+
+        if len(sub_datasets) == 1:
+            full_dataset: Dataset = sub_datasets[0]
+        else:
+            full_dataset = ConcatDataset(sub_datasets)
+        print(f"Total samples: {len(full_dataset)}")
+
         val_size = int(len(full_dataset) * args.val_split)
         train_size = len(full_dataset) - val_size
         train_dataset, val_dataset = random_split(
