@@ -103,7 +103,8 @@ class ModelClassifierModel(nn.Module):
         """
         features = self.features(x)  # (B, 576, H/32, W/32)
         pooled = self.pool(features).flatten(1)  # (B, 576)
-        return self.head(pooled)  # (B, num_classes)
+        result: Tensor = self.head(pooled)
+        return result  # (B, num_classes)
 
     def predict(self, x: Tensor) -> str:
         """Predict the model class for a single image.
