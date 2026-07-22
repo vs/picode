@@ -16,7 +16,7 @@ ZONE="us-central1-a"
 MACHINE_TYPE="g2-standard-8"
 GPU_TYPE="nvidia-l4"
 GPU_COUNT=1
-BOOT_DISK_SIZE="200GB"
+BOOT_DISK_SIZE="400GB"
 IMAGE_FAMILY="pytorch-2-7-cu128-ubuntu-2204-nvidia-570"
 IMAGE_PROJECT="deeplearning-platform-release"
 
@@ -216,10 +216,162 @@ cmd_setup_data() {
         fi"
 }
 
+cmd_setup_mirflickr() {
+    check_gcloud
+    echo "Downloading MIR Flickr 1M on the VM (~100GB total)..."
+    echo "  Train images (zips 0-8): ~/data/mirflickr_train/"
+    echo "  Detect images (zip 9):  ~/data/mirflickr_detect/"
+    echo ""
+
+    vm_ssh "mkdir -p \$HOME/data/mirflickr_train \$HOME/data/mirflickr_detect && \
+        BASE_URL='https://press.liacs.nl/mirflickr/mirflickr1m.v3b' && \
+        for i in \$(seq 0 9); do \
+            if [ -f \$HOME/data/mirflickr_train/done_\$i ] || [ -f \$HOME/data/mirflickr_detect/done_\$i ]; then \
+                echo \"Zip \$i already processed, skipping.\"; \
+                continue; \
+            fi; \
+            echo \"Downloading images\$i.zip ...\"; \
+            wget -q --show-progress -O /tmp/mirflickr_\$i.zip \$BASE_URL/images\$i.zip; \
+            if [ \$i -eq 9 ]; then \
+                echo \"Extracting zip \$i to mirflickr_detect/ ...\"; \
+                unzip -q -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_detect/; \
+                rm /tmp/mirflickr_\$i.zip; \
+                touch \$HOME/data/mirflickr_detect/done_\$i; \
+                echo \"Zip \$i done. Images: \$(ls \$HOME/data/mirflickr_detect/*.jpg 2>/dev/null | wc -l)\"; \
+            else \
+                echo \"Extracting zip \$i to mirflickr_train/ ...\"; \
+                unzip -q -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_train/; \
+                rm /tmp/mirflickr_\$i.zip; \
+                touch \$HOME/data/mirflickr_train/done_\$i; \
+                echo \"Zip \$i done. Images: \$(ls \$HOME/data/mirflickr_train/*.jpg 2>/dev/null | wc -l)\"; \
+            fi; \
+        done; \
+        echo 'MIR Flickr download complete!'; \
+        echo \"Train images: \$(ls \$HOME/data/mirflickr_train/*.jpg 2>/dev/null | wc -l)\"; \
+        echo \"Detect images: \$(ls \$HOME/data/mirflickr_detect/*.jpg 2>/dev/null | wc -l)\""
+}
+
+cmd_generate_all_detection_data() {
+    check_gcloud
+    echo "Generating detection data for all 4 models + clean..."
+    echo "  Models: b30, b48, b72, b96 + clean"
+    echo "  Output: ~/data/detection_shards/{b30,b48,b72,b96,clean}"
+    echo ""
+
+    gen_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && \
+        echo '=== Generating b30 ===' && \
+        python3 scripts/generate_detection_data.py \
+            --encoder \$HOME/checkpoints/picotrust_b30s16m75/best.pt \
+            --model-label b30 \
+            --positive-ratio 1.0 \
+            --data-dir \$HOME/data/mirflickr_detect \
+            --output-dir \$HOME/data/detection_shards/b30 \
+            --sobel-sigma 5.0 --sobel-floor 0.75 \
+            --strengths '0.010,0.012,0.014,0.016' \
+            --shard-size 500 && \
+        echo '=== Generating b48 ===' && \
+        python3 scripts/generate_detection_data.py \
+            --encoder \$HOME/checkpoints/picotrust_b48s18m80/best.pt \
+            --model-label b48 \
+            --positive-ratio 1.0 \
+            --data-dir \$HOME/data/mirflickr_detect \
+            --output-dir \$HOME/data/detection_shards/b48 \
+            --sobel-sigma 5.0 --sobel-floor 0.80 \
+            --strengths '0.012,0.014,0.016,0.018' \
+            --shard-size 500 && \
+        echo '=== Generating b72 ===' && \
+        python3 scripts/generate_detection_data.py \
+            --encoder \$HOME/checkpoints/picotrust_b72s20m85/best.pt \
+            --model-label b72 \
+            --positive-ratio 1.0 \
+            --data-dir \$HOME/data/mirflickr_detect \
+            --output-dir \$HOME/data/detection_shards/b72 \
+            --sobel-sigma 5.0 --sobel-floor 0.85 \
+            --strengths '0.014,0.016,0.018,0.020' \
+            --shard-size 500 && \
+        echo '=== Generating b96 ===' && \
+        python3 scripts/generate_detection_data.py \
+            --encoder \$HOME/checkpoints/picotrust_b96s25m90/best.pt \
+            --model-label b96 \
+            --positive-ratio 1.0 \
+            --data-dir \$HOME/data/mirflickr_detect \
+            --output-dir \$HOME/data/detection_shards/b96 \
+            --sobel-sigma 5.0 --sobel-floor 0.90 \
+            --strengths '0.018,0.020,0.023,0.025' \
+            --shard-size 500 && \
+        echo '=== Generating clean ===' && \
+        python3 scripts/generate_detection_data.py \
+            --encoder \$HOME/checkpoints/picotrust_b72s20m85/best.pt \
+            --model-label clean \
+            --positive-ratio 0.0 \
+            --data-dir \$HOME/data/mirflickr_detect \
+            --output-dir \$HOME/data/detection_shards/clean \
+            --sobel-sigma 5.0 --sobel-floor 0.85 \
+            --strengths '0.014,0.016,0.018,0.020' \
+            --shard-size 500"
+
+    echo "Launching all detection data generation in tmux session '$TMUX_SESSION'..."
+    vm_ssh "tmux kill-session -t $TMUX_SESSION 2>/dev/null || true; \
+        tmux new-session -d -s $TMUX_SESSION \"$gen_cmd; echo '=== Generation finished (exit code: '\$'?) ==='; read\""
+
+    echo ""
+    echo "Detection data generation launched in background tmux session."
+    echo ""
+    echo "Useful commands:"
+    echo "  ./scripts/gce_setup.sh logs       # tail output"
+    echo "  ./scripts/gce_setup.sh attach     # attach to tmux session"
+}
+
+cmd_train_classifier() {
+    check_gcloud
+    epochs="${1:-50}"
+    batch_size="${2:-32}"
+
+    echo "Training Strategy B model classifier..."
+    echo "  Shard dirs: ~/data/detection_shards/{b30,b48,b72,b96}"
+    echo "  Output:     ~/checkpoints/model_classifier"
+    echo "  Epochs:     $epochs"
+    echo "  Batch size: $batch_size"
+    echo ""
+
+    train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python3 scripts/train_classifier.py \
+        --shard-dirs \$HOME/data/detection_shards/b30 \$HOME/data/detection_shards/b48 \$HOME/data/detection_shards/b72 \$HOME/data/detection_shards/b96 \
+        --model-labels b30 b48 b72 b96 \
+        --output-dir \$HOME/checkpoints/model_classifier \
+        --epochs $epochs \
+        --batch-size $batch_size \
+        --num-workers 0 \
+        --grad-clip 1.0"
+
+    echo "Launching classifier training in tmux session '$TMUX_SESSION'..."
+    vm_ssh "tmux kill-session -t $TMUX_SESSION 2>/dev/null || true; \
+        tmux new-session -d -s $TMUX_SESSION \"$train_cmd; echo '=== Training finished (exit code: '\$'?) ==='; read\""
+
+    echo ""
+    echo "Classifier training launched in background tmux session."
+    echo ""
+    echo "Useful commands:"
+    echo "  ./scripts/gce_setup.sh logs       # tail training output"
+    echo "  ./scripts/gce_setup.sh attach     # attach to tmux session"
+    echo "  ./scripts/gce_setup.sh list       # list checkpoints"
+    echo "  ./scripts/gce_setup.sh stop       # stop VM (pause billing)"
+}
+
 cmd_train() {
     check_gcloud
     resume=""
-    if [ "${1:-}" = "--resume" ]; then
+    config="configs/picotrust_v20.yaml"
+
+    # Parse args: optional config file, optional --resume flag (in any order)
+    for arg in "$@"; do
+        if [ "$arg" = "--resume" ]; then
+            resume="--resume"
+        elif [[ "$arg" == *.yaml || "$arg" == *.yml ]]; then
+            config="$arg"
+        fi
+    done
+
+    if [ -n "$resume" ]; then
         echo "Finding latest checkpoint on VM..."
         # Find latest checkpoint file on VM
         latest=$(vm_ssh "ls -t ~/checkpoints/*/checkpoint_*.pt 2>/dev/null | head -1" || true)
@@ -234,14 +386,16 @@ cmd_train() {
         echo "Starting training..."
     fi
 
+    echo "  Config: $config"
+
     # Build the training command with overrides for GCE paths
     # CLI: picode-train CONFIG [--resume PATH] [key=value overrides...]
     # Note: \$HOME is escaped so it expands on the VM, not locally
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && picode-train \
-        configs/picotrust_v20.yaml \
+        $config \
         $resume \
         checkpoint.dir=\$HOME/checkpoints \
-        data.path=\$HOME/data/train \
+        data.path=\$HOME/data/mirflickr_train \
         logging.tensorboard_dir=\$HOME/checkpoints/runs"
 
     echo "Launching training in tmux session '$TMUX_SESSION'..."
@@ -314,15 +468,16 @@ cmd_train_detector() {
     epochs="${1:-50}"
     batch_size="${2:-32}"
 
-    echo "Training FastDetector for b72s20m85 (pre-generated data)..."
-    echo "  Data:       ~/data/detection_b72s20m85"
+    echo "Training FastDetector (multi-model, pre-generated data)..."
+    echo "  Data:       ~/data/detection_shards/{b30,b48,b72,b96,clean}"
+    echo "  Output:     ~/checkpoints/detector_multimodel"
     echo "  Epochs:     $epochs"
     echo "  Batch size: $batch_size"
     echo ""
 
     train_cmd="export PATH=\$HOME/.local/bin:\$PATH && cd ~/picode-model && python3 scripts/train_detector.py \
-        --pregenerated-dir \$HOME/data/detection_b72s20m85 \
-        --output-dir \$HOME/checkpoints/detection_b72s20m85 \
+        --pregenerated-dir \$HOME/data/detection_shards/b30 \$HOME/data/detection_shards/b48 \$HOME/data/detection_shards/b72 \$HOME/data/detection_shards/b96 \$HOME/data/detection_shards/clean \
+        --output-dir \$HOME/checkpoints/detector_multimodel \
         --epochs $epochs \
         --batch-size $batch_size \
         --num-workers 0 \
@@ -430,6 +585,9 @@ case "${1:-}" in
     setup-data)  cmd_setup_data ;;
     train)       shift; cmd_train "$@" ;;
     generate-detection-data) shift; cmd_generate_detection_data "$@" ;;
+    setup-mirflickr) cmd_setup_mirflickr ;;
+    generate-all-detection-data) cmd_generate_all_detection_data ;;
+    train-classifier) shift; cmd_train_classifier "$@" ;;
     train-detector) shift; cmd_train_detector "$@" ;;
     upload-ckpt) shift; cmd_upload_ckpt "$@" ;;
     logs)        cmd_logs ;;
