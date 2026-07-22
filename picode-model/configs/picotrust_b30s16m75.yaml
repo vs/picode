@@ -1,14 +1,10 @@
-# PicoTrust b72s20m85 — 72 bits, strength 0.020, Sobel mask floor 0.85
+# PicoTrust b30s16m75 — 30 bits, strength 0.016, Sobel mask floor 0.75
 #
-# No blur at all. Sobel texture mask applied to
-# the residual during training. The mask directly enforces content-
-# adaptivity — encoder learns to concentrate in textured regions.
-#
-# Hypothesis: Sobel mask replaces blur for content-adaptivity.
-# The encoder gets direct spatial feedback instead of indirect
-# perceptual pressure from blurred LPIPS.
+# Independent 30-bit model for multi-model routing architecture.
+# Based on b72s20m85 production approach: Sobel texture mask, no blur.
+# Lower strength and gentler mask floor for fewer bits.
 
-experiment_name: picotrust_b72s20m85
+experiment_name: picotrust_b30s16m75
 
 model:
   type: picotrust
@@ -23,7 +19,7 @@ data:
 training:
   num_steps: 140000
   lr: 0.0001
-  num_bits: 72
+  num_bits: 30
   image_size: 512
   warmup_steps: 500
   no_im_loss_steps: 10000
@@ -35,7 +31,7 @@ training:
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
   residual_strength: 1.0
-  residual_strength_anneal_target: 0.020
+  residual_strength_anneal_target: 0.016
   residual_strength_anneal_start: 10000
   residual_strength_anneal_steps: 90000
   anneal_schedule: exponential
@@ -43,7 +39,7 @@ training:
   perceptual_blur_sigma: 0.0
   use_sobel_mask: true
   sobel_blur_sigma: 5.0
-  sobel_mask_floor: 0.85
+  sobel_mask_floor: 0.75
 
 loss:
   message:

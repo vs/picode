@@ -15,7 +15,7 @@ model:
 
 data:
   source: folder
-  path: ./data/train
+  path: ./data/mirflickr_train
   batch_size: 4
 
 training:
