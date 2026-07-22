@@ -87,6 +87,10 @@ class PregeneratedDetectionDataset(Dataset):
             "has_corners": torch.tensor(sample["has_corners"]),
         }
 
+        # Pass through model_label if present (for classifier training)
+        if "model_label" in sample:
+            result["model_label"] = sample["model_label"]
+
         if self.transform is not None:
             result = self.transform(result)
 
@@ -99,3 +103,7 @@ class PregeneratedDetectionDataset(Dataset):
     @property
     def input_size(self) -> int:
         return self.metadata.get("input_size", 320)
+
+    @property
+    def model_label(self) -> str | None:
+        return self.metadata.get("model_label")
