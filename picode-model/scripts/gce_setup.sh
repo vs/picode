@@ -234,13 +234,13 @@ cmd_setup_mirflickr() {
             wget -q --show-progress -O /tmp/mirflickr_\$i.zip \$BASE_URL/images\$i.zip; \
             if [ \$i -eq 9 ]; then \
                 echo \"Extracting zip \$i to mirflickr_detect/ ...\"; \
-                unzip -q -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_detect/; \
+                unzip -q -o -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_detect/; \
                 rm /tmp/mirflickr_\$i.zip; \
                 touch \$HOME/data/mirflickr_detect/done_\$i; \
                 echo \"Zip \$i done. Images: \$(ls \$HOME/data/mirflickr_detect/*.jpg 2>/dev/null | wc -l)\"; \
             else \
                 echo \"Extracting zip \$i to mirflickr_train/ ...\"; \
-                unzip -q -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_train/; \
+                unzip -q -o -j /tmp/mirflickr_\$i.zip -d \$HOME/data/mirflickr_train/; \
                 rm /tmp/mirflickr_\$i.zip; \
                 touch \$HOME/data/mirflickr_train/done_\$i; \
                 echo \"Zip \$i done. Images: \$(ls \$HOME/data/mirflickr_train/*.jpg 2>/dev/null | wc -l)\"; \
