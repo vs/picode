@@ -49,6 +49,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shard-size", type=int, default=500, help="Samples per shard")
     parser.add_argument("--input-size", type=int, default=320, help="Detector input size")
     parser.add_argument("--positive-ratio", type=float, default=0.5, help="Positive ratio")
+    parser.add_argument(
+        "--model-label", type=str, default=None,
+        help="Model label for classifier training (e.g. 'b72', 'clean')",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     return parser.parse_args()
 
@@ -157,6 +161,7 @@ def generate_positive(
     sobel_sigma: float,
     sobel_floor: float,
     strength_values: list[float],
+    model_label: str | None = None,
 ) -> dict[str, Tensor]:
     """Generate one positive (encoded) sample."""
     message = torch.randint(0, 2, (1, num_bits)).float().to(device)
@@ -191,12 +196,15 @@ def generate_positive(
 
     corners = random_perspective_corners()
 
-    return {
+    result = {
         "image": (output_img * 255).to(torch.uint8),
         "is_watermark": 1.0,
         "corners": corners.flatten(),
         "has_corners": 1.0,
     }
+    if model_label is not None:
+        result["model_label"] = model_label
+    return result
 
 
 def generate_negative(
@@ -204,6 +212,7 @@ def generate_negative(
     input_size: int,
     hard_negative: HardNegativeTransform,
     hard_negative_p: float = 0.8,
+    model_label: str | None = None,
 ) -> dict[str, Tensor]:
     """Generate one negative (clean) sample."""
     output_img = F.interpolate(
@@ -214,12 +223,15 @@ def generate_negative(
     if random.random() < hard_negative_p:
         output_img = hard_negative(output_img)
 
-    return {
+    result = {
         "image": (output_img.clamp(0, 1).cpu() * 255).to(torch.uint8),
         "is_watermark": 0.0,
         "corners": torch.zeros(8),
         "has_corners": 0.0,
     }
+    if model_label is not None:
+        result["model_label"] = model_label
+    return result
 
 
 def main() -> None:
@@ -274,10 +286,12 @@ def main() -> None:
             sample = generate_positive(
                 image_tensor, encoder, num_bits, device, args.input_size,
                 args.sobel_sigma, args.sobel_floor, strength_values,
+                model_label=args.model_label,
             )
         else:
             sample = generate_negative(
                 image_tensor, args.input_size, hard_negative,
+                model_label=args.model_label,
             )
 
         shard.append(sample)
@@ -315,6 +329,7 @@ def main() -> None:
         "sobel_floor": args.sobel_floor,
         "strength_values": strength_values,
         "positive_ratio": args.positive_ratio,
+        "model_label": args.model_label,
     }
     with open(output_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
