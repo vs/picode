@@ -788,7 +788,21 @@ class Trainer:
 
         # 5b. Apply Sobel texture mask to residual (if enabled)
         if self.config.training.use_sobel_mask:
-            encoded = self._apply_sobel_mask(images, encoded)
+            # Anneal mask floor if configured
+            floor_override = None
+            if self.config.training.sobel_mask_floor_anneal_target is not None:
+                floor_override = self._compute_strength(
+                    initial=self.config.training.sobel_mask_floor,
+                    target=self.config.training.sobel_mask_floor_anneal_target,
+                    start_step=self.config.training.sobel_mask_floor_anneal_start,
+                    anneal_steps=self.config.training.sobel_mask_floor_anneal_steps,
+                    current_step=self.global_step,
+                    schedule="linear",
+                )
+            encoded = self._apply_sobel_mask(
+                images, encoded,
+                mask_floors=floor_override,
+            )
 
         # 6. Apply distortions to encoded image
         distorted = self.distortion(encoded, self.global_step)

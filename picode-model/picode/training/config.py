@@ -192,6 +192,9 @@ class TrainingConfig:
     use_sobel_mask: bool = False  # Apply Sobel texture mask to residual during training
     sobel_blur_sigma: float = 5.0  # Gaussian blur sigma for Sobel mask smoothing
     sobel_mask_floor: float = 0.85  # Minimum mask value (smooth regions keep this fraction)
+    sobel_mask_floor_anneal_target: float | None = None  # Anneal floor to this value (None = no anneal)
+    sobel_mask_floor_anneal_start: int = 10000  # Step to start annealing floor
+    sobel_mask_floor_anneal_steps: int = 90000  # Steps to anneal floor over
     strength_conditioned: bool = False  # Enable FiLM strength conditioning on encoder
     strength_sample_min: float = 0.0  # Min strength for random sampling (0 = disabled)
     strength_sample_max: float = 0.0  # Max strength for random sampling (0 = disabled)
