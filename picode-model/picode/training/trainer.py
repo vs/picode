@@ -21,13 +21,14 @@ from picode.models.base import Decoder as BaseDecoder
 from picode.models.base import Encoder as BaseEncoder
 from picode.models.factory import create_decoder, create_encoder
 from picode.training.checkpointing import Checkpointer
+from picode.training.compositing import composite_into_background, extract_with_jitter
 from picode.training.config import (
     Config,
     DelayedLossRamp,
     _dict_to_config,
     load_config,
 )
-from picode.training.data import create_dataloader
+from picode.training.data import BackgroundSampler, create_dataloader
 from picode.training.distortion_strategy import create_distortion_strategy
 from picode.training.evaluation import (
     DEFAULT_ROBUSTNESS_SWEEP,
@@ -342,6 +343,16 @@ class Trainer:
         # Create dataloader
         self.dataloader = create_dataloader(config.data, train_image_size)
         self._data_iter: Iterator[Tensor] | None = None
+
+        # Background sampler for compositing
+        self._bg_sampler: BackgroundSampler | None = None
+        if self.config.training.use_compositing:
+            from picode.training.data import BackgroundSampler, FolderDataset
+            bg_dataset = FolderDataset(
+                self.config.data.path,
+                image_size=self.config.training.image_size,
+            )
+            self._bg_sampler = BackgroundSampler(bg_dataset)
 
         # Create distortion strategy
         self.distortion = create_distortion_strategy(config.distortion)
@@ -804,6 +815,32 @@ class Trainer:
                 mask_floors=floor_override,
             )
 
+        # 5c. Compositing: place encoded image into background scene
+        composited_meta = None
+        if (
+            self.config.training.use_compositing
+            and self._bg_sampler is not None
+        ):
+            comp_ratio = self._compute_compositing_ratio()
+
+            if comp_ratio > 0:
+                num_composited = max(1, int(batch_size * comp_ratio))
+                comp_indices = torch.randperm(batch_size, device=self.device)[:num_composited]
+
+                backgrounds = self._bg_sampler.sample(num_composited).to(self.device)
+
+                comp_result = composite_into_background(
+                    encoded[comp_indices],
+                    backgrounds,
+                    scale_min=self.config.training.compositing_scale_min,
+                    scale_max=self.config.training.compositing_scale_max,
+                    perspective_strength=perspective_strength,
+                )
+
+                encoded_pre_comp = encoded.clone()
+                encoded[comp_indices] = comp_result["composited"]
+                composited_meta = (comp_indices, comp_result["corners"], encoded_pre_comp)
+
         # 6. Apply distortions to encoded image
         distorted = self.distortion(encoded, self.global_step)
 
@@ -844,6 +881,24 @@ class Trainer:
             )
         else:
             encoded_for_perceptual = encoded
+            original_for_perceptual = images
+
+        # 7c. Extract composited samples back for decoder
+        if composited_meta is not None:
+            comp_indices, corners, encoded_pre_comp = composited_meta
+
+            extracted = extract_with_jitter(
+                decoder_input[comp_indices],
+                corners,
+                output_size=self._decoder_size,
+                jitter=self.config.training.compositing_crop_jitter,
+            )
+
+            decoder_input = decoder_input.clone()
+            decoder_input[comp_indices] = extracted
+
+            # Perceptual losses use original (non-composited) encoded
+            encoded_for_perceptual = encoded_pre_comp
             original_for_perceptual = images
 
         # 8. Decode
@@ -1970,6 +2025,18 @@ class Trainer:
         if schedule == "exponential" and initial > 0 and target > 0:
             return initial * (target / initial) ** progress
         return initial + progress * (target - initial)
+
+    def _compute_compositing_ratio(self) -> float:
+        """Compute current compositing ratio based on training step."""
+        cfg = self.config.training
+        if self.global_step < cfg.compositing_ratio_ramp_start:
+            return 0.0
+        progress = min(
+            (self.global_step - cfg.compositing_ratio_ramp_start)
+            / max(cfg.compositing_ratio_ramp_steps, 1),
+            1.0,
+        )
+        return cfg.compositing_ratio_target * progress
 
     def _compute_edge_loss(self, original: Tensor, encoded: Tensor) -> Tensor:
         """Compute edge-weighted L2 loss using Sobel edge detection.
