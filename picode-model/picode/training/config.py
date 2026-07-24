@@ -146,6 +146,8 @@ class TrainingConfig:
     num_steps: int = 140000
     lr: float = 1e-4
     num_bits: int = 100
+    ecc_type: str = "none"  # "none", "bch", "ldpc"
+    bch_t: int = 3  # BCH error correction capability (only used if ecc_type="bch")
     image_size: int = 400
     warmup_steps: int = 500
     residual_scale: float = 0.1  # picode_v2 encoder residual magnitude
@@ -175,6 +177,15 @@ class TrainingConfig:
     borders: str = "black"  # Border mode: no_edge, black, random, randomrgb, white, image
     rnd_trans: float = 0.1  # Max perspective translation (fraction of image size)
     rnd_trans_ramp: int = 10000  # Steps to ramp up perspective strength from 0 to rnd_trans
+
+    # Compositing: place encoded image into background scene
+    use_compositing: bool = False  # Enable compositing augmentation
+    compositing_ratio_target: float = 0.5  # Target fraction of batch that gets composited
+    compositing_ratio_ramp_start: int = 10000  # Step to start ramping compositing ratio
+    compositing_ratio_ramp_steps: int = 50000  # Steps to ramp from 0 to target
+    compositing_scale_min: float = 0.50  # Min scale of encoded image in background
+    compositing_scale_max: float = 0.95  # Max scale of encoded image in background
+    compositing_crop_jitter: float = 0.08  # Max crop jitter as fraction of region size (±)
 
     # Residual amplitude control (PicoTrust v2)
     residual_strength: float = 0.0  # 0 = disabled (v1 compat). Max residual = strength * tanh
