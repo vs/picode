@@ -31,7 +31,7 @@ training:
   phase2_step: 60000
   phase2_decoder_lr_scale: 0.1
   residual_strength: 1.0
-  residual_strength_anneal_target: 0.010
+  residual_strength_anneal_target: 0.020
   residual_strength_anneal_start: 10000
   residual_strength_anneal_steps: 90000
   anneal_schedule: exponential
