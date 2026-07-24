@@ -284,7 +284,9 @@ class Trainer:
             pxx, pyy = torch.meshgrid(pax, pax, indexing="ij")
             p_kernel = torch.exp(-(pxx ** 2 + pyy ** 2) / (2 * p_sigma ** 2))
             p_kernel = (p_kernel / p_kernel.sum()).view(1, 1, pk, pk)
-            self._perceptual_blur_kernel = p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
+            self._perceptual_blur_kernel = (
+                p_kernel.expand(3, -1, -1, -1).contiguous().to(self.device)
+            )
             self._perceptual_blur_pad = pk // 2
 
         # Determine image sizes based on model type
@@ -871,8 +873,16 @@ class Trainer:
             else:
                 decoder_input = decoder_blurred
             # Perceptual losses: use separate blur if configured, else decoder blur
-            _p_kern = self._perceptual_blur_kernel if self._perceptual_blur_kernel is not None else self._decoder_blur_kernel
-            _p_pad = self._perceptual_blur_pad if self._perceptual_blur_kernel is not None else self._decoder_blur_pad
+            _p_kern = (
+                self._perceptual_blur_kernel
+                if self._perceptual_blur_kernel is not None
+                else self._decoder_blur_kernel
+            )
+            _p_pad = (
+                self._perceptual_blur_pad
+                if self._perceptual_blur_kernel is not None
+                else self._decoder_blur_pad
+            )
             encoded_for_perceptual = F.conv2d(
                 encoded, _p_kern, padding=_p_pad, groups=3,
             )
