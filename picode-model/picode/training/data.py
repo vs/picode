@@ -68,6 +68,33 @@ class FolderDataset(Dataset[Tensor]):
             return self.__getitem__(fallback_idx)
 
 
+class BackgroundSampler:
+    """Samples random background images from a dataset.
+
+    Used during compositing to provide background scenes. Returns images
+    at the specified size, different from the current batch.
+
+    Args:
+        dataset: The image dataset to sample from.
+    """
+
+    def __init__(self, dataset: FolderDataset) -> None:
+        self.dataset = dataset
+
+    def sample(self, batch_size: int) -> Tensor:
+        """Sample a batch of random background images.
+
+        Args:
+            batch_size: Number of backgrounds to sample.
+
+        Returns:
+            Background images (B, 3, H, W) in [0, 1].
+        """
+        indices = torch.randint(0, len(self.dataset), (batch_size,))
+        backgrounds = torch.stack([self.dataset[idx] for idx in indices])
+        return backgrounds
+
+
 def create_dataloader(config: DataConfig, image_size: int) -> DataLoader[Tensor]:
     """Factory function to create dataloader from config."""
     if config.source == "folder":
