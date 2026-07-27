@@ -36,7 +36,7 @@ checkpoint_volume = modal.Volume.from_name("picode-checkpoints", create_if_missi
 # Container image with all dependencies and local code
 image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("build-essential")
+    .apt_install("build-essential", "libgl1", "libglib2.0-0")
     .pip_install("numpy<2.0", "scipy")  # pyldpc build deps
     .pip_install(
         "torch>=2.0",
@@ -50,6 +50,7 @@ image = (
         "lpips>=0.1",
         "kornia>=0.7.0",
         "tensorboard>=2.0",
+        "opencv-python-headless>=4.0",
     )
     .add_local_dir(".", remote_path="/root", copy=True, ignore=["data/", "checkpoints*/", "kaggle_*/", "*.pyc", "__pycache__", ".git", "venv/", ".venv/", "runs/", "*.pt", "notebooks/", "picode-model/"])
     .run_commands("cd /root && pip install -e .")
