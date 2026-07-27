@@ -85,9 +85,11 @@ def composite_into_background(
         mask_warped = cv2.warpPerspective(mask_np, M, (W, H))
         mask_t = torch.from_numpy(mask_warped).float() / 255.0
 
+        warped_t = warped_t.to(device)
+        mask_t = mask_t.to(device)
         mask_3ch = mask_t.unsqueeze(0).expand(3, -1, -1)
-        composited[i] = composited[i] * (1 - mask_3ch) + warped_t.to(device) * mask_3ch.to(device)
-        masks[i, 0] = mask_t.to(device)
+        composited[i] = composited[i] * (1 - mask_3ch) + warped_t * mask_3ch
+        masks[i, 0] = mask_t
         all_corners[i] = torch.from_numpy(dst_corners).to(device)
 
     return {
