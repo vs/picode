@@ -77,7 +77,7 @@ def composite_into_background(
 
         M = cv2.getPerspectiveTransform(src_corners, dst_corners)
 
-        enc_np = (encoded[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        enc_np = (encoded[i].detach().permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         warped = cv2.warpPerspective(enc_np, M, (W, H))
         warped_t = torch.from_numpy(warped).float().permute(2, 0, 1) / 255.0
 
@@ -127,7 +127,7 @@ def extract_with_jitter(
     ], dtype=np.float32)
 
     for i in range(B):
-        src = corners[i].cpu().numpy().astype(np.float32)
+        src = corners[i].detach().cpu().numpy().astype(np.float32)
 
         if jitter > 0:
             region_w = np.linalg.norm(src[1] - src[0])
@@ -139,7 +139,7 @@ def extract_with_jitter(
             src[:, 1] = np.clip(src[:, 1], 0, H - 1)
 
         M = cv2.getPerspectiveTransform(src, dst)
-        img_np = (composited[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+        img_np = (composited[i].detach().permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         warped = cv2.warpPerspective(img_np, M, (output_size, output_size))
         results.append(torch.from_numpy(warped).float().permute(2, 0, 1) / 255.0)
 
