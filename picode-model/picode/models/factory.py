@@ -80,6 +80,13 @@ def create_encoder(
         from picode.models.picotier import Encoder as TierEncoder
 
         return TierEncoder(image_size=config.encoder_size)
+    elif config.type == "picograin":
+        from picode.models.picograin import Encoder as PicoGrainEncoder
+
+        return PicoGrainEncoder(
+            num_bits=num_bits, image_size=config.encoder_size,
+            strength=strength,
+        )
     else:
         raise ValueError(f"Unknown model type: {config.type}")
 
@@ -127,5 +134,9 @@ def create_decoder(config: ModelConfig, num_bits: int) -> BaseDecoder:
         from picode.models.picotier import Decoder as TierDecoder
 
         return TierDecoder(image_size=config.decoder_size)
+    elif config.type == "picograin":
+        from picode.models.picograin import Decoder as PicoGrainDecoder
+
+        return PicoGrainDecoder(num_bits=num_bits, image_size=config.decoder_size)
     else:
         raise ValueError(f"Unknown model type: {config.type}")
