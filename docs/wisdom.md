@@ -489,3 +489,80 @@ Use `scripts/kaggle_setup.sh` for all Kaggle operations:
 4. Update config (e.g., increase `num_steps`, adjust loss weights)
 5. Upload new code: `upload-code`
 6. Push new kernel: `push`
+
+---
+
+## PicoGrain: Why Amplitude-Modulated Noise Failed (2026-07-29)
+
+PicoGrain encoded the message in a smooth amplitude envelope multiplied by a
+freshly-resampled zero-mean Gaussian noise carrier, and reused the PicoTrust
+CNN+STN decoder unchanged. It collapsed at step 2000 on Modal:
+`decoder_prob_std=0.0036`, bit accuracy at chance, `loss_msg` pinned at 0.2499
+(exactly the MSE of predicting 0.5 for every bit).
+
+The design was abandoned. The code remains in the tree as a documented dead
+end: `picode/models/picograin/`, `picode/training/grain_losses.py`,
+`picode/training/grain_discriminator.py`, `configs/picograin_b127.yaml`.
+
+### Lesson: Linear convolutions cannot estimate the amplitude of a zero-mean random field
+
+The message lived in `|envelope|`; the carrier was `randn_like(envelope)`,
+resampled every forward pass. Convolution is linear, so over any receptive
+field `Σ wᵢ·envelopeᵢ·noiseᵢ` has expectation ≈ 0 no matter how large the
+envelope is — the noise is zero-mean and independent of the weights.
+Averaging zero-mean noise yields zero. The first conv layer's response carried
+almost no information about the envelope, so the decoder's best strategy was to
+predict the prior, and it did.
+
+Recovering amplitude requires a **rectifying nonlinearity before spatial
+pooling** — `x²`, `|x|`, or a structure tensor — to convert amplitude into
+something a linear filter can average. ReLU does not count: it sits after the
+first convolution, by which point linear mixing has already destroyed the
+signal.
+
+**Takeaway:** Never modulate a random carrier and expect a conv stack to read
+the modulation. Either give the decoder an explicit energy front-end, or make
+the carrier deterministic so decoding becomes correlation against a known
+pattern (a linear, easily learned operation).
+
+The original spec anticipated the symptom and prescribed the wrong cure —
+"consider adding initial low-pass filtering layers to help envelope
+extraction". Low-pass filtering zero-mean noise drives it toward zero. It has
+to be rectify *then* smooth.
+
+### Lesson: Check carrier frequency against the channel before training
+
+Fine, pixel-scale grain does not survive print-then-photograph: halftone
+screening and reduced capture resolution destroy texture at that scale. A
+20-minute CPU experiment (synthesise grain, push it through a simulated print
+chain, correlate the recovered band against the original field) measured
+carrier survival by clump size:
+
+| Grain clump | portrait | product | car |
+|-------------|----------|---------|-----|
+| 1 px        | 0.10     | 0.08    | 0.07 |
+| 2 px        | 0.16     | 0.11    | 0.11 |
+| 4 px        | 0.45     | 0.34    | 0.32 |
+| 8 px        | 0.53     | 0.43    | 0.36 |
+| 12 px       | 0.51     | 0.44    | 0.35 |
+
+Sharp knee between 2px and 4px, plateau by 8px. The shipped design used
+pixel-scale grain — around 8% carrier survival, i.e. noise.
+
+Coarse grain is not a free fix: at 8px and above the texture stops reading as
+film grain and becomes visible blotching, which looks like damage on skin.
+4px was the only scale that was both survivable and attractive.
+
+**Takeaway:** Carrier frequency versus channel bandwidth is cheap to measure
+and expensive to get wrong. Run the numbers before spending GPU time. This
+design had two independent fatal flaws — undecodable carrier, and a carrier
+that would not survive the target channel anyway — and fixing the first would
+only have exposed the second.
+
+### Lesson: The bootstrap collapse detector pays for itself
+
+`modal_train.py` halts training at step 2000 when `prob_std` falls below 0.02,
+after a soft recovery attempt at 1500 (restore EMA weights, halve LR). It
+caught this run in ~15 minutes for about $0.30 instead of burning the full
+5.5-hour schedule. Keep it, and watch `decoder_prob_std` as the leading
+indicator — it collapses well before bit accuracy makes the problem obvious.
