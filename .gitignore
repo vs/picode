@@ -61,6 +61,7 @@ Thumbs.db
 
 # Claude Code
 .claude/
+.superpowers/
 
 # Git worktrees
 .worktrees/
