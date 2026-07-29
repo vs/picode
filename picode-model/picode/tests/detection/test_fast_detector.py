@@ -1,7 +1,6 @@
 # picode/tests/detection/test_fast_detector.py
 """Tests for FastDetector model and inference."""
 
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest

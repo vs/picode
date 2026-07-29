@@ -69,7 +69,6 @@ class TestEncoderValidation:
     def test_rejects_non_divisible_by_16(self) -> None:
         """Encoder rejects input sizes not divisible by 16."""
         encoder = Encoder(num_bits=63)
-        img = torch.rand(1, 3, 400, 400)  # 400 % 16 = 0, try 300
         msg = torch.randint(0, 2, (1, 63)).float()
         img_bad = torch.rand(1, 3, 300, 300)  # 300 % 16 = 12, not divisible
         with pytest.raises(ValueError, match="divisible by 16"):

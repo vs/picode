@@ -5,7 +5,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import pytest
-import torch
 
 from picode.detection import Detector
 from picode.models.stegastamp import Decoder

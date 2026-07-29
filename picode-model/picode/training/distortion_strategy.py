@@ -236,7 +236,9 @@ class CurriculumDistortion:
         if self.config.barrel_distortion is not None:
             bd_strength = self._ramp(self.config.barrel_distortion, step)
             if bd_strength > 0:
-                distortions.append(BarrelDistortion(intensity=1.0, k_range=(-bd_strength, bd_strength)))
+                distortions.append(
+                    BarrelDistortion(intensity=1.0, k_range=(-bd_strength, bd_strength))
+                )
 
         if self.config.vignetting is not None:
             vig_strength = self._ramp(self.config.vignetting, step)

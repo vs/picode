@@ -6,7 +6,6 @@ import os
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import pytest
-import torch
 
 from picode.training.config import (
     CheckpointConfig,

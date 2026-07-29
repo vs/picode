@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
 
 from picode.training.compositing import composite_into_background, extract_with_jitter

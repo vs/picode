@@ -7,8 +7,8 @@ from torch import Tensor
 
 from picode.detection.training.augmentation import (
     DetectionAugmentation,
-    PhotometricAugmentation,
     GeometricAugmentation,
+    PhotometricAugmentation,
 )
 
 

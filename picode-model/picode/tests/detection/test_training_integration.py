@@ -4,7 +4,7 @@
 import pytest
 import torch
 from torch import Tensor
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import ConcatDataset, DataLoader
 
 from picode.detection import FastDetectorModel
 from picode.detection.training import (
@@ -33,8 +33,8 @@ class TestTrainingPipelineIntegration:
     @pytest.fixture
     def positive_dataset(self, tmp_path) -> DetectionDataset:
         """Create positive dataset with mock encoder."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img_dir = tmp_path / "positives"
         img_dir.mkdir()
@@ -55,8 +55,8 @@ class TestTrainingPipelineIntegration:
     @pytest.fixture
     def negative_dataset(self, tmp_path) -> HardNegativeDataset:
         """Create negative dataset."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img_dir = tmp_path / "negatives"
         img_dir.mkdir()

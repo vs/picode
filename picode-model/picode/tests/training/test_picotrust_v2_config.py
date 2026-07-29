@@ -4,7 +4,6 @@ from picode.training.config import (
     DelayedLossRamp,
     GANConfig,
     LossConfig,
-    LossRamp,
     TrainingConfig,
     load_config,
 )

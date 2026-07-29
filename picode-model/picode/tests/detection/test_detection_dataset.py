@@ -31,8 +31,8 @@ class TestDetectionDataset:
     @pytest.fixture
     def sample_images(self, tmp_path) -> str:
         """Create temporary image directory with sample images."""
-        from PIL import Image
         import numpy as np
+        from PIL import Image
 
         img_dir = tmp_path / "images"
         img_dir.mkdir()
@@ -46,7 +46,7 @@ class TestDetectionDataset:
         return str(img_dir)
 
     def test_dataset_creation(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -58,7 +58,7 @@ class TestDetectionDataset:
         assert len(dataset) > 0
 
     def test_dataset_getitem_returns_dict(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -74,7 +74,7 @@ class TestDetectionDataset:
         assert "has_corners" in item
 
     def test_positive_sample_shape(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -91,7 +91,7 @@ class TestDetectionDataset:
         assert item["has_corners"].shape == ()
 
     def test_positive_sample_values(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -108,7 +108,7 @@ class TestDetectionDataset:
         assert item["corners"].max() <= 1.0
 
     def test_negative_sample_values(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -122,7 +122,7 @@ class TestDetectionDataset:
         assert item["has_corners"] == 0.0
 
     def test_image_range(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,
@@ -136,7 +136,7 @@ class TestDetectionDataset:
         assert item["image"].max() <= 1.0
 
     def test_perspective_range(
-        self, mock_encoder: Mock, sample_images: str
+        self, mock_encoder: nn.Module, sample_images: str
     ) -> None:
         dataset = DetectionDataset(
             image_dir=sample_images,

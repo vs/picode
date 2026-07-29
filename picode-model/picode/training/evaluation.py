@@ -183,7 +183,8 @@ class Evaluator:
                 decoded_logits = self._decode_picodeframe(encoded, mask)
             else:
                 enc_out = self.encoder(images, messages)
-                encoded = (enc_out["encoded"] if isinstance(enc_out, dict) else enc_out).clamp(0.0, 1.0)
+                raw_encoded = enc_out["encoded"] if isinstance(enc_out, dict) else enc_out
+                encoded = raw_encoded.clamp(0.0, 1.0)
                 decoder_input = self._resize_for_decoder(encoded)
                 decoded_logits = self.decoder(decoder_input)
 

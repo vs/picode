@@ -1,10 +1,11 @@
 # picode/tests/detection/test_pipeline.py
 """Tests for DetectionPipeline."""
 
+from unittest.mock import Mock
+
 import pytest
 import torch
 from torch import Tensor
-from unittest.mock import Mock, MagicMock
 
 from picode.detection.pipeline import DetectionPipeline, PipelineResult
 from picode.detection.types import Detection, Point, Quadrilateral

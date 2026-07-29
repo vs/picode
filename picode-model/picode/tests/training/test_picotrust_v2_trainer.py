@@ -1,7 +1,6 @@
 """Tests for PicoTrust v2 trainer features."""
 
 import torch
-import torch.nn.functional as F
 
 from picode.training.trainer import Trainer
 

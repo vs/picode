@@ -1,15 +1,15 @@
 # picode/tests/detection/test_hard_negative.py
 """Tests for hard negative sampling."""
 
+import numpy as np
 import pytest
 import torch
-from torch import Tensor
 from PIL import Image
-import numpy as np
+from torch import Tensor
 
 from picode.detection.training.hard_negative import (
-    HardNegativeTransform,
     HardNegativeDataset,
+    HardNegativeTransform,
 )
 
 

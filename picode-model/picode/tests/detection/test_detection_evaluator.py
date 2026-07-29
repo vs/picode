@@ -3,7 +3,6 @@
 
 import pytest
 import torch
-from torch import Tensor
 
 from picode.detection.fast_detector import FastDetectorModel
 from picode.detection.training.evaluator import (
@@ -113,7 +112,7 @@ class TestDetectionEvaluator:
         assert 0.0 <= metrics.recall <= 1.0
 
     def test_evaluate_dataset_runs(self, evaluator: DetectionEvaluator) -> None:
-        from torch.utils.data import DataLoader, TensorDataset
+        from torch.utils.data import DataLoader
 
         # Create simple dataset
         images = torch.rand(8, 3, 320, 320)

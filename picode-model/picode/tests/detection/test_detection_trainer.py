@@ -1,11 +1,11 @@
 # picode/tests/detection/test_detection_trainer.py
 """Tests for detection training loop."""
 
+
 import pytest
 import torch
 from torch import Tensor
-from torch.utils.data import DataLoader, TensorDataset
-from unittest.mock import Mock, MagicMock
+from torch.utils.data import DataLoader
 
 from picode.detection.fast_detector import FastDetectorModel
 from picode.detection.training.loss import DetectionLoss

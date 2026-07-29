@@ -1,8 +1,8 @@
 # picode/tests/detection/test_integration.py
 """Integration tests for detection with real models."""
 
-import torch
 import pytest
+import torch
 
 from picode.detection import (
     Detection,
@@ -15,7 +15,7 @@ from picode.detection import (
     Quadrilateral,
     Rectifier,
 )
-from picode.models.stegastamp import Encoder, Decoder
+from picode.models.stegastamp import Decoder, Encoder
 
 
 class TestDetectorIntegration:
