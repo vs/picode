@@ -16,7 +16,9 @@ class TestPicodeLiteIntegration:
 
     @pytest.fixture
     def decoder(self) -> Decoder:
-        return Decoder(num_bits=63)
+        # The decoder flattens into a fixed-size FC head, so it must be built
+        # for the resolution these tests feed it (320x320), not the 512 default.
+        return Decoder(num_bits=63, input_size=320)
 
     @pytest.fixture
     def bch(self) -> BCH:
