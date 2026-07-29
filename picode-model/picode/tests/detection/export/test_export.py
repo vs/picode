@@ -115,16 +115,20 @@ class TestJITTrace:
             assert torch.allclose(orig, traced, atol=1e-5)
 
 
-# Skip Core ML tests if coremltools not installed
+# Skip Core ML tests if coremltools is unusable.
+# Catch Exception, not just ImportError: coremltools pulls in
+# torch.ao.quantization, which raises AttributeError on Python 3.13+ because it
+# assigns __module__ on a typing.Union alias. A narrower except would let that
+# escape and break collection for this whole module.
 try:
-    import coremltools
+    import coremltools  # noqa: F401 - imported to probe availability
 
     HAS_COREMLTOOLS = True
-except ImportError:
+except Exception:  # noqa: BLE001 - any import failure means "cannot test export"
     HAS_COREMLTOOLS = False
 
 
-@pytest.mark.skipif(not HAS_COREMLTOOLS, reason="coremltools not installed")
+@pytest.mark.skipif(not HAS_COREMLTOOLS, reason="coremltools not importable")
 class TestCoreMLExport:
     """Tests for Core ML export (requires coremltools)."""
 
@@ -182,14 +186,14 @@ class TestCoreMLExport:
 
 # Skip TFLite tests if dependencies not installed
 try:
-    import tensorflow
+    import tensorflow  # noqa: F401 - imported to probe availability
 
     HAS_TENSORFLOW = True
 except ImportError:
     HAS_TENSORFLOW = False
 
 try:
-    import ai_edge_torch
+    import ai_edge_torch  # noqa: F401 - imported to probe availability
 
     HAS_AI_EDGE_TORCH = True
 except ImportError:
@@ -226,7 +230,6 @@ class TestTFLiteExport:
     @pytest.mark.skipif(not HAS_TENSORFLOW, reason="tensorflow not installed")
     def test_get_tflite_model_info(self) -> None:
         """Can get info from TFLite model."""
-        from picode.detection.export.tflite import get_tflite_model_info
 
         # Create a simple test model and export it
         # This test only runs if we have a tflite file
