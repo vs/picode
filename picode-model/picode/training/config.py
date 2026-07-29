@@ -55,6 +55,31 @@ class GANConfig:
 
 
 @dataclass
+class GrainLossConfig:
+    """PicoGrain loss configuration.
+
+    Grain is an intentional aesthetic, so the standard sharp-image L2 and
+    LPIPS terms would suppress exactly what we are trying to produce. When
+    this block is present, structure losses are computed on blurred images
+    instead, and two grain-specific terms are added.
+
+    Args:
+        structure_blur_sigma: Gaussian sigma applied before L2/LPIPS so the
+            grain texture is removed but colour and structure are compared.
+        lum_fidelity: Weight for the inverse-luminance residual penalty,
+            which keeps grain out of shadows.
+        envelope_tv: Weight for total variation on the encoder envelope,
+            keeping the message carrier smooth.
+        lum_floor: Minimum luminance mask value (matches encoder default).
+    """
+
+    structure_blur_sigma: float = 2.0
+    lum_fidelity: LossRamp = field(default_factory=lambda: LossRamp(1.0, 50000))
+    envelope_tv: LossRamp = field(default_factory=lambda: LossRamp(0.5, 50000))
+    lum_floor: float = 0.1
+
+
+@dataclass
 class LossConfig:
     """Loss function configuration with ramping.
 
@@ -105,6 +130,9 @@ class LossConfig:
 
     # Tier classifier loss (PicoTier)
     tier_classifier: LossRamp = field(default_factory=lambda: LossRamp(1.0, 1))
+
+    # PicoGrain grain-aware losses. None for every other model type.
+    grain: GrainLossConfig | None = None
 
     # GAN training settings
     gan_config: GANConfig = field(default_factory=GANConfig)
@@ -351,6 +379,13 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
         # GANConfig
         if "gan_config" in loss_data and isinstance(loss_data["gan_config"], dict):
             loss_data["gan_config"] = GANConfig(**loss_data["gan_config"])
+        # GrainLossConfig (PicoGrain) with its own nested LossRamps
+        if "grain" in loss_data and isinstance(loss_data["grain"], dict):
+            grain_data = dict(loss_data["grain"])
+            for key in ["lum_fidelity", "envelope_tv"]:
+                if key in grain_data and isinstance(grain_data[key], dict):
+                    grain_data[key] = LossRamp(**grain_data[key])
+            loss_data["grain"] = GrainLossConfig(**grain_data)
         if "yuv_weights" in loss_data:
             loss_data["yuv_weights"] = tuple(loss_data["yuv_weights"])
         data["loss"] = LossConfig(**loss_data)

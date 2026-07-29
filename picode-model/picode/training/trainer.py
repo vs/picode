@@ -36,6 +36,12 @@ from picode.training.evaluation import (
     Evaluator,
     RobustnessResult,
 )
+from picode.training.grain_losses import (
+    blurred_l2_loss,
+    blurred_lpips_loss,
+    envelope_smoothness_loss,
+    luminance_fidelity_loss,
+)
 from picode.training.logging import CompositeLogger, create_logger
 
 
@@ -780,9 +786,12 @@ class Trainer:
         if isinstance(encoder_output, dict):
             encoded_warped = encoder_output["encoded"]
             encoder_mask = encoder_output.get("mask")  # (B, 1, H, W) or None
+            # PicoGrain: smooth message carrier, used by the envelope TV loss
+            encoder_envelope = encoder_output.get("envelope")  # (B, 1, H, W) or None
         else:
             encoded_warped = encoder_output
             encoder_mask = None
+            encoder_envelope = None
 
         # 3. Compute residual in warped space
         residual_warped = encoded_warped - images_warped
@@ -924,6 +933,7 @@ class Trainer:
             images, encoded, messages, decoded_logits,
             encoded_for_perceptual=encoded_for_perceptual,
             original_for_perceptual=original_for_perceptual,
+            envelope=encoder_envelope,
         )
 
         # Mask regularization (PicoTrust v2)
@@ -1749,6 +1759,7 @@ class Trainer:
         *,
         encoded_for_perceptual: Tensor | None = None,
         original_for_perceptual: Tensor | None = None,
+        envelope: Tensor | None = None,
     ) -> dict[str, Tensor]:
         """Compute all losses with ramping applied.
 
@@ -1757,6 +1768,8 @@ class Trainer:
             encoded: Encoded images (B, C, H, W).
             messages: Original messages (B, num_bits).
             decoded_logits: Decoded message logits (B, num_bits) - NOT probabilities.
+            envelope: (B, 1, H, W) PicoGrain encoder envelope, when available.
+                Enables the envelope total-variation term.
 
         Returns:
             Dict with loss tensors:
@@ -1788,9 +1801,14 @@ class Trainer:
         # Image loss ramps start AFTER no_im_loss_steps phase
         effective_step = max(0, step - no_im_loss_steps)
 
-        # L2 loss with YUV weighting (matches original StegaStamp)
+        # L2 loss with YUV weighting (matches original StegaStamp).
+        # PicoGrain compares blurred images so the intentional grain texture
+        # is not penalised — only colour and structure are constrained.
+        grain_cfg = loss_cfg.grain
         yuv_weights = loss_cfg.yuv_weights
-        if yuv_weights != (1.0, 1.0, 1.0):
+        if grain_cfg is not None:
+            loss_l2 = blurred_l2_loss(original, encoded, grain_cfg.structure_blur_sigma)
+        elif yuv_weights != (1.0, 1.0, 1.0):
             loss_l2 = compute_yuv_l2_loss(original, encoded, yuv_weights)
         else:
             loss_l2 = F.mse_loss(encoded, original)
@@ -1838,10 +1856,40 @@ class Trainer:
         if lpips_scale > 0 and self._get_lpips_fn() is not None:
             _orig_lp = original_for_perceptual if original_for_perceptual is not None else original
             _enc_lp = encoded_for_perceptual if encoded_for_perceptual is not None else encoded
-            loss_lpips = self._compute_lpips(_orig_lp, _enc_lp)
+            if grain_cfg is not None:
+                loss_lpips = blurred_lpips_loss(
+                    _orig_lp,
+                    _enc_lp,
+                    self._get_lpips_fn(),  # type: ignore[arg-type]
+                    grain_cfg.structure_blur_sigma,
+                )
+            else:
+                loss_lpips = self._compute_lpips(_orig_lp, _enc_lp)
             weighted_lpips = lpips_scale * loss_lpips
             total = total + weighted_lpips
             losses["loss_lpips"] = loss_lpips
+
+        # PicoGrain grain-shaping losses.
+        # Luminance fidelity keeps grain out of shadows; envelope TV keeps the
+        # message carrier smooth so the noise carrier supplies the texture.
+        if not skip_image_loss and grain_cfg is not None:
+            lum_scale = self._ramp(
+                grain_cfg.lum_fidelity.scale, grain_cfg.lum_fidelity.ramp_steps, effective_step
+            )
+            if lum_scale > 0:
+                residual_1ch = (encoded - original)[:, 0:1]
+                loss_lum = luminance_fidelity_loss(original, residual_1ch, grain_cfg.lum_floor)
+                total = total + lum_scale * loss_lum
+                losses["loss_lum_fidelity"] = loss_lum
+
+            if envelope is not None:
+                tv_scale = self._ramp(
+                    grain_cfg.envelope_tv.scale, grain_cfg.envelope_tv.ramp_steps, effective_step
+                )
+                if tv_scale > 0:
+                    loss_env_tv = envelope_smoothness_loss(envelope)
+                    total = total + tv_scale * loss_env_tv
+                    losses["loss_envelope_tv"] = loss_env_tv
 
         # Focal Frequency Loss (FFL) — penalizes per-frequency reconstruction error.
         # Targets periodic wave artifacts by weighting hard-to-reconstruct frequencies.

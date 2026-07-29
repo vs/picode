@@ -36,19 +36,27 @@ loss:
   lpips:
     scale: 1.5
     ramp_steps: 50000
-  ffl:
-    scale: 1.0
-    ramp_steps: 50000
-    delay_steps: 0
+  # NOTE: no FFL. Focal Frequency Loss penalises per-frequency reconstruction
+  # error, which directly targets the high-frequency grain we want to keep.
   message_loss_type: mse
   l2_edge_gain: 0.0
   use_border_falloff: true
+  # Grain-aware losses. L2/LPIPS above are computed on blurred images so they
+  # constrain colour and structure without suppressing the grain texture.
+  grain:
+    structure_blur_sigma: 2.0
+    lum_floor: 0.1
+    lum_fidelity:
+      scale: 1.0
+      ramp_steps: 50000
+    envelope_tv:
+      scale: 0.5
+      ramp_steps: 50000
+  # GAN disabled for run 1: the noise carrier is already N(0,1) scaled by the
+  # luminance mask, so grain statistics are film-like by construction. The
+  # grain discriminator needs a real-grain data source that does not exist yet.
   gan_config:
-    enabled: true
-    discriminator_type: patchgan
-    discriminator_lr: 0.000015
-    g_loss_scale: 1.5
-    g_loss_ramp_steps: 20000
+    enabled: false
 
 distortion:
   strategy: curriculum
