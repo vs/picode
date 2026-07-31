@@ -393,7 +393,21 @@ def _dict_to_config(data: dict[str, Any]) -> Config:
     # Handle DistortionConfig with nested DistortionRamps
     if "distortion" in data:
         dist_data = data["distortion"]
-        for key in ["perspective", "brightness", "saturation", "hue", "noise", "jpeg_quality"]:
+        for key in [
+            "perspective",
+            "brightness",
+            "saturation",
+            "hue",
+            "noise",
+            "jpeg_quality",
+            # Print-to-photo chain. Omitted here originally, so any config
+            # enabling them parsed to raw dicts and crashed the curriculum.
+            "resolution_loss",
+            "shot_noise",
+            "barrel_distortion",
+            "vignetting",
+            "chromatic_aberration",
+        ]:
             if key in dist_data and isinstance(dist_data[key], dict):
                 dist_data[key] = DistortionRamp(**dist_data[key])
         if "contrast" in dist_data:
