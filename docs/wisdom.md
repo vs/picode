@@ -566,3 +566,71 @@ after a soft recovery attempt at 1500 (restore EMA weights, halve LR). It
 caught this run in ~15 minutes for about $0.30 instead of burning the full
 5.5-hour schedule. Keep it, and watch `decoder_prob_std` as the leading
 indicator — it collapses well before bit accuracy makes the problem obvious.
+
+---
+
+## BCH vs LDPC at Short Block Lengths (2026-07-31)
+
+Measured on `picotrust_b31_compositing` (step 140000, MIR Flickr, s=0.020,
+Sobel mask floor 0.40). Both codes decode the **same** decoder output on the
+same 50 images, so the only variable is the error-correction strategy.
+
+- **BCH(31,16)** — hard decision, t=3, all 31 channel bits
+- **LDPC(30,17)** — soft decision, 30 bits, multi-SNR ladder [2,3,5,8,10,12],
+  accepting the first parity-passing decode
+
+LDPC carries one *more* payload bit, so it is if anything favoured.
+
+| Distortion | Raw acc | BCH(31,16) | LDPC(30,17) |
+|------------|---------|------------|-------------|
+| clean      | 99.1%   | 50/50      | 49/50 |
+| jpeg50     | 99.4%   | 50/50      | 50/50 |
+| jpeg25     | 98.3%   | 48/50      | 50/50 |
+| jpeg10     | 87.7%   | 31/50      | 30/50 |
+| blur 1.0   | 99.3%   | 50/50      | 49/50 |
+| blur 2.0   | 98.5%   | 48/50      | 48/50 |
+| noise 0.05 | 95.1%   | 45/50      | 48/50 |
+| rescale 0.5| 99.1%   | 50/50      | 49/50 |
+| combo      | 97.8%   | 48/50      | 50/50 |
+| **total**  |         | **420/450**| **423/450** |
+
+### Lesson: LDPC needs long codewords — use BCH at short block lengths
+
+A 3-image difference out of 450 is a tie. The soft-decision advantage does not
+materialise at n≈30, because belief propagation needs a long block to work:
+short parity graphs have tight cycles and BP gets too few rounds of genuine
+information mixing. LDPC wants codeword lengths in the hundreds.
+
+Note `b72`'s LDPC(72,38) is also short by LDPC standards and may be leaving
+performance on the table — worth measuring the same way.
+
+Practical note: **pyldpc cannot construct n=31 at all.** `d_c` must divide `n`,
+and 31 is prime. Any LDPC at this block length needs n=30 or n=32.
+
+**Takeaway:** "Soft decision beats hard decision" is a statement about long
+codes. At short block lengths, prefer BCH — it is simpler, faster (no SNR
+ladder, no iteration), and more predictable.
+
+### Lesson: LDPC's confident-but-wrong failure survives the SNR ladder
+
+LDPC lost one image on **clean** input at 99.1% raw bit accuracy — a codeword
+hard-decision BCH recovers trivially. The multi-SNR sweep mitigates the
+pathology recorded in the LDPC SNR notes but does not eliminate it. BP can
+still talk itself out of a nearly-perfect codeword.
+
+The win/loss pattern is consistent with this: LDPC is ahead only in the middle
+band (jpeg25, noise, combo: +7 combined) where errors are numerous but soft
+values still carry information, and behind on easy cases (-4) where there is
+nothing to gain and only the pathology to lose.
+
+### Lesson: Separate channel limits from ECC limits before optimising the code
+
+JPEG Q10 fails for both codes (31/50 and 30/50) because raw accuracy drops to
+87.7% — a 12.3% BER. BCH t=3 covers 9.7%; LDPC(30,17) at rate 0.567 cannot
+reliably cover 12.3% either. Both fail on the same images for the same reason:
+not enough information survives in the signal.
+
+No decoder change fixes this. It needs a stronger model or a lower-rate code
+(fewer payload bits, more redundancy). Compute the BER your channel produces
+and compare it to the code's correction capacity *before* assuming a smarter
+decoder will help.
