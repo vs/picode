@@ -694,3 +694,70 @@ acting on it — especially before changing shared infrastructure.
 (The related observation that every earlier PicoTrust model was trained on GCE,
 which has no such gate, is factually true and worth knowing, but it was not the
 cause of this failure.)
+
+---
+
+## Print-to-Photo Distortions Are Redundant (2026-07-31)
+
+`picotrust_b31_coco_print` was trained to survive mild print-then-photograph:
+COCO train2017, strength 0.020, compositing, plus the five print-to-photo
+distortions (resolution loss, shot noise, barrel, vignetting, chromatic
+aberration) enabled for the first time. 140k steps, ~6.6h on an A10G.
+
+**It came out worse than the model it was meant to beat.** Head-to-head against
+`picotrust_b31_compositing` on the same 50 images, same Sobel mask, same
+BCH(31,16), at the same strength:
+
+| Gate | MIR Flickr (no print training) | COCO + print chain |
+|------|-------------------------------|--------------------|
+| clean | 49/50 | 49/50 |
+| jpeg50 | 50/50 | 47/50 |
+| jpeg25 | 49/50 | 47/50 |
+| jpeg10 | 22/50 | 12/50 |
+| blur 1.0 | 50/50 | 49/50 |
+| blur 2.0 | 49/50 | 46/50 |
+| noise 0.05 | 47/50 | 43/50 |
+| rescale 0.5 | 50/50 | 49/50 |
+| combo | 49/50 | 47/50 |
+| resolution_loss | 50/50 | 49/50 |
+| vignetting | 49/50 | 48/50 |
+| barrel | 49/50 | 49/50 |
+| chromatic_ab | 50/50 | 49/50 |
+| print_chain | 49/50 | 47/50 |
+| print+jpeg30 | 46/50 | 43/50 |
+| **total** | **708/750** | **674/750** |
+
+PSNR was identical (40.32 vs 40.35 dB); TRC slightly worse (0.600 vs 0.584).
+
+### Lesson: the existing curriculum already covers mild print-to-photo
+
+Read the MIR Flickr column on the print gates. That model **never saw a single
+print distortion in training**, yet scores resolution_loss 50/50, chromatic_ab
+50/50, vignetting 49/50, and the full print_chain 49/50.
+
+Perspective, blur, JPEG, noise, brightness and rescale already confer the
+invariances mild print-then-photograph needs. `resolution_loss` largely
+duplicates rescale; `shot_noise` duplicates gaussian noise. The five additions
+bought no new robustness while enlarging the distortion space the model had to
+cover on the same capacity and step budget — over-augmentation, paid for out of
+general accuracy. JPEG Q10 nearly halved (22/50 -> 12/50).
+
+**Takeaway:** do not enable the print-to-photo distortions expecting a gain. If
+you need mild print robustness, `picotrust_b31_compositing` already delivers it
+at 49/50 through the print chain and 46/50 through print+JPEG30. Before adding
+augmentation, first measure whether the existing model already handles the
+target channel — augmentation is only worth its cost if there is a measured gap.
+
+### Lesson: change one variable per training run
+
+This run altered the dataset (MIR Flickr -> COCO) **and** the distortion set at
+the same time. The regression is real and reproducible, but it cannot be
+attributed to either cause. The clean design would have been to enable the
+print chain while holding the dataset fixed.
+
+A ~$7 run that produces an unattributable result is a poor trade against a ~$7
+run that isolates one variable. Decide what the run is meant to prove, then
+check that the config changes only one thing that could affect it.
+
+(Ironically, the finding above — that the print distortions are redundant —
+suggests the dataset may be the real cause of the regression. Still unknown.)
