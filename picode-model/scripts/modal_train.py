@@ -64,7 +64,9 @@ CHECKPOINT_PATH = "/checkpoints"
 @app.function(
     image=image,
     gpu="A10G",  # A10G 24GB ($1.10/hr). Options: T4, A10G, A100, H100
-    timeout=3600 * 12,  # 12 hour max
+    timeout=3600 * 24,  # 24 hour max — 140k steps with compositing plus the
+    # print-to-photo chain runs 8-10h, close enough to a 12h ceiling to risk
+    # a mid-run kill. Only actual runtime is billed, so a higher cap is free.
     volumes={
         DATA_PATH: data_volume,
         CHECKPOINT_PATH: checkpoint_volume,
