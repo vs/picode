@@ -148,10 +148,25 @@ def train(
     print(f"LR: {trainer.config.training.lr}")
     print()
 
-    # Monkey-patch _train_step to detect bootstrap collapse early
+    # Monkey-patch _train_step to detect bootstrap collapse early.
+    #
+    # The check must land AFTER the no-image-loss phase. During that phase the
+    # encoder trains with no L2 restraint, so a low decoder_prob_std is expected
+    # rather than diagnostic — Trainer.fit's own collapse detector refuses to
+    # judge before max(warmup_steps, no_im_loss_steps) for exactly this reason.
+    # A hardcoded step 2000 killed healthy PicoTrust runs, whose standard recipe
+    # uses no_im_loss_steps=10000. Mirror the trainer's gating, keeping the
+    # original step 2000 as a floor so configs with a short warmup (e.g.
+    # no_im_loss_steps=1000) still fail fast.
+    _training = trainer.config.training
+    _bootstrap_check_step = max(
+        2000,
+        max(_training.warmup_steps, _training.no_im_loss_steps) + 1000,
+    )
     _original_train_step = trainer._train_step
-    _bootstrap_check_step = 2000
     _bootstrap_min_prob_std = 0.02
+    print(f"Bootstrap collapse check at step {_bootstrap_check_step} "
+          f"(no_im_loss_steps={_training.no_im_loss_steps})")
 
     def _patched_train_step(images):
         metrics = _original_train_step(images)
