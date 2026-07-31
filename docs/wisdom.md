@@ -634,3 +634,63 @@ No decoder change fixes this. It needs a stronger model or a lower-rate code
 (fewer payload bits, more redundancy). Compute the BER your channel produces
 and compare it to the code's correction capacity *before* assuming a smarter
 decoder will help.
+
+---
+
+## PicoTrust Bootstrap Collapse Is Stochastic — Retry, Don't Redesign (2026-07-31)
+
+`picotrust_b31_coco_print` collapsed at step 2000 on the first Modal attempt
+(`prob_std=0.0029`). Relaunching the **identical config** produced a healthy run
+that hit 99% bit accuracy by step 1900. Nothing was changed between the two
+launches except the random initialisation.
+
+Bootstrap collapse is a real and not-rare failure mode for this architecture.
+That is why `scripts/modal_train_autoretry.sh` exists and defaults to 10
+attempts. The correct response to a step-2000 collapse is to relaunch, not to
+re-engineer the config.
+
+### The step-2000 check is trustworthy — the separation is two orders of magnitude
+
+Same config, same phase, both runs still inside `no_im_loss_steps=10000`:
+
+| Step | Collapsed run | Healthy run |
+|------|---------------|-------------|
+| 1800 | acc 0.540, prob_std 0.0022, residual_mean 0.351 | acc 0.984, prob_std 0.497, residual_mean 0.048 |
+| 1900 | acc 0.427, prob_std 0.0021, residual_mean 0.337 | acc 1.000, prob_std 0.498, residual_mean 0.116 |
+| 2000 | acc ~0.5,  prob_std 0.0029, residual_mean ~0.34 | acc 0.992, prob_std 0.497, residual_mean -0.011 |
+
+A healthy PicoTrust run reaches near-perfect accuracy **long before** image
+losses engage at step 10000. `prob_std` separates the two cases by ~200x
+against a 0.02 threshold, so the check is cheap, early, and unambiguous.
+
+**Do not move the bootstrap check later to "give the model more time".** It was
+briefly changed to fire at `max(warmup_steps, no_im_loss_steps) + 1000` on the
+theory that step 2000 sat too early in the unrestrained phase. The theory was
+wrong, and the change only made failures take 31 minutes to detect instead of 6.
+Reverted.
+
+### Residual growth during no_im_loss is not by itself a collapse signal
+
+Image losses are weighted to zero while `step < no_im_loss_steps`, so the
+encoder is unrestrained and `residual_mean` wanders in both runs. The healthy
+run fluctuated around 0.05-0.12 and re-centred; the collapsed run climbed to
+0.35 and stayed. Magnitude alone does not discriminate — **watch
+`decoder_prob_std`**, which is unambiguous.
+
+### Meta-lesson: a consistent story is not a verified diagnosis
+
+The collapse was initially explained by combining two true facts — the encoder
+is unrestrained during `no_im_loss_steps`, and `Trainer.fit`'s own detector
+deliberately waits until `max(warmup_steps, no_im_loss_steps)` before judging —
+into a conclusion that the Modal gate was mis-calibrated. Every ingredient was
+real and the story was coherent. It was still wrong.
+
+The discriminating measurement was trivial and was simply never taken: *what
+does a healthy run look like at step 2000?* One grep against the next run
+answered it and demolished the theory. When a failure has a plausible
+mechanism, find the observation that separates it from the alternatives before
+acting on it — especially before changing shared infrastructure.
+
+(The related observation that every earlier PicoTrust model was trained on GCE,
+which has no such gate, is factually true and worth knowing, but it was not the
+cause of this failure.)
