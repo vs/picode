@@ -1,6 +1,8 @@
 # picode/tests/detection/test_augmentation.py
 """Tests for detection augmentation pipeline."""
 
+import random
+
 import pytest
 import torch
 from torch import Tensor
@@ -10,6 +12,14 @@ from picode.detection.training.augmentation import (
     GeometricAugmentation,
     PhotometricAugmentation,
 )
+
+
+@pytest.fixture(autouse=True)
+def _seed_rng() -> None:
+    """Augmentations draw from ``random``; a few percent of draws are no-ops, so seed
+    every test to keep "modifies" assertions deterministic."""
+    random.seed(0)
+    torch.manual_seed(0)
 
 
 class TestPhotometricAugmentation:

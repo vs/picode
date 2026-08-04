@@ -21,7 +21,7 @@ final class FastDetectorTests: XCTestCase {
     func testDecodeReturnsResultWithFallback() async throws {
         // Without bundled models, FastDetector falls back to stub-like behavior
         let detector = FastDetector()
-        let image = UIImage()
+        let image = makeTestImage()
 
         let result = try await detector.decode(image: image)
 
@@ -35,7 +35,7 @@ final class FastDetectorTests: XCTestCase {
 
     func testDecodeResultHasValidRegion() async throws {
         let detector = FastDetector()
-        let image = UIImage()
+        let image = makeTestImage()
 
         let result = try await detector.decode(image: image)
 
@@ -53,7 +53,7 @@ final class FastDetectorTests: XCTestCase {
 
     func testDecodeResultHasRawBits() async throws {
         let detector = FastDetector()
-        let image = UIImage()
+        let image = makeTestImage()
 
         let result = try await detector.decode(image: image)
 
@@ -67,11 +67,23 @@ final class FastDetectorTests: XCTestCase {
         }
     }
 
+    func testDecodeRejectsEmptyImage() async {
+        // An image with no backing bitmap cannot be converted to a CIImage
+        do {
+            _ = try await FastDetector().decode(image: UIImage())
+            XCTFail("Expected invalidImage")
+        } catch DecodeError.invalidImage {
+            // expected
+        } catch {
+            XCTFail("Expected invalidImage, got \(error)")
+        }
+    }
+
     // MARK: - Performance Tests
 
     func testDecodePerformance() async throws {
         let detector = FastDetector()
-        let image = UIImage()
+        let image = makeTestImage()
 
         // Measure decode time
         let start = CFAbsoluteTimeGetCurrent()
@@ -109,11 +121,24 @@ final class BitConversionTests: XCTestCase {
         // Test that high-confidence bits produce readable output
         // Note: This tests the internal logic indirectly through decode result
         let detector = FastDetector()
-        let image = UIImage()
+        let image = makeTestImage()
 
         let result = try await detector.decode(image: image)
         // Message should be non-empty
         XCTAssertFalse(result.message.isEmpty)
+    }
+}
+
+// MARK: - Helpers
+
+/// Renders a small gradient image; `UIImage()` has no bitmap and is rejected by the decoder.
+func makeTestImage(size: CGSize = CGSize(width: 320, height: 320)) -> UIImage {
+    UIGraphicsImageRenderer(size: size).image { context in
+        let colors = [UIColor.darkGray.cgColor, UIColor.lightGray.cgColor] as CFArray
+        let gradient = CGGradient(colorsSpace: nil, colors: colors, locations: nil)!
+        context.cgContext.drawLinearGradient(
+            gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: []
+        )
     }
 }
 
