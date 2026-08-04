@@ -14,6 +14,8 @@ from picode_scraper.config import Config, load_config
     "-c",
     "config_path",
     type=click.Path(exists=True, path_type=Path),
+    envvar="PICODE_CONFIG",
+    show_envvar=True,
     help="Path to config file",
 )
 @click.option("--json-logs", is_flag=True, help="Output JSON formatted logs")
@@ -35,6 +37,23 @@ def cli(ctx: click.Context, config_path: Path | None, json_logs: bool, log_level
             raise click.ClickException(str(e))
     else:
         ctx.obj["config"] = None
+
+
+@cli.command("init-db")
+@click.pass_context
+def init_db_command(ctx: click.Context) -> None:
+    """Create database tables (idempotent; existing tables are left untouched)."""
+    from picode_scraper.db import Base, init_db
+
+    config: Config | None = ctx.obj.get("config")
+
+    if config is None:
+        click.echo("Error: Config file required for init-db command")
+        raise SystemExit(1)
+
+    engine = init_db(config.database)
+    Base.metadata.create_all(engine)
+    click.echo(f"Database ready: {', '.join(sorted(Base.metadata.tables))}")
 
 
 @cli.command()

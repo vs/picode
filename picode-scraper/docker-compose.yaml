@@ -17,7 +17,7 @@ services:
 
   migrate:
     build: .
-    command: ["python", "-c", "from picode_scraper.db import init_db; from picode_scraper.config import load_config; init_db(load_config('/app/configs/default.yaml').database)"]
+    command: ["init-db"]
     environment:
       PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
     depends_on:
@@ -26,7 +26,7 @@ services:
 
   discover:
     build: .
-    command: ["discover", "-c", "/app/configs/default.yaml", "--list"]
+    command: ["discover", "--list"]
     environment:
       PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
     depends_on:
@@ -37,7 +37,7 @@ services:
 
   worker:
     build: .
-    command: ["harvest", "-c", "/app/configs/default.yaml"]
+    command: ["harvest"]
     environment:
       PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
     volumes:
@@ -53,12 +53,12 @@ services:
 
   status:
     build: .
-    command: ["status", "-c", "/app/configs/default.yaml"]
+    command: ["status"]
     environment:
       PICODE_DATABASE__URL: postgresql://picode:picode@db:5432/picode_scraper
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     profiles:
       - status
 

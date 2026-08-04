@@ -1,5 +1,6 @@
 """Configuration loading and validation."""
 
+import os
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -75,6 +76,37 @@ class Config(BaseSettings):
     model_config = {"env_prefix": "PICODE_", "env_nested_delimiter": "__"}
 
 
+ENV_PREFIX = "PICODE_"
+ENV_NESTED_DELIMITER = "__"
+
+
+def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
+    """Overlay ``PICODE_<SECTION>__<KEY>`` environment variables onto YAML data.
+
+    pydantic-settings gives init kwargs priority over the environment, so values
+    passed to ``Config(**data)`` would otherwise shadow env vars.
+
+    Args:
+        data: Parsed YAML configuration.
+
+    Returns:
+        The same dict with environment overrides applied.
+    """
+    for name, value in os.environ.items():
+        if not name.startswith(ENV_PREFIX) or name == f"{ENV_PREFIX}CONFIG":
+            continue
+        keys = name[len(ENV_PREFIX) :].lower().split(ENV_NESTED_DELIMITER)
+        node = data
+        for key in keys[:-1]:
+            child = node.get(key)
+            if not isinstance(child, dict):
+                child = {}
+                node[key] = child
+            node = child
+        node[keys[-1]] = value
+    return data
+
+
 def load_config(path: str | Path) -> Config:
     """Load config from YAML file with environment variable overrides.
 
@@ -101,4 +133,4 @@ def load_config(path: str | Path) -> Config:
             data: dict[str, Any] = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML in config file {config_path.absolute()}: {e}") from e
-    return Config(**data)
+    return Config(**_apply_env_overrides(data))

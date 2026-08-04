@@ -65,6 +65,28 @@ def test_cli_with_config(config_file: Path, runner: CliRunner, mock_db: None) ->
     assert result.exit_code == 0
 
 
+def test_cli_config_from_env(config_file: Path, runner: CliRunner, mock_db: None) -> None:
+    """PICODE_CONFIG should work in place of --config (used by the Docker image)."""
+    result = runner.invoke(cli, ["status"], env={"PICODE_CONFIG": str(config_file)})
+    assert result.exit_code == 0
+
+
+def test_cli_init_db_creates_tables(runner: CliRunner, tmp_path: Path) -> None:
+    """init-db should create all tables and be safe to run twice."""
+    import sqlite3
+
+    db_path = tmp_path / "scraper.db"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump({"database": {"url": f"sqlite:///{db_path}"}}))
+
+    for _ in range(2):
+        result = runner.invoke(cli, ["--config", str(config_path), "init-db"])
+        assert result.exit_code == 0, result.output
+
+    tables = {row[0] for row in sqlite3.connect(db_path).execute("SELECT name FROM sqlite_master")}
+    assert {"sources", "harvest_tasks", "images", "pairs"} <= tables
+
+
 def test_cli_discover_requires_config() -> None:
     """Discover command should require config."""
     runner = CliRunner()

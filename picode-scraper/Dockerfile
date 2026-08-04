@@ -2,17 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install OpenCV dependencies and other system packages
+# opencv-python-headless only needs glib at runtime (no libGL/X11)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files first for better caching
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 COPY picode_scraper/__init__.py picode_scraper/
 
 # Install dependencies (without dev)

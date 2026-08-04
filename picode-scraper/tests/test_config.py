@@ -107,3 +107,25 @@ def test_load_config_invalid_yaml() -> None:
             load_config(config_path)
     finally:
         config_path.unlink()
+
+
+def test_env_overrides_yaml_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PICODE_<SECTION>__<KEY> env vars should override values from the YAML file."""
+    config_data = {
+        "database": {"url": "postgresql://user:pass@localhost:5432/test"},
+        "scraping": {"request_delay": 2.0},
+    }
+    monkeypatch.setenv("PICODE_DATABASE__URL", "postgresql://user:pass@db:5432/test")
+    monkeypatch.setenv("PICODE_SCRAPING__REQUEST_DELAY", "0.5")
+    monkeypatch.setenv("PICODE_STORAGE__BACKEND", "s3")
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        yaml.dump(config_data, f)
+        config_path = Path(f.name)
+
+    config = load_config(config_path)
+
+    assert config.database.url == "postgresql://user:pass@db:5432/test"
+    assert config.scraping.request_delay == 0.5
+    assert config.storage.backend == "s3"
+    config_path.unlink()
