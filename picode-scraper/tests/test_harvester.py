@@ -460,37 +460,16 @@ def test_worker_marks_dead_letter_after_max_retries(mock_config: Config) -> None
     with patch("picode_scraper.harvester.worker.create_storage_backend"):
         worker = HarvestWorker(mock_config)
 
-    # Create mock database session
-    mock_db = MagicMock()
+    # (retry_count before failure, expected status): max_retries is the threshold
+    for retry_count, expected in [(2, "failed"), (3, "dead_letter"), (5, "dead_letter")]:
+        task = MagicMock(retry_count=retry_count)
+        mock_db = MagicMock()
+        mock_db.get.return_value = task
 
-    # Test case 1: retry_count = 2 (below max), should mark as 'failed'
-    mock_db.execute.return_value.fetchone.return_value = (2,)  # current retry_count = 2
-    worker._mark_failed(mock_db, task_id=1, error="Test error")
+        worker._mark_failed(mock_db, task_id=1, error="Test error")
 
-    # Check that status is 'failed'
-    call_args = mock_db.execute.call_args_list[-1]
-    assert call_args[0][1]["status"] == "failed"
-
-    # Reset mock
-    mock_db.reset_mock()
-
-    # Test case 2: retry_count = 3 (equals max), should mark as 'dead_letter'
-    mock_db.execute.return_value.fetchone.return_value = (3,)  # current retry_count = 3
-    worker._mark_failed(mock_db, task_id=2, error="Test error")
-
-    # Check that status is 'dead_letter'
-    call_args = mock_db.execute.call_args_list[-1]
-    assert call_args[0][1]["status"] == "dead_letter"
-
-    # Reset mock
-    mock_db.reset_mock()
-
-    # Test case 3: retry_count = 5 (above max), should mark as 'dead_letter'
-    mock_db.execute.return_value.fetchone.return_value = (5,)  # current retry_count = 5
-    worker._mark_failed(mock_db, task_id=3, error="Test error")
-
-    # Check that status is 'dead_letter'
-    call_args = mock_db.execute.call_args_list[-1]
-    assert call_args[0][1]["status"] == "dead_letter"
+        assert task.status == expected
+        assert task.error_message == "Test error"
+        assert task.retry_count == retry_count + 1
 
     worker.close()

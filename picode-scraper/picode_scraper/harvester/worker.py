@@ -138,7 +138,7 @@ class HarvestWorker:
             Claimed HarvestTask or None if no pending tasks
         """
         # Check if using SQLite (doesn't support FOR UPDATE SKIP LOCKED)
-        is_sqlite = "sqlite" in str(db.bind.url) if db.bind else False
+        is_sqlite = "sqlite" in str(db.bind.engine.url) if db.bind else False
 
         if is_sqlite:
             # SQLite: simple claim for single-worker testing
