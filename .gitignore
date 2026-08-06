@@ -65,3 +65,17 @@ Thumbs.db
 
 # Git worktrees
 .worktrees/
+
+# Local AI-assistant notes and plan docs (kept out of the public repo)
+CLAUDE.md
+docs/superpowers/
+
+# Test coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Local environment (see .env.example)
+.env
+.env.*
+!.env.example
