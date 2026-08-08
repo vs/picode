@@ -2,6 +2,10 @@
 
 Distilled from 12 model versions and 27 training lessons. This is the recipe for building a production-quality steganography model from scratch.
 
+> **Note:** this recipe is the blur-based v12 approach. The current production model
+> (b72s20m85) replaces decoder/perceptual blur with a Sobel texture mask in training — see
+> [sobel_adaptive.md](sobel_adaptive.md) and `picode-model/configs/picotrust_b72s20m85.yaml`.
+
 ## Recommended Architecture
 
 | Component | Value | Why |

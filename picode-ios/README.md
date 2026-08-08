@@ -1,84 +1,84 @@
 # Picode iOS
 
-> Part of the [Picode monorepo](../README.md). See also: [picode-model](../picode-model/) for the PyTorch training framework.
+> Part of the [Picode monorepo](../README.md). See also [picode-model](../picode-model/), the
+> PyTorch framework that trains and exports the models this app runs.
 
-iPhone camera app for decoding picode watermarks.
+A SwiftUI camera app that finds a Picode-encoded image in the viewfinder and decodes its
+message on-device with Core ML.
 
 ## Features
 
-- Point camera at an encoded image
-- Tap to capture and decode
-- View decoded message with technical metadata:
-  - Confidence score
-  - Bit accuracy
-  - Decode time
-  - Detection region
+- Live viewfinder scanning with a fast detector that outlines the encoded region (quadrilateral
+  overlay)
+- Tap-to-capture for a slower, higher-quality decode
+- Perspective rectification of the detected region before decoding
+- Result sheet showing the message, confidence, bit accuracy, decode time and detected region
+- Protocol-based decoders (`PicodeDecoder`): real Core ML pipelines (`FastDetector`,
+  `SlowDetector`) and a `StubDecoder` for UI work without models
 
 ## Requirements
 
-- iOS 16.0+
-- Xcode 15.0+
+- Xcode 15+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
+- iOS 16.0+, iPhone only. The camera needs a physical device; the simulator is enough for tests.
 
 ## Setup
 
-1. Open Xcode and create a new project:
-   - Select **App** template
-   - Product Name: `picode-ios`
-   - Interface: **SwiftUI**
-   - Language: **Swift**
+```bash
+cd picode-ios
+xcodegen generate            # regenerates picode-ios.xcodeproj from project.yml
+open picode-ios.xcodeproj
+```
 
-2. Replace the generated files with the source files in `picode-ios/`:
-   - Delete the auto-generated `ContentView.swift`
-   - Add all files from `picode-ios/` maintaining the folder structure
-   - Add `Info.plist` to the project
+Set your development team under *Signing & Capabilities* before running on a device.
 
-3. Configure the project:
-   - Set minimum deployment target to **iOS 16.0**
-   - Add **Camera** capability in Signing & Capabilities
+### Models
 
-4. Build and run on a physical device (camera not available in simulator)
+Put the exported `.mlpackage` files in `picode-ios/Models/`, and Xcode compiles them to
+`.mlmodelc` in the app bundle. The directory is optional in `project.yml`, and model files are
+git-ignored. Without models, the detectors fall back to placeholder output so the UI still
+works.
 
-## Project Structure
+| Model name | Produced by |
+|-------------|-------------|
+| `FastDetector` | `detect-export coreml …` (from `picode-model`) |
+| `PicodeDecoder` or `StegaStampDecoder` | `python scripts/export_decoder.py …` (from `picode-model`) |
+
+The on-device pipeline is currently wired for the 100-bit, 400×400 StegaStamp-style decoder
+(`FastDetector.swift`: `numBits`, `decoderInputSize`). Running the 72-bit, 512×512 PicoTrust
+production decoder means updating those constants and adding LDPC decoding.
+
+## Project structure
 
 ```
 picode-ios/
-├── App/
-│   └── PicodeApp.swift          # App entry point
-├── Camera/
-│   ├── CameraController.swift   # AVFoundation wrapper
-│   └── CameraPreview.swift      # UIViewRepresentable
+├── App/                     # PicodeApp entry point, assets
+├── Camera/                  # AVFoundation controller + SwiftUI preview
 ├── Decoder/
-│   ├── PicodeDecoder.swift      # Protocol + types
-│   └── StubDecoder.swift        # Fake decoder for dev
-├── Views/
-│   ├── CameraView.swift         # Main screen
-│   ├── CameraViewModel.swift    # State management
-│   ├── ResultsView.swift        # Results sheet
-│   └── Components/
-│       └── CaptureButton.swift  # Capture button
-└── Info.plist                   # Permissions
+│   ├── PicodeDecoder.swift  # Protocol, DecodeResult, DecodeError
+│   ├── FastDetector.swift   # Real-time detector + decoder (Core ML / Vision)
+│   ├── SlowDetector.swift   # Higher-quality decode for captured frames
+│   └── StubDecoder.swift    # Fake decoder for UI development
+├── Types/                   # Quadrilateral, ScanState
+├── Views/                   # CameraView(+Model), ResultsView, overlays, capture button
+└── Info.plist
+picode-iosTests/             # XCTest: detectors, view model, geometry, integration
 ```
 
 ## Architecture
 
-- **SwiftUI** for UI with **UIKit** camera integration
-- **MVVM** pattern with `@StateObject` view models
-- **Protocol-based** decoder for easy swapping (stub → Core ML)
-- **async/await** for capture and decode flow
+- **SwiftUI + MVVM**: `CameraViewModel` drives a scan state machine (`ScanState`).
+- **UIKit camera bridge**: `CameraController` wraps `AVCaptureSession`, and `CameraPreview` is
+  a `UIViewRepresentable`.
+- **async/await** for the capture and decode flow.
+- **Vision + Core ML** for inference, and **Core Image** for perspective correction.
 
 ## Testing
 
-Run tests in Xcode:
-- `DecoderTests` - Decoder protocol conformance
-- `ViewModelTests` - State transitions
-
-## Next Steps
-
-1. **Core ML Integration** - Replace `StubDecoder` with real model
-2. **Live Scanning** - Real-time viewfinder detection
-3. **Photo Library** - Import images to decode
-4. **History** - Save decoded messages
+```bash
+xcodebuild test -scheme picode-ios \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
+```
 
 ## License
 
-MIT
+Apache License 2.0. See [LICENSE](../LICENSE).

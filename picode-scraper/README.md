@@ -61,11 +61,8 @@ pip install -e ".[dev]"
 ### Docker
 
 ```bash
-# Build the image
+# Build the image (it reads its config path from PICODE_CONFIG=/app/configs/default.yaml)
 docker build -t picode-scraper:latest .
-
-# Or use pre-built (if published)
-docker pull ghcr.io/your-org/picode-scraper:latest
 ```
 
 ## Quick Start
@@ -86,8 +83,8 @@ docker compose ps
 # Using Docker Compose
 docker compose up migrate
 
-# Or manually
-picode-scraper -c configs/default.yaml status  # Creates tables on first run
+# Or manually (idempotent)
+picode-scraper -c configs/default.yaml init-db
 ```
 
 ### 3. Discover Sources
@@ -223,7 +220,7 @@ export PICODE_SCRAPING__MAX_RETRIES="5"
 picode-scraper [OPTIONS] COMMAND [ARGS]
 
 Options:
-  -c, --config PATH    Path to config file
+  -c, --config PATH    Path to config file [env var: PICODE_CONFIG]
   --json-logs          Output JSON formatted logs (for containers)
   --log-level TEXT     Log level: DEBUG, INFO, WARNING, ERROR [default: INFO]
   --version            Show version and exit
@@ -231,6 +228,12 @@ Options:
 ```
 
 ### Commands
+
+#### `init-db` - Create database tables
+
+```bash
+picode-scraper -c config.yaml init-db   # idempotent; safe to re-run
+```
 
 #### `discover` - Find sources and populate harvest queue
 
@@ -347,8 +350,8 @@ storage:
 On each VPS:
 
 ```bash
-# Pull the image
-docker pull ghcr.io/your-org/picode-scraper:latest
+# Build the image (or push it to your own registry and pull it here)
+docker build -t picode-scraper:latest .
 
 # Create environment file
 cat > /etc/picode/.env << 'EOF'
@@ -366,14 +369,14 @@ docker run -d \
   --env-file /etc/picode/.env \
   --restart unless-stopped \
   picode-scraper:latest \
-  harvest -c /app/configs/default.yaml --worker-id "vps1-worker-1"
+  harvest --worker-id "vps1-worker-1"
 
 docker run -d \
   --name picode-worker-2 \
   --env-file /etc/picode/.env \
   --restart unless-stopped \
   picode-scraper:latest \
-  harvest -c /app/configs/default.yaml --worker-id "vps1-worker-2"
+  harvest --worker-id "vps1-worker-2"
 ```
 
 **Option B: Systemd Service**
@@ -489,9 +492,8 @@ for i in $(seq 1 $WORKERS); do
     --env-file /etc/picode/.env \
     --restart unless-stopped \
     picode-scraper:latest \
-    harvest -c /app/configs/default.yaml \
-    --worker-id "${VPS_NAME}-worker-${i}" \
-    --json-logs
+    --json-logs harvest \
+    --worker-id "${VPS_NAME}-worker-${i}"
 done
 ```
 

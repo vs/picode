@@ -881,18 +881,22 @@ Available at [huggingface.co/vadishev/picotrust](https://huggingface.co/vadishev
 
 | Checkpoint | Strength | PSNR | Accuracy | Bits | Use Case |
 |------------|----------|------|----------|------|----------|
-| v2/picotrust_v2_200k.pt | 0.030 | 32.82 dB | 98.4% | 100 | Legacy |
+| **b72s20m85_mirflickr/picotrust_b72s20m85_mirflickr_best.pt** | **0.020** | **35.90 dB** | **98.5%** | **72** | **Production — Sobel mask in training; use with [Sobel adaptive encoding](sobel_adaptive.md)** |
+| b7238s20p00d00_sobel/picotrust_b7238s20p00d00_sobel_best.pt | 0.020 | — | — | 72 | Same Sobel recipe under its earlier name, trained on the original dataset rather than MIRFLICKR |
+| b96s25m90/picotrust_b96s25m90_best.pt | 0.025 | — | — | 96 | Higher-capacity Sobel model |
+| v21/picotrust_b7238s10p03d03_best.pt | 0.010 | 40.73 dB | 96.4% | 72 | Best blur-based model (100% LDPC success on clean images) |
+| b7238s10p03d00/picotrust_b7238s10p03d00_best.pt | 0.010 | 40.79 dB | 94.2% | 72 | Post-annealed, 99.2% LDPC success |
+| b7238s20p03d00/picotrust_b7238s20p03d00_best.pt | 0.020 | 35.70 dB | 98.4% | 72 | LPIPS blur only (no decoder blur) |
+| v20/picotrust_v20_best.pt | 0.010 | 40.64 dB | 95.2% | 72 | Direct low-strength, σ=1.0 |
+| v17/picotrust_v17_best.pt | 0.010-0.025 | 41.0-34.8 dB | 95.2-99.5% | 72 | FiLM strength-conditioned |
+| v15/picotrust_v15_best.pt | 0.020 | 35.67 dB | 97.4% | 72 | v15 base model |
+| v15/picotrust_v15_s012_best.pt | 0.012 | 39.19 dB | 94.8% | 72 | v15 post-annealed |
+| v15/picotrust_v15_s010_best.pt | 0.010 | 40.68 dB | 93.4% | 72 | v15 post-annealed |
+| v14/picotrust_v14_best.pt | 0.025 | 33.85 dB | 98.4% | 64 | Best blur-era adaptivity (TRC=0.591) |
 | v4/picotrust_v4_200k.pt | 0.020 | 35.56 dB | 97.8% | 100 | Legacy |
-| v14/picotrust_v14_best.pt | 0.025 | 33.85 dB | 98.4% | 64 | Best adaptivity (TRC=0.591) |
-| **v15/picotrust_v15_best.pt** | **0.020** | **35.67 dB** | **97.4%** | **72** | **Production base model** |
-| **v15/picotrust_v15_s012_best.pt** | **0.012** | **39.19 dB** | **94.8%** | **72** | **High PSNR** |
-| **v15/picotrust_v15_s010_best.pt** | **0.010** | **40.68 dB** | **93.4%** | **72** | **Production with adaptive encoding** |
-| **v17/picotrust_v17_best.pt** | **0.010-0.025** | **41.0-34.8 dB** | **95.2-99.5%** | **72** | **Production — FiLM strength-conditioned, auto-adaptive** |
-| **v20/picotrust_v20_best.pt** | **0.010** | **40.64 dB** | **95.2%** | **72** | **Direct low-strength, σ=1.0, best robustness** |
-| **b7238s20p03d03/best.pt** | **0.020** | **35.94 dB** | **98.2%** | **72** | **Low blur base model (σ=0.3)** |
-| **b7238s10p03d03/best.pt** | **0.010** | **40.73 dB** | **96.4%** | **72** | **Production — 100% LDPC success, best overall** |
-| b7238s20p03d00/best.pt | 0.020 | 35.70 dB | 98.4% | 72 | LPIPS blur only (no decoder blur) |
-| b7238s10p03d00/best.pt | 0.010 | 40.79 dB | 94.2% | 72 | Post-annealed, 99.2% LDPC success |
+| v2/picotrust_v2_200k.pt | 0.030 | 32.82 dB | 98.4% | 100 | Legacy |
+
+Other historical checkpoints in the repo (v6c, v7, v9, v10, v22) match the rows of the results table above.
 
 **Naming convention (b7238+ series):** `PicoTrust b{channel}{payload}s{str}p{perc}d{dec}` — e.g., b7238s10p03d03 = 72 channel bits, 38 LDPC payload bits, strength 0.010, perceptual blur σ=0.3, decoder blur σ=0.3. Replaces the sequential version numbering for new models.
 
@@ -922,7 +926,7 @@ python scripts/test_ecc.py checkpoints/best.pt --dir data/samples --max-images 1
 
 ## Configuration
 
-Example configuration (v12 — production model, 64 bits, content-adaptive):
+Example configuration (v12 — 64 bits, blur-based content-adaptivity; for the current production recipe see `configs/picotrust_b72s20m85.yaml`):
 
 ```yaml
 experiment_name: picotrust_v12
@@ -957,7 +961,7 @@ distortion:
   strategy: curriculum
 ```
 
-See `picode-model/configs/` for all training configurations (v1-v20, b7238 series).
+See `picode-model/configs/` for all training configurations (v1-v22, b7238 and b{bits}s{strength}m{floor} series).
 
 ## Training Lessons
 
