@@ -1,156 +1,216 @@
-# Picode
+<p align="center">
+  <img src="docs/assets/logo.svg" width="96" height="96" alt="Picode logo">
+</p>
 
-Neural image steganography framework for encoding hidden messages in photographs. Built on [StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020), evolved into **PicoTrust** — a content-adaptive architecture that hides information in image textures while leaving smooth regions untouched.
+<h1 align="center">Picode</h1>
 
-## Sub-Projects
+<p align="center">
+  <b>Neural image steganography that hides a short ID inside a photo — invisible to people, readable by a phone camera.</b>
+</p>
 
-- **[picode-model/](picode-model/)** - PyTorch training framework for model development
-- **[picode-ios/](picode-ios/)** - iOS application for mobile steganography
-- **[picode-scraper/](picode-scraper/)** - Distributed web scraper for collecting training image datasets
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.x-ee4c2c.svg">
+  <img alt="iOS 16+" src="https://img.shields.io/badge/iOS-16%2B-lightgrey.svg">
+  <a href="https://huggingface.co/vadishev/picotrust"><img alt="Weights on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20weights-picotrust-yellow.svg"></a>
+</p>
+
+![Original, encoded and residual images for three sample photos](docs/assets/hero.png)
+
+<sub>72-bit payload encoded with the production model (b72s20m85) using Sobel adaptive encoding.
+Each image is encoded at the lowest strength on the ladder at which the payload decodes exactly;
+overlaid numbers are raw bit accuracy before error correction. Residual amplified ×10.
+Source photos: public-domain / CC0 samples from scikit-image. Rendered by
+<code>picode-model/scripts/readme_figures.py</code>.</sub>
+
+## Why
+
+QR codes work, but they are ugly and take up space. Picode puts a short, machine-readable ID
+*inside* the photo itself. You can print or display the image, point a camera at it, and look the
+ID up to get a link or metadata.
+
+The hard part is making the signal both **invisible** and **robust**. It has to survive JPEG,
+blur, noise, perspective and print-to-photo capture. Picode starts from
+[StegaStamp](https://github.com/tancik/StegaStamp) (Tancik et al., CVPR 2020) and evolves it
+into **PicoTrust**, an encoder that puts its signal into textured regions and leaves smooth
+areas (sky, skin, walls) almost untouched.
+
+## Features
+
+- **Content-adaptive encoder**: a U-Net with a grayscale, softsign-bounded residual. A Sobel
+  texture mask used during training teaches it to hide the signal in texture (TRC ≈ 0.58).
+- **Adaptive inference**: the encoder runs once at full strength, and the residual is then
+  scaled by the Sobel mask down to the weakest strength that still decodes. Choosing the best of
+  many candidate IDs in one batch avoids "hard" payloads. The result averages about 41 dB PSNR.
+- **Error correction**: soft-decision LDPC (belief propagation over decoder logits) and BCH.
+- **Distortion library**: 19 differentiable distortions (JPEG, blur, noise, perspective,
+  print-to-photo, and more), written in pure PyTorch. Most also have a Kornia twin. They are
+  used for curriculum training and robustness sweeps.
+- **Detection**: a fast binary detector plus a multi-scale detector with perspective
+  rectification. Both export to Core ML and TFLite.
+- **iOS scanner**: a SwiftUI camera app that runs the detector and decoder on-device with
+  Core ML.
+- **Dataset scraper**: a distributed, Postgres-coordinated scraper for real
+  original/re-photographed image pairs.
+- **Experiment log**: more than 20 model generations, with the results and lessons written up
+  in [docs](#documentation).
 
 ## Results
 
-### PicoTrust v14 (best content-adaptivity)
+The production model is **PicoTrust b72s20m85**: 72 channel bits with LDPC(72,38), giving a
+38-bit payload. It uses a 512×512 encoder and decoder and a Sobel mask floor of 0.85.
 
-64 bits, 512→512 decoder, `blur(encoded)` σ=1.0, exponential strength annealing.
+| Mode | PSNR | Bit accuracy | JPEG Q10 | LDPC success |
+|------|------|--------------|----------|--------------|
+| Fixed strength s=0.020 | 35.90 dB | 98.5% | 98.6% | — |
+| Sobel adaptive (composite distortions, 5 trials/image) | 41.0 dB avg | — | — | 93.6% |
 
-| Variant | PSNR | Bit Accuracy | JPEG Q10 | TRC |
-|---------|------|-------------|----------|-----|
-| v14 (strength 0.025) | 33.85 dB | 98.4% | 97.7% | 0.591 |
-| v14 s020 (post-annealed) | 35.15 dB | 98.2% | 96.8% | 0.572 |
+Earlier generations are compared in [docs/picotrust.md](docs/picotrust.md#results) and
+[docs/sobel_adaptive.md](docs/sobel_adaptive.md#results).
 
-With LDPC soft decoding (33 payload bits from 64 coded): 99.8% clean, 99.8% JPEG Q10, 99.8% blur σ=6.
+## Quick start
 
-### PicoTrust v12 (production model)
+### Encode and decode (local)
 
-64 bits, 512→416 decoder, decoder-side blur σ=0.8, blurred LPIPS/GAN.
+```bash
+git clone https://github.com/vs/picode.git && cd picode
+python -m venv venv && source venv/bin/activate
+pip install -e "./picode-model[dev,lpips]"
 
-| Variant | PSNR | Bit Accuracy | JPEG Q10 |
-|---------|------|-------------|----------|
-| v12 (strength 0.014) | 38.11 dB | 95.5% | 93.2% |
-| v12 s010 (de-annealed) | 40.72 dB | 94.0% | 89.8% |
+# Download the production checkpoint (public, ~215 MB)
+pip install huggingface_hub
+hf download vadishev/picotrust b72s20m85_mirflickr/picotrust_b72s20m85_mirflickr_best.pt \
+    --local-dir picode-model/checkpoints
 
-### PicoTier v1 (multi-tier)
+cd picode-model
+CKPT=checkpoints/b72s20m85_mirflickr/picotrust_b72s20m85_mirflickr_best.pt
+picode -c $CKPT encode photo.jpg encoded.png -m "hello" --save-residual residual.png
+picode -c $CKPT decode encoded.png
+```
 
-4-tier model based on v14 techniques. One model, multiple capacity/quality tradeoffs:
+> The `picode` CLI encodes raw bits at the checkpoint's training strength, with no error
+> correction, so an occasional flipped bit can corrupt one character of a text message. The
+> production path (Sobel mask, strength ladder, batch ID selection and LDPC) is described in
+> [docs/sobel_adaptive.md](docs/sobel_adaptive.md). `scripts/readme_figures.py` is a compact,
+> runnable reference implementation.
 
-| Tier | Bits | Payload (LDPC) | Strength | Decoder Blur σ |
-|------|------|---------------|----------|----------------|
-| UHQ | 30 | 17 data bits | 0.010 | 1.4 |
-| HQ | 48 | 26 data bits | 0.011 | 1.0 |
-| MQ | 72 | 38 data bits | 0.012 | 0.8 |
-| LQ | 96 | 50 data bits | 0.013 | 0.6 |
+### Dataset scraper (Docker)
 
-## Key Innovations
+```bash
+cd picode-scraper
+docker compose --profile status run --rm status              # starts Postgres, creates tables, prints stats
+docker compose --profile discover run --rm discover           # lists source plugins
+docker compose --profile harvest up -d --scale worker=3       # runs 3 harvest workers
+```
 
-### Content-adaptive encoding (v12/v14)
+### iOS app
 
-The encoder learns to concentrate residual energy in textured image regions and avoid smooth areas. This makes modifications perceptually invisible without post-processing masks.
+```bash
+cd picode-ios
+xcodegen generate
+open picode-ios.xcodeproj
+```
 
-**How it works:**
-1. **Decoder-side blur**: Gaussian blur on decoder input during training forces the decoder to learn low-frequency patterns
-2. **Blurred LPIPS/GAN**: Perceptual losses computed on `blur(encoded)` enable differential penalization — more in smooth regions, less in textured regions
-3. **Clean output**: The encoder's actual output is never blurred — sharp, clean images at inference
+The app needs Core ML models in `picode-ios/picode-ios/Models/`. Export them with
+`detect-export` and `picode-model/scripts/export_decoder.py`
+(see [picode-ios/README.md](picode-ios/README.md)).
 
-### Exponential strength annealing
+## Configuration
 
-Residual strength anneals from 1.0 to target (e.g., 0.025) using exponential schedule: `strength = initial × (target/initial)^progress`. Spends equal training time per order of magnitude, unlike linear annealing which rushes through the critical low-strength regime.
+Model training is configured with YAML files in `picode-model/configs/`. Any key can be
+overridden on the command line (`picode-train configs/….yaml training.lr=0.0002`). The scraper reads YAML
+too, and every key can be overridden with an environment variable.
 
-### v14 vs v12 architecture
+| Variable | Used by | Default | Description |
+|----------|---------|---------|-------------|
+| `PICODE_CONFIG` | scraper CLI | *(unset)*; `/app/configs/default.yaml` in the Docker image | Config file path (same as `-c/--config`) |
+| `PICODE_DATABASE__URL` | scraper | `postgresql://picode:picode@localhost:5432/picode_scraper` (from `configs/default.yaml`) | PostgreSQL or SQLite URL. docker-compose sets it to host `db` |
+| `PICODE_DATABASE__POOL_SIZE` | scraper | `5` | SQLAlchemy pool size |
+| `PICODE_STORAGE__BACKEND` | scraper | `local` | `local` or `s3` |
+| `PICODE_STORAGE__LOCAL_PATH` | scraper | `/data/images` | Image directory for the `local` backend |
+| `PICODE_STORAGE__S3_BUCKET` | scraper | *(none)* | Bucket for the `s3` backend |
+| `PICODE_STORAGE__S3_PREFIX` | scraper | `images` | Key prefix for the `s3` backend |
+| `PICODE_STORAGE__S3_ENDPOINT_URL` | scraper | *(none)* | Custom S3 endpoint (MinIO, R2, …) |
+| `PICODE_SCRAPING__USER_AGENT` | scraper | `PicodeDatasetCollector/1.0 (research; …)` | HTTP User-Agent |
+| `PICODE_SCRAPING__REQUEST_DELAY` | scraper | `1.0` | Seconds between requests |
+| `PICODE_SCRAPING__MAX_RETRIES` | scraper | `3` | Retries before a task is dead-lettered |
+| `PICODE_SCRAPING__TIMEOUT` | scraper | `30` | HTTP timeout, seconds |
+| `PICODE_SCRAPING__PROXY_URL` | scraper | *(none)* | Optional HTTP proxy |
+| `PICODE_VALIDATION__MIN_IMAGE_SIZE` | scraper | `256` | Minimum image side, px |
+| `PICODE_VALIDATION__MIN_SIMILARITY` | scraper | `0.6` | Pair-matching threshold |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` | scraper (`s3` backend) | *(none)* | Standard boto3 credentials |
+| `LIGHTNING_USERNAME`, `LIGHTNING_API_KEY` | `scripts/lightning_runner.py` | *(none)* | Lightning.ai credentials |
+| `MODEL_NAME` | `scripts/kaggle/kaggle_train.py` | `picodeframe` | Which config the Kaggle kernel trains |
 
-| | v12 | v14 |
-|---|-----|-----|
-| Decoder resolution | 416 | 512 |
-| Decoder blur σ | 0.8 | 1.0 |
-| Blur target | decoder input only | `blur(encoded)` for decoder+LPIPS+GAN |
-| Target strength | 0.014 | 0.025 |
-| Content-adaptivity | moderate | strong (TRC=0.591) |
-| Best PSNR | 40.72 dB (s010) | 35.15 dB (s020) |
-| Use case | max PSNR | max adaptivity |
+[`.env.example`](.env.example) lists every variable with placeholder values. Cloud training
+on Modal, GCE and Kaggle authenticates through each provider's own CLI login, not through
+environment variables.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    PicoTrust v14 Training Pipeline                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  Image (512) + Message (64b) → [U-Net Encoder + E_post]            │
-│                                  grayscale 1ch residual             │
-│                                  softsign × strength                │
-│                                          ↓                          │
-│                              Encoded Image (512)                    │
-│                                          ↓                          │
-│                              [Distortions]                          │
-│                                          ↓                          │
-│                              blur(encoded) σ=1.0                    │
-│                                          ↓                          │
-│                              [Decoder (512)] → Message              │
-│                                                                     │
-│  Losses:                                                            │
-│    L2, FFL     on real encoded image (pixel quality)                │
-│    LPIPS, GAN  on blur(encoded) (content-adaptive gradients)        │
-│    MSE         on message (bit recovery)                            │
-└─────────────────────────────────────────────────────────────────────┘
+Image + ID ─▶ LDPC encode ─▶ Encoder (U-Net + E_post) ─▶ residual × Sobel mask × strength ─▶ Encoded image
+                                                                                                │
+                              print / screen / JPEG / blur / perspective / camera ◀─────────────┘
+                                                                                                │
+ID ◀─ LDPC soft decode ◀─ Decoder (CNN + STN) ◀─ rectified crop ◀─ Detector ◀────────────────────┘
 ```
 
-## Quick Start
+| Directory | What it is |
+|-----------|------------|
+| [`picode-model/`](picode-model/) | PyTorch package: models (PicoTrust, StegaStamp and experimental variants), distortions, ECC, detection, training, CLIs |
+| [`picode-ios/`](picode-ios/) | SwiftUI + Core ML scanner app (XcodeGen project) |
+| [`picode-scraper/`](picode-scraper/) | Distributed scraper for original/capture image pairs (Postgres, S3, Docker) |
+| [`docs/`](docs/) | Architecture notes, experiment results and training lessons |
 
-### Encoding and Decoding
-
-```bash
-cd picode-model
-
-# Encode a message into an image
-picode -c checkpoints/best.pt encode input.jpg output.png -m "Hello World" \
-    --save-original original.png \
-    --save-residual residual.png
-
-# Decode a message from an encoded image
-picode -c checkpoints/best.pt decode encoded.png
-```
-
-### Training
+## Development
 
 ```bash
+source venv/bin/activate
+
+# Model package
 cd picode-model
+pytest picode/tests/ -q          # ~880 tests, CPU-friendly
+ruff check picode/
+
+# Scraper
+cd ../picode-scraper
 pip install -e ".[dev]"
+pytest tests/ -q
+ruff check picode_scraper/ && mypy picode_scraper/
 
-# Train PicoTrust v14 (best content-adaptivity)
-picode-train --config configs/picotrust_v14.yaml
-
-# Train PicoTrust v12 (production, high PSNR)
-picode-train --config configs/picotrust_v12.yaml
-
-# Train PicoTier v1 (multi-tier)
-picode-train --config configs/picotier_v1.yaml
-```
-
-### Error Correction
-
-```python
-from picode.ecc.ldpc import LDPC
-
-# LDPC soft-decision decoding with decoder logit probabilities
-ldpc = LDPC(n=64, d_v=2, d_c=4)
-codeword = ldpc.encode(message)
-decoded = ldpc.decode(soft_probabilities)  # Uses sigmoid(logits), not hard bits
+# iOS
+cd ../picode-ios
+xcodegen generate
+xcodebuild test -scheme picode-ios -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
 ## Documentation
 
-- [PicoTrust Architecture & Results](docs/picotrust.md) — Complete architecture, all version results, training lessons 1-34
-- [Training Best Practices](docs/training_best_practices.md) — Distilled recipe for production models
-- [Training Wisdom](docs/wisdom.md) — Hard-learned lessons from training experiments
+- [PicoTrust architecture and results](docs/picotrust.md): every model generation, its results,
+  and training lessons 1–34
+- [Sobel adaptive encoding](docs/sobel_adaptive.md): the production inference strategy
+- [Evolution timeline](docs/timeline.md): v1 to v18, one paragraph per step (later models are in
+  [sobel_adaptive.md](docs/sobel_adaptive.md))
+- [Training best practices](docs/training_best_practices.md): a distilled training recipe
+- [Training wisdom](docs/wisdom.md): hard-won lessons, including dead ends
+- [PicoTier](docs/picotier.md): a multi-capacity model experiment
+- [Scraper guide](picode-scraper/README.md) and [iOS app](picode-ios/README.md)
 
-## Installation
+## Contributing
 
-```bash
-git clone <repo-url> && cd picode
-python -m venv venv && source venv/bin/activate
-cd picode-model && pip install -e ".[dev]"
-```
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions,
+and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Disclaimer
+
+Picode is a research project. It is **not** a security, authentication or copyright-protection
+mechanism. The payload is not encrypted or signed, and a determined party can detect, remove or
+forge it. Use it only on images you have the right to modify. Robustness figures come from the
+evaluation sets described in the docs, and results on your own images and cameras will vary.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) file.
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attributions, including the MIT-licensed
+StegaStamp work that the baseline models re-implement.
