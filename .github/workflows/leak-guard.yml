@@ -1,0 +1,40 @@
+name: Leak guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rule tests
+        run: python -m unittest scripts/guard/test_rules.py
+
+      - name: Scan pushed / PR commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            range="$HEAD"          # first push or unknown base: scan everything reachable
+          else
+            range="$BASE..$HEAD"
+          fi
+          python scripts/guard/scan.py --range "$range"
+
+      - name: Scan tree
+        run: python scripts/guard/scan.py --tree HEAD
