@@ -1,0 +1,8 @@
+#!/bin/sh
+# Picode leak guard (pre-push). Fails closed if Python is unavailable.
+root=$(git rev-parse --show-toplevel) || exit 1
+py=$(command -v python3 || command -v python) || {
+    echo "leak-guard: python3 not found; refusing to pre-push without the guard" >&2
+    exit 1
+}
+exec "$py" "$root/scripts/guard/scan.py" --pre-push
