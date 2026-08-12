@@ -79,3 +79,43 @@ htmlcov/
 .env
 .env.*
 !.env.example
+
+# Secrets and credentials (leak guard also blocks these)
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.mobileprovision
+kaggle.json
+.modal.toml
+credentials.json
+service-account*.json
+.netrc
+.pgpass
+id_rsa*
+id_ed25519*
+
+# Model weights and exports
+*.safetensors
+*.onnx
+*.tflite
+*.mlmodel
+exports/
+
+# Data exports and local databases
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+*.dump
+!**/tests/fixtures/**
+
+# Editors / OS / tooling
+.vscode/
+*.code-workspace
+.direnv/
+.envrc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
