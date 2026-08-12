@@ -200,7 +200,7 @@ xcodebuild test -scheme picode-ios -destination 'platform=iOS Simulator,name=iPh
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions,
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions and the leak guard,
 and [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Disclaimer
