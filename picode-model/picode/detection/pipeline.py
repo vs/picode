@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -139,7 +140,7 @@ class DetectionPipeline:
         )
 
     def process_batch(
-        self, images: list[Tensor | str | Path]
+        self, images: Sequence[Tensor | str | Path]
     ) -> list[PipelineResult | None]:
         """Process multiple images.
 

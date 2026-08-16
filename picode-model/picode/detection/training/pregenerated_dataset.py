@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import torch
@@ -11,7 +12,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 
-class PregeneratedDetectionDataset(Dataset):
+class PregeneratedDetectionDataset(Dataset[dict[str, Tensor]]):
     """Dataset that loads pre-generated detection training samples.
 
     Expects a directory with:
@@ -38,7 +39,7 @@ class PregeneratedDetectionDataset(Dataset):
     def __init__(
         self,
         data_dir: str | Path,
-        transform: callable | None = None,
+        transform: Callable[[dict[str, Tensor]], dict[str, Tensor]] | None = None,
     ) -> None:
         self.data_dir = Path(data_dir)
         self.transform = transform
@@ -56,7 +57,7 @@ class PregeneratedDetectionDataset(Dataset):
 
     def _build_index(self) -> None:
         """Load all shards into a flat sample list for fast random access."""
-        self.samples: list[dict] = []
+        self.samples: list[dict[str, Tensor]] = []
 
         num_shards = self.metadata["num_shards"]
         for shard_idx in range(num_shards):
@@ -98,12 +99,15 @@ class PregeneratedDetectionDataset(Dataset):
 
     @property
     def num_samples(self) -> int:
-        return self.metadata.get("num_samples", len(self))
+        result: int = self.metadata.get("num_samples", len(self))
+        return result
 
     @property
     def input_size(self) -> int:
-        return self.metadata.get("input_size", 320)
+        result: int = self.metadata.get("input_size", 320)
+        return result
 
     @property
     def model_label(self) -> str | None:
-        return self.metadata.get("model_label")
+        result: str | None = self.metadata.get("model_label")
+        return result

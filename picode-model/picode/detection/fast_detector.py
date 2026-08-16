@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -155,7 +157,7 @@ class FastDetector:
         cls,
         checkpoint_path: str | Path,
         device: str = "cpu",
-        **kwargs,
+        **kwargs: Any,
     ) -> FastDetector:
         """Load from saved checkpoint.
 
@@ -257,7 +259,7 @@ class FastDetector:
             detector_type="fast",
         )
 
-    def detect_batch(self, images: list[Tensor | str | Path]) -> list[Detection | None]:
+    def detect_batch(self, images: Sequence[Tensor | str | Path]) -> list[Detection | None]:
         """Batch detection for efficiency.
 
         Args:
@@ -281,7 +283,7 @@ class FastDetector:
             outputs = self.model(batch)
 
         # Process results
-        results = []
+        results: list[Detection | None] = []
         for i in range(len(images)):
             is_wm = torch.sigmoid(outputs["is_watermark"][i]).item()
             corner_conf = outputs["corner_confidence"][i].item()

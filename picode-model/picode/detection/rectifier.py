@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import cv2
 import numpy as np
 import torch
@@ -89,8 +91,8 @@ class Rectifier:
 
     def rectify_batch(
         self,
-        images: list[Tensor],
-        corners: list[Quadrilateral | Tensor],
+        images: Sequence[Tensor],
+        corners: Sequence[Quadrilateral | Tensor],
     ) -> Tensor:
         """Batch rectification.
 

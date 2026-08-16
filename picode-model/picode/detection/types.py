@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import torch
@@ -61,7 +61,7 @@ class Quadrilateral:
             bottom_left=Point(t[6].item(), t[7].item()),
         )
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> np.ndarray[Any, np.dtype[np.float32]]:
         """Convert to (4, 2) array for OpenCV."""
         return np.array(
             [

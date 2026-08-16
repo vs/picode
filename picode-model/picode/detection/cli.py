@@ -141,6 +141,7 @@ def main(
     else:
         # Fast detector
         fast_model = FastDetectorModel(input_size=320, pretrained=False)
+        assert detector_checkpoint is not None  # validated above
         ckpt = torch.load(detector_checkpoint, map_location=device)
         fast_model.load_state_dict(ckpt["model_state_dict"])
 
@@ -157,8 +158,7 @@ def main(
                 device=device,
             )
         else:
-            pipeline = None
-            det = fast_det  # Use fast detector directly
+            pipeline = None  # detection only, via fast_det
 
         if verbose:
             click.echo(f"Threshold: {threshold}")
@@ -189,7 +189,7 @@ def main(
                     "frame": frame_num,
                     "bbox": list(result.bbox),
                     "confidence": result.confidence,
-                    "message_bits": result.message_bits.tolist(),
+                    "message_bits": _bits(result.message_bits),
                 }
                 detections_list.append(detection_dict)
 
@@ -207,7 +207,7 @@ def main(
                 detection_dict = {
                     "bbox": list(result.bbox),
                     "confidence": result.confidence,
-                    "message_bits": result.message_bits.tolist(),
+                    "message_bits": _bits(result.message_bits),
                 }
                 output_data["detections"] = [detection_dict]
 
@@ -223,18 +223,18 @@ def main(
         else:
             # Fast detector
             if pipeline and decode:
-                result = pipeline.process(input_path)
-                if result:
-                    detection_dict = result.to_dict()
+                pipe_result = pipeline.process(input_path)
+                if pipe_result:
+                    detection_dict = pipe_result.to_dict()
                     output_data["detections"] = [detection_dict]
 
                     click.echo("Detection found!")
-                    click.echo(f"  Bounding box: {result.detection.bbox}")
-                    click.echo(f"  Detection confidence: {result.detection.confidence:.4f}")
-                    click.echo(f"  Decode confidence: {result.decode_confidence:.4f}")
+                    click.echo(f"  Bounding box: {pipe_result.detection.bbox}")
+                    click.echo(f"  Detection confidence: {pipe_result.detection.confidence:.4f}")
+                    click.echo(f"  Decode confidence: {pipe_result.decode_confidence:.4f}")
 
                     if save_crop:
-                        _save_crop(input_path, result.detection.bbox, save_crop)
+                        _save_crop(input_path, pipe_result.detection.bbox, save_crop)
                         click.echo(f"  Saved crop to: {save_crop}")
                 else:
                     click.echo("No detection found above threshold.")
@@ -265,6 +265,11 @@ def main(
         with open(output_path, "w") as f:
             json.dump(output_data, f, indent=2)
         click.echo(f"Results saved to: {output_path}")
+
+
+def _bits(bits: torch.Tensor | None) -> list[int] | None:
+    """Message bits as a JSON-friendly list (None when the detector did not decode)."""
+    return None if bits is None else [int(b) for b in bits.tolist()]
 
 
 def _save_crop(input_path: Path, bbox: tuple[int, int, int, int], save_path: str) -> None:

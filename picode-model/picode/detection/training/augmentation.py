@@ -204,7 +204,7 @@ class GeometricAugmentation:
             [sin_a, cos_a, 0],
         ]).unsqueeze(0).float()
 
-        grid = F.affine_grid(theta, (1, c, h, w), align_corners=False)
+        grid = F.affine_grid(theta, [1, c, h, w], align_corners=False)
         image_rotated = F.grid_sample(
             image.unsqueeze(0), grid, align_corners=False, padding_mode="border"
         ).squeeze(0)
@@ -570,7 +570,7 @@ class BackgroundRandomization:
             pattern = torch.sin(xx * random.uniform(0.5, 2) + yy * random.uniform(0.5, 2) + phase)
             patterns.append(pattern)
 
-        combined = sum(patterns) / len(patterns)
+        combined = torch.stack(patterns).mean(dim=0)
         combined = (combined + 1) / 2  # Normalize to [0, 1]
 
         # Add color

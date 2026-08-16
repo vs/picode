@@ -38,7 +38,7 @@ class TFLiteExportConfig:
 class _FastDetectorTFLiteWrapper(nn.Module):
     """Wrapper for TFLite-compatible output format."""
 
-    def __init__(self, model: FastDetectorModel) -> None:
+    def __init__(self, model: FastDetectorModel | nn.Module) -> None:
         super().__init__()
         self.model = model
 
@@ -168,7 +168,7 @@ def _convert_via_onnx(
 
     torch.onnx.export(
         model,
-        example_input,
+        (example_input,),
         onnx_path,
         input_names=["image"],
         output_names=["is_watermark", "corners", "corner_confidence"],

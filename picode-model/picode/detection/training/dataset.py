@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 
-class DetectionDataset(Dataset):
+class DetectionDataset(Dataset[dict[str, Tensor]]):
     """Synthetic dataset for training FastDetector.
 
     Generates positive samples by encoding watermarks into images and
@@ -54,7 +54,7 @@ class DetectionDataset(Dataset):
         input_size: int = 320,
         encoder_input_size: int = 400,
         perspective_strength: tuple[float, float] = (0.0, 0.15),
-        transform: Callable[[Tensor], Tensor] | None = None,
+        transform: Callable[[dict[str, Tensor]], dict[str, Tensor]] | None = None,
         sobel_mask_sigma: float | None = None,
         sobel_mask_floor: float = 0.85,
         strength_values: list[float] | None = None,

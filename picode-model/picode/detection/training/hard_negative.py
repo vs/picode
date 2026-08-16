@@ -161,7 +161,7 @@ class HardNegativeTransform:
         return torch.from_numpy(array).permute(2, 0, 1)
 
 
-class HardNegativeDataset(Dataset):
+class HardNegativeDataset(Dataset[dict[str, Tensor]]):
     """Dataset of hard negative samples for detector training.
 
     Loads images from a directory and applies hard negative transforms

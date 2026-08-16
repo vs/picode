@@ -200,7 +200,7 @@ class DetectionEvaluator:
             mean_iou=mean_iou,
         )
 
-    def evaluate_dataset(self, loader: DataLoader) -> DetectionMetrics:
+    def evaluate_dataset(self, loader: DataLoader[dict[str, Tensor]]) -> DetectionMetrics:
         """Evaluate on entire dataset.
 
         Args:
