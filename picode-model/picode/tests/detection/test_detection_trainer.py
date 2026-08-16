@@ -2,17 +2,25 @@
 """Tests for detection training loop."""
 
 
+from typing import cast
+
 import pytest
 import torch
+import torch.nn as nn
 from torch import Tensor
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from picode.detection.fast_detector import FastDetectorModel
 from picode.detection.training.loss import DetectionLoss
 from picode.detection.training.trainer import DetectionTrainer
 
 
-class MockDataset:
+def _cls_weight(trainer: DetectionTrainer) -> Tensor:
+    """Weight of the first classification-head layer."""
+    return cast(nn.Linear, cast(nn.Sequential, trainer.model.cls_head)[0]).weight
+
+
+class MockDataset(Dataset[dict[str, Tensor]]):
     """Mock dataset for testing."""
 
     def __init__(self, size: int = 10) -> None:
@@ -41,12 +49,12 @@ class TestDetectionTrainer:
         return DetectionLoss()
 
     @pytest.fixture
-    def train_loader(self) -> DataLoader:
+    def train_loader(self) -> DataLoader[dict[str, Tensor]]:
         dataset = MockDataset(size=8)
         return DataLoader(dataset, batch_size=2, shuffle=True)
 
     @pytest.fixture
-    def val_loader(self) -> DataLoader:
+    def val_loader(self) -> DataLoader[dict[str, Tensor]]:
         dataset = MockDataset(size=4)
         return DataLoader(dataset, batch_size=2, shuffle=False)
 
@@ -55,8 +63,8 @@ class TestDetectionTrainer:
         self,
         model: FastDetectorModel,
         loss_fn: DetectionLoss,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
+        train_loader: DataLoader[dict[str, Tensor]],
+        val_loader: DataLoader[dict[str, Tensor]],
     ) -> DetectionTrainer:
         return DetectionTrainer(
             model=model,
@@ -85,28 +93,29 @@ class TestDetectionTrainer:
         batch = next(iter(trainer.train_loader))
 
         # Get initial weights
-        initial_weight = trainer.model.cls_head[0].weight.clone()
+        initial_weight = _cls_weight(trainer).clone()
 
         # Train step
         trainer.train_step(batch)
 
         # Weights should be updated
         assert not torch.allclose(
-            trainer.model.cls_head[0].weight, initial_weight
+            _cls_weight(trainer), initial_weight
         )
 
     def test_val_step_no_grad_update(self, trainer: DetectionTrainer) -> None:
+        assert trainer.val_loader is not None
         batch = next(iter(trainer.val_loader))
 
         # Get initial weights
-        initial_weight = trainer.model.cls_head[0].weight.clone()
+        initial_weight = _cls_weight(trainer).clone()
 
         # Val step
         trainer.val_step(batch)
 
         # Weights should NOT be updated
         assert torch.allclose(
-            trainer.model.cls_head[0].weight, initial_weight
+            _cls_weight(trainer), initial_weight
         )
 
     def test_train_epoch_runs(self, trainer: DetectionTrainer) -> None:
@@ -165,7 +174,7 @@ class TestDetectionTrainer:
             "has_corners": torch.tensor([1.0, 0.0]),
         }
         dataset = [batch]
-        loader = DataLoader(dataset, batch_size=None)
+        loader: DataLoader[dict[str, Tensor]] = DataLoader(dataset, batch_size=None)  # type: ignore[arg-type]
 
         trainer = DetectionTrainer(
             model=model,

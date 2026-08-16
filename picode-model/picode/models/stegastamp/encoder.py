@@ -142,4 +142,5 @@ class Encoder(BaseEncoder):
         # to flow freely and the encoder can temporarily overshoot during training.
         # Clamping blocks gradients at boundaries and causes trivial solution collapse.
         encoded = image + residual
-        return encoded
+        result: Tensor = encoded
+        return result

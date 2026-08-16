@@ -29,6 +29,7 @@ class TestDetection:
         )
         assert d.bbox == (10, 20, 100, 80)
         assert d.confidence == 0.35
+        assert d.message_bits is not None and d.message_probs is not None
         assert d.message_bits.shape == (100,)
         assert d.message_probs.shape == (100,)
         assert d.detector_type == "slow"

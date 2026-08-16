@@ -107,10 +107,12 @@ class Encoder(BaseEncoder):
 
         # Identity-init FiLM so model starts with v15 behavior
         if self.strength_film is not None:
-            nn.init.zeros_(self.strength_film[-1].weight)
-            nn.init.zeros_(self.strength_film[-1].bias)
+            film_out = self.strength_film[-1]
+            assert isinstance(film_out, nn.Linear)
+            nn.init.zeros_(film_out.weight)
+            nn.init.zeros_(film_out.bias)
             # gamma=1 for all layers, beta=0
-            self.strength_film[-1].bias.data[:self._film_total] = 1.0
+            film_out.bias.data[: self._film_total] = 1.0
 
         # Blur kernel size fixed at max sigma (for consistent padding)
         if residual_blur_sigma > 0:
@@ -141,8 +143,10 @@ class Encoder(BaseEncoder):
 
         # Zero-init E_post's last layer so residual starts at zero
         last_conv = self.e_post[-1]
+        assert isinstance(last_conv, nn.Conv2d)
         nn.init.zeros_(last_conv.weight)
-        nn.init.zeros_(last_conv.bias)
+        if last_conv.bias is not None:
+            nn.init.zeros_(last_conv.bias)
 
     def prepare_message(self, message: Tensor) -> Tensor:
         """Expand message bits to spatial feature map.
@@ -263,7 +267,7 @@ class Encoder(BaseEncoder):
             mask = self.mask_head(x)  # (B, 1, H, W) in [0, 1]
             residual = residual * mask
 
-        encoded = image + residual
+        encoded: Tensor = image + residual
 
         # Return dict if v2 features active, tensor for backward compat
         if mask is not None or self.strength is not None:

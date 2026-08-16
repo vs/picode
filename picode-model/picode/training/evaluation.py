@@ -135,7 +135,8 @@ class Evaluator:
             Decoded logits (B, num_bits).
         """
         decoder_input = self._resize_for_decoder(images)
-        return self.decoder(decoder_input, mask=mask)
+        result: Tensor = self.decoder(decoder_input, mask=mask)
+        return result
 
     @torch.no_grad()
     def evaluate(

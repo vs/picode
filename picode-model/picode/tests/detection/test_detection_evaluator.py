@@ -3,6 +3,8 @@
 
 import pytest
 import torch
+from torch import Tensor
+from torch.utils.data import DataLoader, Dataset
 
 from picode.detection.fast_detector import FastDetectorModel
 from picode.detection.training.evaluator import (
@@ -112,7 +114,6 @@ class TestDetectionEvaluator:
         assert 0.0 <= metrics.recall <= 1.0
 
     def test_evaluate_dataset_runs(self, evaluator: DetectionEvaluator) -> None:
-        from torch.utils.data import DataLoader
 
         # Create simple dataset
         images = torch.rand(8, 3, 320, 320)
@@ -120,7 +121,7 @@ class TestDetectionEvaluator:
         corners = torch.rand(8, 8)
         has_corners = labels.clone()
 
-        class SimpleDataset:
+        class SimpleDataset(Dataset[dict[str, Tensor]]):
             def __init__(self):
                 pass
 
@@ -135,7 +136,7 @@ class TestDetectionEvaluator:
                     "has_corners": has_corners[idx],
                 }
 
-        loader = DataLoader(SimpleDataset(), batch_size=2)
+        loader: DataLoader[dict[str, Tensor]] = DataLoader(SimpleDataset(), batch_size=2)
         metrics = evaluator.evaluate_dataset(loader)
 
         assert isinstance(metrics, DetectionMetrics)

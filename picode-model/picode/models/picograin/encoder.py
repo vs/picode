@@ -95,8 +95,10 @@ class Encoder(BaseEncoder):
 
         # Zero-init so envelope starts at zero -> residual starts at zero
         last_conv = self.e_post[-1]
+        assert isinstance(last_conv, nn.Conv2d)
         nn.init.zeros_(last_conv.weight)
-        nn.init.zeros_(last_conv.bias)
+        if last_conv.bias is not None:
+            nn.init.zeros_(last_conv.bias)
 
     def prepare_message(self, message: Tensor) -> Tensor:
         """Expand message bits to spatial feature map.
@@ -198,7 +200,7 @@ class Encoder(BaseEncoder):
 
         # Broadcast to 3 channels
         residual = residual_1ch.expand(-1, 3, -1, -1)
-        encoded = image + residual
+        encoded: Tensor = image + residual
 
         if self.strength is not None:
             return {

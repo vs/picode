@@ -175,4 +175,5 @@ class Encoder(BaseEncoder):
         # Hard mask: preserve original center, use generated output in border
         framed = image * mask + full_output * (1 - mask)
 
-        return framed
+        result: Tensor = framed
+        return result

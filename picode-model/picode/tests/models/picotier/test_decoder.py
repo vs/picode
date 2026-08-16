@@ -50,7 +50,7 @@ class TestDecode:
         assert len(bits) == 2
         # Each sample should have correct number of bits for its detected tier
         for i in range(2):
-            t = tier_idx[i].item()
+            t = int(tier_idx[i].item())
             expected_bits = int(TIERS[t]["bits"])
             assert bits[i].shape[0] == expected_bits
             # Bits should be 0 or 1

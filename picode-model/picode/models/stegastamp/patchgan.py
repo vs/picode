@@ -60,4 +60,5 @@ class PatchGANDiscriminator(nn.Module):
             (B, 1, H', W') spatial score map.
         """
         x = image - 0.5
-        return self.model(x)
+        result: Tensor = self.model(x)
+        return result

@@ -1,5 +1,7 @@
 """Tests for PicoGrain encoder with noise modulation and luminance mask."""
 
+from typing import cast
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -56,7 +58,7 @@ class TestNoiseModulation:
         enc = Encoder(num_bits=127, image_size=512, strength=0.10)
         with torch.no_grad():
             torch.manual_seed(42)
-            nn.init.kaiming_normal_(enc.e_post[-1].weight)
+            nn.init.kaiming_normal_(cast(nn.Conv2d, enc.e_post[-1]).weight)
         result = enc(sample_image, sample_message)
         residual = result["encoded"] - sample_image
         kernel = torch.tensor(
@@ -72,7 +74,7 @@ class TestNoiseModulation:
         """Each forward pass should produce different grain (fresh noise)."""
         enc = Encoder(num_bits=127, image_size=512, strength=0.10)
         with torch.no_grad():
-            nn.init.kaiming_normal_(enc.e_post[-1].weight)
+            nn.init.kaiming_normal_(cast(nn.Conv2d, enc.e_post[-1]).weight)
         r1 = enc(sample_image, sample_message)["encoded"]
         r2 = enc(sample_image, sample_message)["encoded"]
         assert not torch.allclose(r1, r2, atol=1e-4)

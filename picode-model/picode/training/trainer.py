@@ -1217,8 +1217,9 @@ class Trainer:
         loss_tier = F.cross_entropy(tier_logits, tiers)
 
         # 3. STN regularization
-        if hasattr(self.decoder, "stn_scale_reg"):
-            loss_stn = self.decoder.stn_scale_reg()
+        stn_scale_reg = getattr(self.decoder, "stn_scale_reg", None)
+        if callable(stn_scale_reg):
+            loss_stn = stn_scale_reg()
             weighted_stn = 0.1 * loss_stn
         else:
             loss_stn = torch.tensor(0.0, device=self.device)
@@ -1433,8 +1434,7 @@ class Trainer:
         if fixed_steps > 0 and self.global_step < fixed_steps:
             fw = max_fw
         else:
-            fw = torch.randint(min_fw, max_fw + 1, (1,)).item()
-        fw = int(fw)
+            fw = int(torch.randint(min_fw, max_fw + 1, (1,)).item())
 
         # Extract inner image and reflection-pad back to full size
         inner = images[:, :, fw:image_size - fw, fw:image_size - fw]
@@ -1623,7 +1623,7 @@ class Trainer:
         return metrics
 
     def _apply_sobel_mask(
-        self, images: Tensor, encoded: Tensor, mask_floors: Tensor | None = None,
+        self, images: Tensor, encoded: Tensor, mask_floors: Tensor | float | None = None,
     ) -> Tensor:
         """Apply Sobel gradient texture mask to the residual.
 
@@ -1634,7 +1634,8 @@ class Trainer:
         Args:
             images: Original images (B, 3, H, W).
             encoded: Encoded images (B, 3, H, W).
-            mask_floors: Per-sample mask floors (B, 1, 1, 1), or None for global config floor.
+            mask_floors: Per-sample mask floors (B, 1, 1, 1), a scalar floor, or None for the
+                global config floor.
 
         Returns:
             Masked encoded images (B, 3, H, W).
@@ -1819,8 +1820,9 @@ class Trainer:
             weighted_l2 = l2_scale * loss_l2
 
         # STN regularization (for models with STN: stegastamp, picodeframe, picotrust)
-        if hasattr(self.decoder, "stn_scale_reg"):
-            loss_stn = self.decoder.stn_scale_reg()
+        stn_scale_reg = getattr(self.decoder, "stn_scale_reg", None)
+        if callable(stn_scale_reg):
+            loss_stn = stn_scale_reg()
             weighted_stn = 0.1 * loss_stn
         else:
             loss_stn = torch.tensor(0.0, device=encoded.device)
@@ -2081,7 +2083,7 @@ class Trainer:
             return initial
         progress = min((current_step - start_step) / max(anneal_steps, 1), 1.0)
         if schedule == "exponential" and initial > 0 and target > 0:
-            return initial * (target / initial) ** progress
+            return float(initial * (target / initial) ** progress)
         return initial + progress * (target - initial)
 
     def _compute_compositing_ratio(self) -> float:

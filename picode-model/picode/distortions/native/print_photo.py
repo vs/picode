@@ -85,7 +85,8 @@ class ShotNoise(Distortion):
         # Shot noise: std proportional to sqrt(brightness)
         std = scale * torch.sqrt(x.clamp(min=1e-6))
         noise = torch.randn_like(x) * std
-        return (x + noise).clamp(0.0, 1.0)
+        result: Tensor = (x + noise).clamp(0.0, 1.0)
+        return result
 
 
 class BarrelDistortion(Distortion):
@@ -173,7 +174,8 @@ class Vignetting(Distortion):
         r2 = grid_x ** 2 + grid_y ** 2
         # Normalize so corners (r2=2) get full effect
         mask = (1.0 - s * r2 / 2.0).clamp(min=0.0)
-        return (x * mask.unsqueeze(0).unsqueeze(0)).clamp(0.0, 1.0)
+        result: Tensor = (x * mask.unsqueeze(0).unsqueeze(0)).clamp(0.0, 1.0)
+        return result
 
 
 class ChromaticAberration(Distortion):

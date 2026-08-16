@@ -9,6 +9,7 @@ These tests verify that all StegaStamp parity changes work together correctly:
 """
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 import torch
@@ -82,7 +83,9 @@ class TestStegaStampParity:
 
         # The bias gradient should be non-zero since bias is initialized non-zero
         # and loss flows through the STN transform
-        assert decoder.stn_fc_bias.grad.abs().sum() > 0, "STN bias gradients should be non-zero"
+        bias_grad = cast(torch.Tensor, decoder.stn_fc_bias).grad
+        assert bias_grad is not None
+        assert bias_grad.abs().sum() > 0, "STN bias gradients should be non-zero"
 
     def test_blur_applied_in_training(self, parity_config: Config) -> None:
         """Random blur should be applied during distortion.
@@ -143,6 +146,7 @@ class TestStegaStampParity:
         clip_val = parity_config.loss.gan_config.gradient_clip
 
         # Check gradient magnitudes (after clipping)
+        assert trainer.discriminator is not None
         for p in trainer.discriminator.parameters():
             if p.grad is not None:
                 max_grad = p.grad.abs().max().item()
@@ -314,6 +318,7 @@ class TestStegaStampParity:
         clip_val = parity_config.loss.gan_config.clip_weights
 
         # Check weight magnitudes
+        assert trainer.discriminator is not None
         for p in trainer.discriminator.parameters():
             max_weight = p.data.abs().max().item()
             assert max_weight <= clip_val + 1e-6, (

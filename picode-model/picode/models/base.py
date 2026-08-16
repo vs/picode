@@ -12,8 +12,14 @@ class Encoder(nn.Module, ABC):
     An encoder embeds a binary message into an image imperceptibly.
     """
 
+    # Optional runtime knobs some encoders expose (declared, not defined, so ``hasattr``
+    # still tells whether a given encoder supports them).
+    strength: float | None
+    residual_blur_sigma: float
+    tier_strengths: Tensor
+
     @abstractmethod
-    def forward(self, image: Tensor, message: Tensor) -> Tensor:
+    def forward(self, image: Tensor, message: Tensor) -> Tensor | dict[str, Tensor]:
         """Encode a message into an image.
 
         Args:
@@ -21,7 +27,8 @@ class Encoder(nn.Module, ABC):
             message: Binary message tensor (B, num_bits).
 
         Returns:
-            Encoded image tensor (B, C, H, W) in [0, 1].
+            Encoded image tensor (B, C, H, W) in [0, 1], or a dict with at least an
+            ``"encoded"`` entry for encoders that also return auxiliary outputs (masks).
         """
         pass
 

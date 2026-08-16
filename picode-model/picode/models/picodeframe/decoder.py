@@ -13,6 +13,8 @@ Both branches are concatenated before the FC head, allowing the model to learn
 from border features immediately while the CNN branch learns over time.
 """
 
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -158,7 +160,7 @@ class Decoder(BaseDecoder):
         weight_reg = (self.stn_fc_weight ** 2).mean()
         return bias_reg + weight_reg
 
-    def forward(self, image: Tensor, **kwargs: Tensor) -> Tensor:
+    def forward(self, image: Tensor, **kwargs: Any) -> Tensor:
         """Extract message logits from framed image.
 
         Args:
@@ -218,7 +220,7 @@ class Decoder(BaseDecoder):
         logits: Tensor = self.fc2(x)
         return logits
 
-    def decode(self, image: Tensor, **kwargs: Tensor) -> Tensor:
+    def decode(self, image: Tensor, **kwargs: Any) -> Tensor:
         """Extract binary message from an image.
 
         Args:

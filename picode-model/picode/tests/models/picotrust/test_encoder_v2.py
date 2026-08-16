@@ -1,5 +1,7 @@
 """Tests for PicoTrust v2 encoder with amplitude control and spatial mask."""
 
+from typing import cast
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -49,6 +51,7 @@ class TestLearnedSpatialMask:
         enc = Encoder(num_bits=100, image_size=256, strength=0.03, use_mask=True)
         result = enc(sample_image_256, sample_message)
         result["encoded"].sum().backward()
+        assert enc.mask_head is not None
         for p in enc.mask_head.parameters():
             assert p.grad is not None
 
@@ -129,8 +132,9 @@ class TestResidualBlur:
         # to produce a non-trivial residual for this test
         with torch.no_grad():
             torch.manual_seed(99)
-            nn.init.kaiming_normal_(enc_no_blur.e_post[-1].weight)
-            enc_blur.e_post[-1].weight.copy_(enc_no_blur.e_post[-1].weight)
+            src = cast(nn.Conv2d, enc_no_blur.e_post[-1])
+            nn.init.kaiming_normal_(src.weight)
+            cast(nn.Conv2d, enc_blur.e_post[-1]).weight.copy_(src.weight)
 
         res_no_blur = enc_no_blur(sample_image_256, sample_message)["encoded"] - sample_image_256
         res_blur = enc_blur(sample_image_256, sample_message)["encoded"] - sample_image_256

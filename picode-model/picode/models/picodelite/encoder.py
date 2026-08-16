@@ -164,4 +164,5 @@ class Encoder(BaseEncoder):
 
         # Add residual to original (no clamping during training)
         encoded = image + residual
-        return encoded
+        result: Tensor = encoded
+        return result

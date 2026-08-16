@@ -78,7 +78,9 @@ class TestTrainingPipelineIntegration:
         negative_dataset: HardNegativeDataset,
     ) -> None:
         """Test combining positive and negative datasets."""
-        combined = ConcatDataset([positive_dataset, negative_dataset])
+        combined: ConcatDataset[dict[str, Tensor]] = ConcatDataset(
+            [positive_dataset, negative_dataset]
+        )
 
         assert len(combined) == len(positive_dataset) + len(negative_dataset)
 
@@ -107,7 +109,9 @@ class TestTrainingPipelineIntegration:
         negative_dataset: HardNegativeDataset,
     ) -> None:
         """Test DataLoader batching works correctly."""
-        combined = ConcatDataset([positive_dataset, negative_dataset])
+        combined: ConcatDataset[dict[str, Tensor]] = ConcatDataset(
+            [positive_dataset, negative_dataset]
+        )
         loader = DataLoader(combined, batch_size=4, shuffle=True)
 
         batch = next(iter(loader))
@@ -126,7 +130,9 @@ class TestTrainingPipelineIntegration:
         model = FastDetectorModel(input_size=320, pretrained=False)
 
         # Create dataloaders
-        combined = ConcatDataset([positive_dataset, negative_dataset])
+        combined: ConcatDataset[dict[str, Tensor]] = ConcatDataset(
+            [positive_dataset, negative_dataset]
+        )
         train_loader = DataLoader(combined, batch_size=2, shuffle=True)
         val_loader = DataLoader(combined, batch_size=2, shuffle=False)
 
@@ -155,7 +161,9 @@ class TestTrainingPipelineIntegration:
         """Test evaluation works after training."""
         model = FastDetectorModel(input_size=320, pretrained=False)
 
-        combined = ConcatDataset([positive_dataset, negative_dataset])
+        combined: ConcatDataset[dict[str, Tensor]] = ConcatDataset(
+            [positive_dataset, negative_dataset]
+        )
         loader = DataLoader(combined, batch_size=2, shuffle=False)
 
         evaluator = DetectionEvaluator(model=model, threshold=0.5, device="cpu")
@@ -173,7 +181,9 @@ class TestTrainingPipelineIntegration:
     ) -> None:
         """Test checkpoint save/load/resume training."""
         model = FastDetectorModel(input_size=320, pretrained=False)
-        combined = ConcatDataset([positive_dataset, negative_dataset])
+        combined: ConcatDataset[dict[str, Tensor]] = ConcatDataset(
+            [positive_dataset, negative_dataset]
+        )
         train_loader = DataLoader(combined, batch_size=2, shuffle=True)
 
         trainer = DetectionTrainer(

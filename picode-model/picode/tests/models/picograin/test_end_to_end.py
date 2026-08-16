@@ -1,6 +1,9 @@
 """End-to-end smoke test: encode -> distort -> decode."""
 
+from typing import cast
+
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from picode.models.picograin.decoder import Decoder
@@ -21,7 +24,7 @@ def test_encode_decode_round_trip():
     assert logits.shape == (2, 127)
     loss = F.binary_cross_entropy_with_logits(logits, message)
     loss.backward()
-    assert enc.e_post[-1].weight.grad is not None
+    assert cast(nn.Conv2d, enc.e_post[-1]).weight.grad is not None
     assert dec.decoder[0].weight.grad is not None
 
 
@@ -32,7 +35,7 @@ def test_encode_produces_visible_grain():
         torch.manual_seed(42)
         import torch.nn as nn
 
-        nn.init.kaiming_normal_(enc.e_post[-1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, enc.e_post[-1]).weight)
 
     image = torch.rand(1, 3, 256, 256)
     message = torch.randint(0, 2, (1, 127)).float()

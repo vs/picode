@@ -24,7 +24,7 @@ class TestVideoDetection:
         video_path = tmp_path / "test.mp4"
 
         # Create video writer
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(video_path), fourcc, 10, (200, 200))
 
         # Write 5 random frames

@@ -89,8 +89,10 @@ class Encoder(BaseEncoder):
 
         # Zero-init E_post's final layer so residual starts at zero
         last_conv = self.e_post[-1]
+        assert isinstance(last_conv, nn.Conv2d)
         nn.init.zeros_(last_conv.weight)
-        nn.init.zeros_(last_conv.bias)
+        if last_conv.bias is not None:
+            nn.init.zeros_(last_conv.bias)
 
     def forward(self, image: Tensor, message: Tensor, tier: Tensor) -> dict[str, Tensor]:  # type: ignore[override]
         """Encode message into image with tier-specific strength.

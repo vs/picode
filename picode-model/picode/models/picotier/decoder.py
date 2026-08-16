@@ -108,7 +108,8 @@ class Decoder(BaseDecoder):
         weight_reg = (self.stn_fc_weight**2).mean()
         return bias_reg + weight_reg
 
-    def forward(
+    # PicoTier also predicts the tier, so forward/decode return more than the base decoder.
+    def forward(  # type: ignore[override]
         self, image: Tensor, tier: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Extract message logits and tier classification from image.
@@ -151,7 +152,7 @@ class Decoder(BaseDecoder):
 
         return bit_logits, tier_logits
 
-    def decode(self, image: Tensor) -> tuple[Tensor, list[Tensor]]:
+    def decode(self, image: Tensor) -> tuple[Tensor, list[Tensor]]:  # type: ignore[override]
         """Extract binary message with auto-detected tier.
 
         Args:
@@ -170,7 +171,7 @@ class Decoder(BaseDecoder):
         # Truncate each sample to its tier's bit count
         results = []
         for i in range(image.shape[0]):
-            t = tier_idx[i].item()
+            t = int(tier_idx[i].item())
             n_bits = int(TIERS[t]["bits"])
             results.append(hard_bits[i, :n_bits])
 
