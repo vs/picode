@@ -8,11 +8,17 @@ from PIL import Image, ImageOps
 from torchvision import transforms
 from torchvision.utils import save_image
 
+from picode.ecc.ldpc import LDPC
+from picode.ecc.payload import decode_text, encode_text
+from picode.models.base import Decoder as BaseDecoder
+from picode.models.base import Encoder as BaseEncoder
 from picode.models.factory import create_decoder, create_encoder
 from picode.training.config import ModelConfig
 
 
-def load_model(checkpoint_path: Path, device: torch.device) -> tuple:
+def load_model(
+    checkpoint_path: Path, device: torch.device
+) -> tuple[BaseEncoder, BaseDecoder, int, int]:
     """Load encoder and decoder from checkpoint.
 
     Returns:
@@ -110,6 +116,44 @@ def bits_to_text(bits: list[int]) -> str:
         return bytes(text_bytes).decode("utf-8", errors="replace")
 
 
+LDPC_SEED = 42  # same code as the detection/decode pipeline
+LDPC_SNRS = (10.0, 8.0, 5.0, 3.0, 2.0)  # retry ladder: lower SNR trusts confident bits less
+
+
+def resolve_ldpc(mode: str, model_type: str, num_bits: int) -> LDPC | None:
+    """Pick the error-correcting code for a checkpoint (``--ecc``).
+
+    ``auto`` uses LDPC(num_bits, seed=42) whenever that code exists for the model's bit
+    count; PicoTier and PicodeFrame keep their own bit layouts and never use it.
+    """
+    if mode == "none" or model_type in ("picotier", "picodeframe"):
+        if mode == "ldpc":
+            raise SystemExit(f"--ecc ldpc is not supported for {model_type} checkpoints")
+        return None
+    try:
+        return LDPC(n=num_bits, seed=LDPC_SEED)
+    except ValueError as exc:
+        if mode == "ldpc":
+            raise SystemExit(f"No LDPC code for {num_bits} bits: {exc}") from exc
+        return None
+
+
+def ldpc_decode(ldpc: LDPC, logits: torch.Tensor) -> tuple[list[int], bool, float | None]:
+    """Soft-decode (1, n) logits, retrying lower SNRs until the parity check passes.
+
+    Returns:
+        (payload bits, success, SNR that succeeded or None).
+    """
+    probs = torch.sigmoid(logits.float().cpu())
+    decoded = None
+    for snr in LDPC_SNRS:
+        decoded, ok = ldpc.decode(probs, snr=snr)
+        if bool(ok[0]):
+            return [int(b) for b in decoded[0].tolist()], True, snr
+    assert decoded is not None
+    return [int(b) for b in decoded[0].tolist()], False, None
+
+
 def get_device(device_str: str) -> torch.device:
     """Get torch device from string."""
     if device_str == "auto":
@@ -143,6 +187,21 @@ def encode_command(args: argparse.Namespace) -> None:
     else:
         bits = text_to_bits(message, num_bits)
 
+    ldpc = resolve_ldpc(args.ecc, model_type, num_bits)
+    if ldpc is not None:
+        k = ldpc.message_length
+        if message.startswith("0b") or all(c in "01" for c in message):
+            payload = [int(c) for c in message.replace("0b", "")][:k]
+            payload += [0] * (k - len(payload))
+            stored = "".join(map(str, payload))
+        else:
+            payload, stored = encode_text(message, k)
+            if stored != message:
+                print(f"Warning: message truncated to {stored!r} ({k}-bit payload)")
+        codeword = ldpc.encode(torch.tensor([payload], dtype=torch.float32))
+        bits = [int(b) for b in codeword[0].tolist()]
+        message = stored
+
     message_tensor = torch.tensor(bits, dtype=torch.float32, device=device).unsqueeze(0)
 
     if model_type == "picotier":
@@ -175,7 +234,7 @@ def encode_command(args: argparse.Namespace) -> None:
 
         # Load and resize image
         image = Image.open(args.input).convert("RGB")
-        image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
+        image_cropped = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS)
         to_tensor = transforms.ToTensor()
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
 
@@ -205,7 +264,9 @@ def encode_command(args: argparse.Namespace) -> None:
 
         # Load and resize image to inner size
         image = Image.open(args.input).convert("RGB")
-        image_cropped = ImageOps.fit(image, (inner_size, inner_size), method=Image.LANCZOS)
+        image_cropped = ImageOps.fit(
+            image, (inner_size, inner_size), method=Image.Resampling.LANCZOS
+        )
 
         to_tensor = transforms.ToTensor()
         inner_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
@@ -238,7 +299,7 @@ def encode_command(args: argparse.Namespace) -> None:
     else:
         # StegaStamp/PicodeLite/PicoTrust: standard full-image encoding
         image = Image.open(args.input).convert("RGB")
-        image_cropped = ImageOps.fit(image, (size, size), method=Image.LANCZOS)
+        image_cropped = ImageOps.fit(image, (size, size), method=Image.Resampling.LANCZOS)
 
         to_tensor = transforms.ToTensor()
         image_tensor = to_tensor(image_cropped).unsqueeze(0).to(device)
@@ -278,7 +339,10 @@ def encode_command(args: argparse.Namespace) -> None:
             print(f"Texture mask: floor={mask_floor:.2f}")
 
     print(f"Message: {message}")
-    print(f"Bits used: {num_bits}")
+    if ldpc is not None:
+        print(f"Bits used: {num_bits} (LDPC({num_bits},{ldpc.message_length}) codeword)")
+    else:
+        print(f"Bits used: {num_bits} (raw, no error correction)")
 
 
 def decode_command(args: argparse.Namespace) -> None:
@@ -353,13 +417,22 @@ def decode_command(args: argparse.Namespace) -> None:
 
     decoded_bits = [int(b) for b in decoded_bits]
     bits_str = "".join(str(b) for b in decoded_bits)
-    decoded_text = bits_to_text(decoded_bits)
+
+    ldpc = resolve_ldpc(args.ecc, model_type, num_bits)
+    if ldpc is not None:
+        payload, ok, snr = ldpc_decode(ldpc, decoded_logits)
+        decoded_text = decode_text(payload)
+        status = f"ok (snr={snr:g})" if ok else "FAILED (parity check did not pass; guess)"
+    else:
+        decoded_text = bits_to_text(decoded_bits)
+        status = "none (raw bits)"
 
     if args.raw:
         print(bits_str)
     else:
         print(f"Decoded from: {args.input}")
         print(f"Text: {decoded_text}")
+        print(f"ECC: {status}")
         print(f"Bits: {bits_str[:50]}..." if len(bits_str) > 50 else f"Bits: {bits_str}")
 
 
@@ -395,6 +468,13 @@ Examples:
         "--device",
         default="auto",
         help="Device (auto, cpu, cuda, mps)",
+    )
+    parser.add_argument(
+        "--ecc",
+        choices=["auto", "ldpc", "none"],
+        default="auto",
+        help="Error correction: LDPC(n, seed=42) when the model's bit count supports it "
+        "(auto), always LDPC, or raw bits. Encode and decode must use the same setting.",
     )
     parser.add_argument(
         "--size",

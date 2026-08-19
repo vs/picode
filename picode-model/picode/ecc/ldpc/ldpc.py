@@ -110,12 +110,14 @@ class LDPC(ECC):
         encoded_np = np.stack(encoded_list, axis=0)
         return torch.from_numpy(encoded_np).to(device=device, dtype=dtype)
 
-    def decode(self, received: Tensor) -> tuple[Tensor, Tensor]:
+    def decode(self, received: Tensor, snr: float | None = None) -> tuple[Tensor, Tensor]:
         """Decode received soft values using belief propagation.
 
         Args:
             received: Soft probabilities (B, n) with values in [0, 1]
                 representing P(bit=1).
+            snr: Channel SNR assumed by belief propagation for this call; defaults to
+                the value given at construction. Lower values trust the input less.
 
         Returns:
             Tuple of:
@@ -145,7 +147,7 @@ class LDPC(ECC):
         success_list = []
         for i in range(batch_size):
             # Decode using belief propagation
-            codeword = ldpc_decode(self._H, y[i], self._snr)
+            codeword = ldpc_decode(self._H, y[i], self._snr if snr is None else snr)
             # Extract original message from systematic codeword
             message = get_message(self._G, codeword)
             decoded_list.append(message)
