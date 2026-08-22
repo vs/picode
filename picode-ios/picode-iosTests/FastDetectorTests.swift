@@ -29,7 +29,7 @@ final class FastDetectorTests: XCTestCase {
         XCTAssertFalse(result.message.isEmpty)
         XCTAssertGreaterThan(result.confidence, 0)
         XCTAssertLessThanOrEqual(result.confidence, 1)
-        XCTAssertEqual(result.totalBits, 100)
+        XCTAssertEqual(result.totalBits, 72)
         XCTAssertGreaterThan(result.decodeTimeMs, 0)
     }
 
@@ -57,8 +57,8 @@ final class FastDetectorTests: XCTestCase {
 
         let result = try await detector.decode(image: image)
 
-        // Should have 100 raw bit values
-        XCTAssertEqual(result.rawBits.count, 100)
+        // Should have one value per channel bit (LDPC(72,38) codeword)
+        XCTAssertEqual(result.rawBits.count, 72)
 
         // All values should be probabilities (0-1 range)
         for bit in result.rawBits {

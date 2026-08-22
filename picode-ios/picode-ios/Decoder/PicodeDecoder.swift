@@ -43,6 +43,7 @@ protocol PicodeDecoder {
 enum DecodeError: LocalizedError {
     case noWatermarkFound
     case invalidImage
+    case errorCorrectionFailed
     case modelError(String)
 
     var errorDescription: String? {
@@ -51,6 +52,8 @@ enum DecodeError: LocalizedError {
             return "No picode watermark found in image"
         case .invalidImage:
             return "Could not process the image"
+        case .errorCorrectionFailed:
+            return "Found a picode but could not read it reliably. Hold steadier or move closer."
         case .modelError(let message):
             return "Decoder error: \(message)"
         }

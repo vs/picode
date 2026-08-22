@@ -22,11 +22,14 @@ final class FastDetector: PicodeDecoder {
     /// Input size for the detector model.
     private let detectorInputSize: CGSize = CGSize(width: 320, height: 320)
 
-    /// Input size for the decoder model.
-    private let decoderInputSize: CGSize = CGSize(width: 400, height: 400)
+    /// Input size for the decoder model (PicoTrust b72s20m85 decodes at 512x512).
+    private let decoderInputSize: CGSize = CGSize(width: 512, height: 512)
 
-    /// Number of bits encoded in the watermark.
-    private let numBits: Int = 100
+    /// Number of channel bits in the watermark: an LDPC(72,38) codeword.
+    private let numBits: Int = 72
+
+    /// Error-correcting code shared with the Python encoder (`PicodeLDPC.json`).
+    private let ldpc: LDPCDecoder? = LDPCDecoder.bundled()
 
     /// Confidence threshold for detection.
     private let detectionThreshold: Float = 0.5
@@ -113,8 +116,10 @@ final class FastDetector: PicodeDecoder {
         // Step 3: Decode the message
         let (logits, rawBits) = try await decodeMessage(from: rectifiedImage)
 
-        // Step 4: Convert logits to message
-        let message = bitsToMessage(rawBits)
+        // Step 4: Error-correct and convert to text
+        guard let message = messageText(logits: logits, rawBits: rawBits) else {
+            throw DecodeError.errorCorrectionFailed
+        }
         let bitAccuracy = calculateBitAccuracy(logits)
 
         let endTime = CFAbsoluteTimeGetCurrent()
@@ -253,7 +258,7 @@ final class FastDetector: PicodeDecoder {
             throw DecodeError.modelError("Perspective correction failed")
         }
 
-        // Resize to decoder input size (400x400)
+        // Resize to decoder input size
         let scaleX = decoderInputSize.width / corrected.extent.width
         let scaleY = decoderInputSize.height / corrected.extent.height
         let scaled = corrected.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
@@ -310,6 +315,18 @@ final class FastDetector: PicodeDecoder {
     }
 
     // MARK: - Utilities
+
+    /// Error-correct decoder logits and unpack the text payload.
+    ///
+    /// Returns nil when the LDPC parity check fails. Without bundled models (development),
+    /// falls back to reading the raw bits as text.
+    private func messageText(logits: [Float], rawBits: [Float]) -> String? {
+        guard decoderModel != nil, let ldpc else {
+            return bitsToMessage(rawBits)
+        }
+        let corrected = ldpc.decode(logits: logits)
+        return corrected.success ? PayloadText.decode(corrected.payload) : nil
+    }
 
     /// Convert bit probabilities to message string.
     private func bitsToMessage(_ bits: [Float]) -> String {
@@ -375,10 +392,10 @@ final class FastDetector: PicodeDecoder {
         let rectifiedImage = try rectifyRegion(in: ciImage, corners: corners)
 
         // Step 3: Decode the message
-        let (_, rawBits) = try await decodeMessage(from: rectifiedImage)
+        let (logits, rawBits) = try await decodeMessage(from: rectifiedImage)
 
-        // Step 4: Convert to detection info
-        let message = bitsToMessage(rawBits)
+        // Step 4: Convert to detection info (keep scanning until a frame error-corrects)
+        let message = messageText(logits: logits, rawBits: rawBits) ?? "Reading…"
 
         // Corners are already normalized (0-1), create Quadrilateral directly
         let quadrilateral = Quadrilateral(
