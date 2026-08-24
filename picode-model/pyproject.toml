@@ -35,7 +35,8 @@ lpips = [
     "lpips>=0.1",
 ]
 export-ios = [
-    "coremltools>=7.0",
+    # no native coremltools build for Python 3.14+ yet; export from a 3.13 environment
+    "coremltools>=7.0; python_version < '3.14'",
 ]
 export-android = [
     "ai-edge-torch>=0.1.0",

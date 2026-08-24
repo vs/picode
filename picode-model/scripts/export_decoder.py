@@ -49,12 +49,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    try:
-        import coremltools as ct
-    except ImportError as e:
-        raise ImportError("Install coremltools: pip install coremltools") from e
-
     args = parse_args()
+
+    from picode.detection.export.coreml import import_coremltools
+
+    ct = import_coremltools()
 
     checkpoint_path = Path(args.checkpoint)
     output_path = Path(args.output)

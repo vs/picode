@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ class CoreMLExportConfig:
 class _FastDetectorWrapper(nn.Module):
     """Wrapper to convert dict output to tuple for Core ML compatibility."""
 
-    def __init__(self, model: FastDetectorModel) -> None:
+    def __init__(self, model: FastDetectorModel | nn.Module) -> None:
         super().__init__()
         self.model = model
 
@@ -89,13 +90,7 @@ def convert_to_coreml(
         >>> path = convert_to_coreml(model, "FastDetector.mlpackage")
         >>> print(f"Exported to: {path}")
     """
-    try:
-        import coremltools as ct
-    except ImportError as e:
-        raise ImportError(
-            "coremltools is required for Core ML export. "
-            "Install it with: pip install coremltools"
-        ) from e
+    ct = import_coremltools()
 
     config = config or CoreMLExportConfig()
     output_path = Path(output_path)
@@ -116,7 +111,7 @@ def convert_to_coreml(
     example_input = torch.rand(1, 3, config.input_size, config.input_size)
 
     # Trace the model
-    traced_model = torch.jit.trace(wrapped_model, example_input)
+    traced_model = torch.jit.trace(wrapped_model, example_input)  # type: ignore[no-untyped-call]
 
     # Convert to Core ML
     mlmodel = ct.convert(
@@ -166,6 +161,30 @@ def convert_to_coreml(
 
     return output_path
 
+
+
+def import_coremltools() -> Any:
+    """Import coremltools, explaining the Python-version limit when it is unusable.
+
+    coremltools publishes native wheels only up to CPython 3.13; on newer interpreters
+    pip falls back to a build without its native library, which imports but cannot export.
+
+    Raises:
+        ImportError: If coremltools is missing or unusable on this interpreter.
+    """
+    if sys.version_info >= (3, 14):
+        raise ImportError(
+            f"Core ML export needs Python 3.10-3.13 (running {sys.version.split()[0]}); "
+            "coremltools has no native build for newer versions. Create a separate "
+            "environment, e.g. `uv venv -p 3.13 && pip install -e '.[export-ios]'`."
+        )
+    try:
+        import coremltools as ct
+    except Exception as e:  # coremltools can fail with non-ImportErrors (native libs)
+        raise ImportError(
+            "coremltools is required for Core ML export: pip install -e '.[export-ios]'"
+        ) from e
+    return ct
 
 def _get_compute_units(units_str: str) -> Any:
     """Convert string to coremltools compute units enum."""
