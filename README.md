@@ -16,7 +16,7 @@
   <a href="https://huggingface.co/vadishev/picotrust"><img alt="Weights on Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97%20weights-picotrust-yellow.svg"></a>
 </p>
 
-![Original, encoded and residual images for three sample photos](docs/assets/hero.png)
+![Original, encoded and residual images for three sample photos](docs/assets/hero.jpg)
 
 <sub>72-bit payload encoded with the production model (b72s20m85) using Sobel adaptive encoding.
 Each image is encoded at the lowest strength on the ladder at which the payload decodes exactly;
@@ -89,11 +89,14 @@ picode -c $CKPT encode photo.jpg encoded.png -m "hello" --save-residual residual
 picode -c $CKPT decode encoded.png
 ```
 
-> The `picode` CLI encodes raw bits at the checkpoint's training strength, with no error
-> correction, so an occasional flipped bit can corrupt one character of a text message. The
-> production path (Sobel mask, strength ladder, batch ID selection and LDPC) is described in
-> [docs/sobel_adaptive.md](docs/sobel_adaptive.md). `scripts/readme_figures.py` is a compact,
-> runnable reference implementation.
+> The CLI protects the payload with the production LDPC(72,38) code, so the 72-bit model
+> carries 38 payload bits. That fits 6 characters from `a-z A-Z 0-9 -` (short-link IDs) or 4
+> bytes of other UTF-8 text; longer messages are truncated with a warning. Decoding retries
+> belief propagation at lower SNRs and reports whether the parity check passed. `--ecc none`
+> gives raw bits. The CLI encodes at the checkpoint's training strength; the full production
+> path (Sobel mask, strength ladder, batch ID selection) is described in
+> [docs/sobel_adaptive.md](docs/sobel_adaptive.md), and `scripts/readme_figures.py` is a
+> compact, runnable reference implementation.
 
 ### Dataset scraper (Docker)
 
@@ -113,7 +116,8 @@ open picode-ios.xcodeproj
 ```
 
 The app needs Core ML models in `picode-ios/picode-ios/Models/`. Export them with
-`detect-export` and `picode-model/scripts/export_decoder.py`
+`detect-export` and `picode-model/scripts/export_decoder.py` (Core ML export needs
+Python 3.10–3.13, because coremltools has no 3.14 build yet)
 (see [picode-ios/README.md](picode-ios/README.md)).
 
 ## Configuration
@@ -172,7 +176,7 @@ source venv/bin/activate
 # Model package
 cd picode-model
 pytest picode/tests/ -q          # ~880 tests, CPU-friendly
-ruff check picode/
+ruff check picode/ && mypy picode/
 
 # Scraper
 cd ../picode-scraper

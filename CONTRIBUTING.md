@@ -19,7 +19,7 @@ For the iOS app you also need Xcode 15+ and XcodeGen (see [picode-ios/README.md]
 
 | Project | Checks |
 |---------|--------|
-| picode-model | `pytest picode/tests/ -q` and `ruff check picode/` |
+| picode-model | `pytest picode/tests/ -q`, `ruff check picode/` and `mypy picode/` |
 | picode-scraper | `pytest tests/ -q`, `ruff check picode_scraper/` and `mypy picode_scraper/` |
 | picode-ios | `xcodebuild test -scheme picode-ios -destination 'platform=iOS Simulator,name=iPhone 17 Pro'` |
 

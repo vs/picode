@@ -41,6 +41,7 @@ scripts/           # evaluation, sample/figure generation, Modal / GCE / Kaggle 
 ```bash
 pytest picode/tests/ -q
 ruff check picode/
+mypy picode/                       # strict; the whole package type-checks
 ```
 
 See the [root README](../README.md) for the quick start and the [docs](../docs/) for results.

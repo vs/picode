@@ -8,7 +8,7 @@ raw residual at s=1.0, scaled by a Sobel texture mask, with batch ID selection
 the ladder where some payload decodes exactly.
 
 Usage:
-    python scripts/readme_figures.py CHECKPOINT [--output ../docs/assets/hero.png]
+    python scripts/readme_figures.py CHECKPOINT [--output ../docs/assets/hero.jpg]
 """
 
 import argparse
@@ -80,7 +80,7 @@ def draw_label(img: Image.Image, lines: list[str], font: ImageFont.ImageFont) ->
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("checkpoint")
-    parser.add_argument("--output", default="../docs/assets/hero.png")
+    parser.add_argument("--output", default="../docs/assets/hero.jpg")
     parser.add_argument("--strengths", default="0.010,0.012,0.015,0.020")
     parser.add_argument("--candidates", type=int, default=32)
     parser.add_argument("--seed", type=int, default=7)
@@ -169,7 +169,10 @@ def main() -> None:
             panel = panel.resize((PANEL, PANEL), Image.Resampling.LANCZOS)
             canvas.paste(panel, (GUTTER + col * (PANEL + GUTTER), y))
 
-    canvas.save(args.output, optimize=True)
+    if args.output.lower().endswith((".jpg", ".jpeg")):
+        canvas.save(args.output, quality=90, optimize=True, progressive=True)
+    else:
+        canvas.save(args.output, optimize=True)
     print(f"Saved {args.output} ({width}x{height})")
 
 
